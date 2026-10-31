@@ -1298,6 +1298,27 @@ struct AboutSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .padding(.top, 6)
+            HStack(spacing: 8) {
+                Link(destination: Self.repository) {
+                    HStack(spacing: 4) {
+                        Self.logo("GitHubMark")
+                        Text("Source Code", bundle: .module)
+                    }
+                }
+                .help(Text(verbatim: Self.repository.absoluteString))
+                Text(verbatim: "·")
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+                Link(destination: Self.organization) {
+                    HStack(spacing: 4) {
+                        Self.logo("MMFoundationLogo")
+                        Text(verbatim: "MMFoundation")
+                    }
+                }
+                .help(Text(verbatim: Self.organization.absoluteString))
+            }
+            .font(.callout)
+            .padding(.top, 2)
             if acknowledgments != nil {
                 Button { readingAcknowledgments = true } label: {
                     Text("Acknowledgments…", bundle: .module)
@@ -1307,6 +1328,18 @@ struct AboutSettingsView: View {
             }
         }
         .padding(28)
+    }
+
+    private static let repository = URL(string: "https://github.com/MMFoundation/ohmyshot")!
+    private static let organization = URL(string: "https://github.com/MMFoundation")!
+
+    /// A template image from OMSUI's asset catalog, drawn in the link's color beside its text.
+    private static func logo(_ name: String) -> some View {
+        Image(name, bundle: .module)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 13, height: 13)
+            .accessibilityHidden(true)
     }
 
     private static func info(_ key: String) -> String? {
