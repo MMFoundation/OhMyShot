@@ -37,6 +37,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onReturn: (() -> Void)?
     public var onSave: (() -> Void)?
     public var onSaveProject: (() -> Void)?
+    public var onSaveAs: (() -> Void)?
     public var onPrint: (() -> Void)?
     /// Asks for the size to scale the picture to, which the host shows its own way.
     public var onImageSize: (() -> Void)?
@@ -1580,6 +1581,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         onSave?()
     }
 
+    /// ⌥⇧⌘S: a copy of the picture where and how the person chooses, in the Save panel.
+    @objc public func saveScreenshotAs(_ sender: Any?) {
+        onSaveAs?()
+    }
+
     /// ⇧⌘S: a copy of the capture and its marks as a project, to open again with every mark editable.
     @objc public func saveProject(_ sender: Any?) {
         onSaveProject?()
@@ -1712,6 +1718,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return !isInPlace && Self.offersPictures(.general)
         case #selector(printCapture(_:)):
             return onPrint != nil
+        case #selector(saveScreenshotAs(_:)):
+            return onSaveAs != nil
         case #selector(rotateLeft(_:)), #selector(rotateRight(_:)), #selector(flipHorizontal(_:)), #selector(flipVertical(_:)):
             return canTransformPicture
         case #selector(showImageSize(_:)):

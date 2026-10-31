@@ -583,6 +583,11 @@ final class CompositionRoot {
             quickAccess.markSaved(entry.id, at: saved)
             return saved
         }
+        annotations.saveAs = { [weak self] file, entry, scale in
+            guard let self, let saved = await captures.files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale) else { return nil }
+            if let entry { quickAccess.markSaved(entry.id, at: saved) }
+            return saved
+        }
         annotations.saveFile = { [weak self] file, scale in
             await self?.captures.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
         }
