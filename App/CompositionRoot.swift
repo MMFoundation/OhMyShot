@@ -1937,10 +1937,10 @@ final class CompositionRoot {
         #if DEBUG
         let hooks = makeDebugHooks()
         return [
-            .init(title: "Log Displays") { hooks.logDisplays() },
-            .init(title: "Log Active Resources") { hooks.logResources() },
-            .init(title: "Show Onboarding") { [weak self] in self?.showOnboarding() },
-            .init(title: "Relaunch") { Relauncher.relaunch() },
+            .init(title: String(localized: "Log Displays")) { hooks.logDisplays() },
+            .init(title: String(localized: "Log Active Resources")) { hooks.logResources() },
+            .init(title: String(localized: "Show Onboarding")) { [weak self] in self?.showOnboarding() },
+            .init(title: String(localized: "Relaunch")) { Relauncher.relaunch() },
         ]
         #else
         return []
