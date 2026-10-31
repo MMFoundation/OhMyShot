@@ -385,6 +385,9 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
             let item = NSMenuItem(title: entry.title, action: #selector(runHeld(_:)), keyEquivalent: entry.keyEquivalent)
             item.target = self
             item.representedObject = Held(entry)
+            if let shortcut = entry.shortcut {
+                item.setShortcut(for: shortcut.name)
+            }
             menu.addItem(item)
         }
     }
