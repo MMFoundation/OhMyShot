@@ -18,6 +18,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// Saves a copy of the capture's file to the export location; returns where it went, or nil when it was not saved
         /// (cancelled, or failed, which it has beeped for).
         public var save: (_ file: URL) async -> URL?
+        /// Asks where and how to save a copy of the capture's file, in the Save panel; returns where it went, or nil when
+        /// it was not saved. Nil when the editor offers no Save As.
+        public var saveAs: ((_ file: URL) async -> URL?)?
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
         /// copy of it in the format Settings choose.
         public var fileToHandOver: (_ file: URL) -> URL = { $0 }
@@ -79,6 +82,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.onReturn = { [weak self] in self?.copy(thenClose: true) }
         content.canvas.onSave = { [weak self] in self?.save() }
         content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
+        if actions.saveAs != nil {
+            content.canvas.onSaveAs = { [weak self] in self?.saveAs() }
+        }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
         content.canvas.onImageSize = { [weak self] in self?.presentImageSize() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
@@ -346,6 +352,23 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             // A save that failed has beeped already, and one that was cancelled (Escape in the name alert) did not mean to
             // save: neither is said again here.
             guard await actions.save(file) != nil else { return }
+            model.flashSaved()
+        }
+    }
+
+    var offersSaveAs: Bool { actions.saveAs != nil }
+
+    /// Asks where to save a copy of the picture as it looks now, and in what format and how, then saves it there. The
+    /// marks are kept first, as Save keeps them.
+    func saveAs() {
+        guard let saveAs = actions.saveAs else { return }
+        content.canvas.endEditing()
+        Task {
+            guard let file = await exportAndKeep() else {
+                NSSound.beep()
+                return
+            }
+            guard await saveAs(file) != nil else { return }
             model.flashSaved()
         }
     }
@@ -630,6 +653,13 @@ struct EditorView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
+                if model.controller?.offersSaveAs == true {
+                    Button {
+                        model.controller?.saveAs()
+                    } label: {
+                        Text("Save As…", bundle: .module)
+                    }
+                }
                 Button {
                     model.controller?.saveProject()
                 } label: {
