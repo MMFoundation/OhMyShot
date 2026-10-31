@@ -1095,7 +1095,7 @@ private struct PermissionRow: View {
     let permissions: PermissionCenter
 
     var body: some View {
-        SettingsRow(permission.title) {
+        SettingsRow(permission.title, help: [HelpTopic(permission.title, Text(permission.purpose))]) {
             Group {
                 switch permissions.status(of: permission) {
                 case .granted:
@@ -1125,7 +1125,6 @@ private struct PermissionRow: View {
                     }
                 }
             }
-            .help(permission.purpose)
         }
     }
 }
@@ -1141,13 +1140,14 @@ extension Permission {
         }
     }
 
+    /// Why OhMyShot asks for it, and what is left out without it: the row's help popover.
     var purpose: String {
         switch self {
-        case .screenRecording: String(localized: "Take screenshots and record the screen.", bundle: .module)
-        case .microphone: String(localized: "Record your voice with screen recordings.", bundle: .module)
-        case .camera: String(localized: "Show your camera in screen recordings.", bundle: .module)
-        case .accessibility: String(localized: "Scroll for you during scrolling capture, and read text straight from apps.", bundle: .module)
-        case .inputMonitoring: String(localized: "Show the keys you press in screen recordings.", bundle: .module)
+        case .screenRecording: String(localized: "Needed for everything OhMyShot captures: screenshots, scrolling captures, and screen recordings. macOS applies it after a relaunch.", bundle: .module)
+        case .microphone: String(localized: "Records your voice with screen recordings. Without it, recordings keep only the Mac’s sound.", bundle: .module)
+        case .camera: String(localized: "Shows your camera in a bubble while you record, and keeps it as a movie of its own for Studio. Without it, recordings have no camera.", bundle: .module)
+        case .accessibility: String(localized: "Lets Auto-scroll scroll the page for you during a scrolling capture, and lets Capture Text read the text an app shows instead of recognizing it in the picture. Without it, you scroll yourself and text is recognized from the picture.", bundle: .module)
+        case .inputMonitoring: String(localized: "Shows the keys you press in screen recordings with Show Keystrokes, and keeps them so Studio can show them afterwards. Without it, no keys are shown or kept.", bundle: .module)
         }
     }
 }
