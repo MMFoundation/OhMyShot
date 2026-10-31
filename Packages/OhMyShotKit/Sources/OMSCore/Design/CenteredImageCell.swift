@@ -6,15 +6,25 @@ import AppKit
 /// sits almost a point below the middle of its frame. With a title, the stock layout and drawing stand.
 @MainActor
 public final class CenteredImageCell: NSButtonCell {
-    /// How far the ink's optical middle lies from the image frame's, in points, y down.
-    private var inkOffset = CGPoint.zero
+    /// How far the ink's optical middle lies from the image frame's, in points, y down, by the backing scale it was
+    /// measured at: a symbol snaps its outline to the pixels it is drawn on, so its ink sits differently at each scale.
+    private var inkOffsets: [CGFloat: CGPoint] = [:]
 
     override public var image: NSImage? {
         get { super.image }
         set {
             super.image = newValue
-            inkOffset = newValue.map(Self.inkOffset) ?? .zero
+            inkOffsets = [:]
         }
+    }
+
+    /// The ink's offset as it is drawn on the control's screen.
+    private func inkOffset(of image: NSImage) -> CGPoint {
+        let scale = controlView?.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        if let offset = inkOffsets[scale] { return offset }
+        let offset = Self.inkOffset(of: image, scale: scale)
+        inkOffsets[scale] = offset
+        return offset
     }
 
     /// A symbol is drawn into its frame in the button's tint: the stock drawing places a symbol in the frame by its
@@ -34,9 +44,11 @@ public final class CenteredImageCell: NSButtonCell {
     }
 
     override public func imageRect(forBounds rect: NSRect) -> NSRect {
-        guard imagePosition == .imageOnly, let size = image?.size, size.width > 0, size.height > 0 else {
+        guard imagePosition == .imageOnly, let image, image.size.width > 0, image.size.height > 0 else {
             return super.imageRect(forBounds: rect)
         }
+        let size = image.size
+        let inkOffset = inkOffset(of: image)
         let flipped = controlView?.isFlipped ?? false
         // The control's whole bounds, as the highlight fills them: `rect` can be the cell's inset drawing rect.
         let bounds = controlView?.bounds ?? rect
@@ -50,13 +62,15 @@ public final class CenteredImageCell: NSButtonCell {
         return controlView?.backingAlignedRect(frame, options: .alignAllEdgesNearest) ?? frame
     }
 
-    /// Draws `image` at 4× and finds its optical middle: halfway between the middle of its ink's bounds (the pixels at
-    /// least a third opaque) and its ink's center of weight. Centered on its bounds alone, a lopsided symbol looks off:
-    /// `square.and.arrow.down`'s tray left it looking low, by its weight 1.5 pt below the middle of its bounds, and
-    /// `pin`'s head left it looking high.
-    private static func inkOffset(of image: NSImage) -> CGPoint {
+    /// Draws `image` at the backing scale it is shown at and finds its optical middle: halfway between the middle of its
+    /// ink's bounds (the pixels at least a third opaque) and its ink's center of weight. Centered on its bounds alone, a
+    /// lopsided symbol looks off: `square.and.arrow.down`'s tray left it looking low, by its weight 1.5 pt below the
+    /// middle of its bounds, and `pin`'s head left it looking high. At any other scale the measure misses where the ink
+    /// lands: at 4× `1.circle`'s ink is centered within a quarter point, at the 2× it is drawn at it lies half a point
+    /// left, and the rail showed its circle off the chip's middle.
+    private static func inkOffset(of image: NSImage, scale backingScale: CGFloat) -> CGPoint {
         let size = image.size
-        let scale = 4
+        let scale = max(1, Int(backingScale.rounded()))
         let width = Int(ceil(size.width)) * scale, height = Int(ceil(size.height)) * scale
         guard width > 0, height > 0, let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
