@@ -15,8 +15,8 @@ npm test        # the URL encoding
 npm run lint
 ```
 
-The extension's App preference chooses between OhMyShot (`ohmyshot://`) and its Debug build,
-OhMyShot (Debug) (`ohmyshot-dev://`).
+The extension's App preference chooses between OhMyShot (`ohmyshot://`) and a Debug build, OhMyShot Dev
+(`ohmyshot-dev://`).
 
 Before publishing, set `author` in `package.json` to your Raycast username. `ray lint` checks it against Raycast's
 servers.

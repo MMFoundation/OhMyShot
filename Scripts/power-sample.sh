@@ -2,26 +2,15 @@
 # Samples the idle-power proxies of a running OhMyShot: CPU, idle wakeups, and memory footprint.
 # Leave the app alone while it runs; the targets assume nothing of ours is on screen.
 #
-# Usage: Scripts/power-sample.sh [seconds] [app or process name]
-#   defaults: 60 seconds, the Debug build (build/Build/Products/Debug/OhMyShot.app)
-#   Pass a .app path to sample that copy, or a process name such as "OhMyShot" for the first one running.
-#   A release OhMyShot has the same process name as the Debug build, so a name may pick either.
+# Usage: Scripts/power-sample.sh [seconds] [process name]
+#   defaults: 60 seconds, "OhMyShot Dev"
 # For energy in milliwatts, also run (needs sudo):
 #   sudo powermetrics -i 1000 -n 60 --samplers tasks --show-process-energy
 set -eu
 
 SECONDS_TO_SAMPLE=${1:-60}
-NAME=${2:-"$(cd "$(dirname "$0")/.." && pwd)/build/Build/Products/Debug/OhMyShot.app"}
-case "$NAME" in
-  *.app|*.app/)
-    [ -d "$NAME" ] || { echo "$NAME does not exist." >&2; exit 1; }
-    APP=$(cd "$NAME" && pwd)
-    PID=$(pgrep -f "^$APP/Contents/MacOS/" | head -1 || true)
-    ;;
-  *)
-    PID=$(pgrep -x "$NAME" | head -1 || true)
-    ;;
-esac
+NAME=${2:-"OhMyShot Dev"}
+PID=$(pgrep -x "$NAME" | head -1 || true)
 if [ -z "$PID" ]; then
   echo "$NAME is not running." >&2
   exit 1

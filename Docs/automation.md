@@ -4,7 +4,7 @@ OhMyShot can be driven three ways: the `ohmyshot://` URL scheme, Shortcuts (whic
 Spotlight), and the Raycast extension in `Integrations/Raycast`. All three run what the menu and the keyboard
 shortcuts run.
 
-Debug builds answer `ohmyshot-dev://` instead, and show up in Shortcuts as a second "OhMyShot".
+Debug builds answer `ohmyshot-dev://` instead, and show up in Shortcuts as "OhMyShot Dev".
 
 ## URL scheme
 
@@ -136,6 +136,6 @@ whether it may be controlled. Depending on how Raycast opens the URL, the reques
 tools; approving command-line tools lets every script send commands. (Not yet tried with Raycast installed.)
 
 To try it, run `npm install && npm run dev` in `Integrations/Raycast`. Raycast then lists the commands. Its App
-preference chooses between OhMyShot and its Debug build. Before publishing to the Raycast Store, set `author` in
+preference chooses between OhMyShot and OhMyShot Dev. Before publishing to the Raycast Store, set `author` in
 `package.json` to your Raycast username. `ray lint` rejects any name Raycast doesn't know. The extension's own
 files are MIT-licensed, as the Store requires.

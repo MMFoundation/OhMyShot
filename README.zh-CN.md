@@ -137,7 +137,7 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 git clone https://github.com/MMFoundation/OhMyShot.git
 cd OhMyShot
 Scripts/bootstrap.sh   # 根据 project.yml 生成 OhMyShot.xcodeproj
-Scripts/run.sh         # 构建 Debug 版并启动
+Scripts/run.sh         # 构建 Debug 版（"OhMyShot Dev"）并启动
 Scripts/test.sh        # 运行两个包的单元测试（OhMyShotKit、OhMyShotVLM）
 ```
 

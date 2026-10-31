@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 SERVICE=${1:-All}
-PLIST="build/Build/Products/Debug/OhMyShot.app/Contents/Info.plist"
+PLIST="build/Build/Products/Debug/OhMyShot Dev.app/Contents/Info.plist"
 
 if [ -f "$PLIST" ]; then
   BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")

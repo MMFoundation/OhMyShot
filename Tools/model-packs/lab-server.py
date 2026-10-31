@@ -5,8 +5,8 @@ Makes up a pack (a license, a weights file of --mb megabytes, a small text file)
 download can be paused, cut off, and resumed. GET /pack.json gives the pack as the app lists packs
 (`ModelPack`), with this server as its only mirror. Then, in the Debug app:
 
-    open -g -a ".../OhMyShot.app" 'ohmyshot-dev://debug/modelpack-lab'
-    open -g -a ".../OhMyShot.app" 'ohmyshot-dev://debug/modelpack-act?action=download'
+    open -g -a ".../OhMyShot Dev.app" 'ohmyshot-dev://debug/modelpack-lab'
+    open -g -a ".../OhMyShot Dev.app" 'ohmyshot-dev://debug/modelpack-act?action=download'
 
 Usage: python3 -I Tools/model-packs/lab-server.py [--port 19010] [--mb 24] [--rate 4] [--drop-after BYTES]
     --drop-after closes the first connection for the weights once that many bytes of it went out.
