@@ -753,6 +753,12 @@ final class DragOutView: NSView, NSDraggingSource {
         addCursorRect(bounds, cursor: .openHand)
     }
 
+    // The handle sits in the title bar, where a press on a see-through view drags the window instead of reaching it.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    // A press here starts a drag, even when the window is not yet key.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         mouseDownPoint = convert(event.locationInWindow, from: nil)
     }
