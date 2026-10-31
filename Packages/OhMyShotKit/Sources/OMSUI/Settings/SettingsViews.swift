@@ -210,6 +210,7 @@ struct GeneralSettingsView: View {
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
     @State private var language = AppLanguage.chosen ?? ""
+    @State private var confirmsReset = false
 
     var body: some View {
         SettingsPane {
@@ -298,9 +299,32 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            SettingsDivider()
+
+            SettingsRow(String(localized: "Reset", bundle: .module)) {
+                Button {
+                    confirmsReset = true
+                } label: {
+                    Text("Reset to Default Settings…", bundle: .module)
+                }
+            }
         }
         .confirmingRetentionChange($retentionRequest) { retention in
             settings.historyRetention = retention
+        }
+        .confirmationDialog(
+            Text("Reset all settings to their defaults?", bundle: .module),
+            isPresented: $confirmsReset,
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                settings.resetToDefaults()
+            } label: {
+                Text("Reset", bundle: .module)
+            }
+        } message: {
+            Text("Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, approved apps, and capture history stay as they are.", bundle: .module)
         }
     }
 
