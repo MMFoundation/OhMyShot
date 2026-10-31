@@ -1355,7 +1355,7 @@ struct AboutSettingsView: View {
     }
 
     private static let repository = URL(string: "https://github.com/MMFoundation/ohmyshot")!
-    private static let organization = URL(string: "https://github.com/MMFoundation")!
+    private static let organization = URL(string: "https://mmfoundation.dev/")!
 
     /// A template image from OMSUI's asset catalog, drawn in the link's color beside its text.
     private static func logo(_ name: String) -> some View {
