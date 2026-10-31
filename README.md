@@ -199,3 +199,5 @@ OhMyShot is built with [Sparkle](https://sparkle-project.org),
 
 OhMyShot is free software, licensed under the [GNU General Public License v3.0](LICENSE).
 Copyright © 2026 OhMyShot contributors.
+
+OhMyShot is a project of [MMFoundation](https://mmfoundation.dev/).

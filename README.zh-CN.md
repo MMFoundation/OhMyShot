@@ -206,3 +206,5 @@ OhMyShot 使用了 [Sparkle](https://sparkle-project.org)、
 
 OhMyShot 是自由软件，以 [GNU 通用公共许可证 第 3 版](LICENSE)发布。
 Copyright © 2026 OhMyShot contributors.
+
+OhMyShot 是 [MMFoundation](https://mmfoundation.dev/zh/) 的项目。
