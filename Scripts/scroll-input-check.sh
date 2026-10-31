@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 PROBE=build/scroll-input-probe/OhMyShot\ Input\ Probe.app
-DEV_APP="$(pwd)/build/Build/Products/Debug/OhMyShot Dev.app"
+DEV_APP="$(pwd)/build/Build/Products/Debug/OhMyShot.app"
 STATE=/tmp/ohmyshot-input-receiver.json
 MARKER=build/scroll-input-probe/started
 mkdir -p "$PROBE/Contents/MacOS"
@@ -21,8 +21,11 @@ done
 CHECK_START=$(date '+%Y-%m-%d %H:%M:%S')
 open -g -a "$DEV_APP" 'ohmyshot-dev://debug/scroll-input-check'
 sleep 2
+# Filter by this build's process: a release OhMyShot has the same process name.
+DEV_PID=$(pgrep -f "^$DEV_APP/Contents/MacOS/" | head -1 || true)
+[ -n "$DEV_PID" ] || { echo "The Debug build is not running." >&2; exit 1; }
 REPORT=build/scroll-input-probe/report.log
 /usr/bin/log show --start "$CHECK_START" --style compact --predicate \
-  'process == "OhMyShot Dev" AND eventMessage CONTAINS "debug.scroll-input-external"' > "$REPORT"
+  "processIdentifier == $DEV_PID AND eventMessage CONTAINS \"debug.scroll-input-external\"" > "$REPORT"
 cat "$REPORT"
 rg -q 'debug.scroll-input-external PASS:' "$REPORT"

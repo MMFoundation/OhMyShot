@@ -15,7 +15,7 @@ export async function runCommand(command: string, parameters: Record<string, str
   try {
     await open(commandURL(scheme, command, parameters));
   } catch {
-    await showHUD(scheme === "ohmyshot-dev" ? "OhMyShot Dev isn’t installed" : "OhMyShot isn’t installed");
+    await showHUD(scheme === "ohmyshot-dev" ? "OhMyShot (Debug) isn’t installed" : "OhMyShot isn’t installed");
   }
 }
 

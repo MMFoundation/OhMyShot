@@ -132,7 +132,7 @@ log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measu
 git clone https://github.com/MMFoundation/OhMyShot.git
 cd OhMyShot
 Scripts/bootstrap.sh   # generate OhMyShot.xcodeproj from project.yml
-Scripts/run.sh         # build the Debug app ("OhMyShot Dev") and launch it
+Scripts/run.sh         # build the Debug app and launch it
 Scripts/test.sh        # run both packages' unit tests (OhMyShotKit, OhMyShotVLM)
 ```
 

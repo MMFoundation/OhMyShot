@@ -8,7 +8,7 @@ certificate, which this project doesn't have yet, so `Scripts/release.sh` stops 
 ## How the app updates
 
 - **Only release builds look.** `SUFeedURL` is set in `Config/Release.xcconfig`:
-  `https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
+  `https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml`. Debug builds have no
   feed, so they never look and show neither Settings › General › Updates nor Check for Updates… in the menu.
 - **Everything is signed.** The appcast and every archive are signed with the project's EdDSA key; the public half is
   `SUPublicEDKey` in `Config/Info.plist`. The app refuses an appcast or an archive that doesn't match it
