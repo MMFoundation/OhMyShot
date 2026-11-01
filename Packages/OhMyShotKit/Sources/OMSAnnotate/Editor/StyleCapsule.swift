@@ -1026,8 +1026,9 @@ final class CapsuleStatus: NSStackView {
     }
 }
 
-/// A chip in the style capsule: a borderless button with the capsule's own selected and hover fills.
-final class CapsuleChip: NSButton {
+/// A chip in the style capsule: a borderless button with the capsule's own selected and hover fills; a symbol or
+/// swatch names itself in a hover tag.
+final class CapsuleChip: HoverTagButton {
     var isSelected = false {
         didSet { applyAppearance() }
     }
@@ -1112,11 +1113,13 @@ final class CapsuleChip: NSButton {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
         isHovered = true
         applyAppearance()
     }
 
     override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
         isHovered = false
         applyAppearance()
     }

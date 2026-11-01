@@ -182,6 +182,8 @@ final class ToolRail: NSView {
         chip.layer?.cornerRadius = Self.chip / 2
         chip.setButtonType(.onOff)
         chip.toolTip = Self.help(for: tool)
+        // The rail stands at the canvas's left edge: each tag stands to its right, over the canvas.
+        chip.hoverTagEdge = .maxX
         chip.setAccessibilityLabel(name)
         chip.translatesAutoresizingMaskIntoConstraints = false
         chip.widthAnchor.constraint(equalToConstant: Self.chip).isActive = true
@@ -190,7 +192,7 @@ final class ToolRail: NSView {
         return chip
     }
 
-    /// Every tool with its key, which the rail's chips show only in their tooltips: there is no menu bar to list them.
+    /// Every tool with its key, which the rail's chips show only in their hover tags: there is no menu bar to list them.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         for (index, group) in Self.groups.enumerated() {
@@ -279,8 +281,8 @@ enum ChipFill {
     }
 }
 
-/// A borderless chip that knows when the pointer is over it, for its hover highlight.
-final class RailChip: NSButton {
+/// A borderless chip that knows when the pointer is over it, for its hover highlight, and names itself in a hover tag.
+final class RailChip: HoverTagButton {
     var onHover: ((Bool) -> Void)?
     private(set) var isHovered = false
 
@@ -300,11 +302,13 @@ final class RailChip: NSButton {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
         isHovered = true
         onHover?(true)
     }
 
     override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
         isHovered = false
         onHover?(false)
     }
