@@ -145,8 +145,8 @@ public final class QuickAccessController {
     private var selectedID: UUID?
     /// A card's hold by the keyboard, to be given back when the keys go to another card.
     private var keyboardHolder: UUID?
-    /// The card that acquired keyboard focus from an active pointer-entry hover (`mouseEntered`).
-    private var hoverFocusedID: UUID?
+    /// The card the pointer is actively hovering over (`mouseEntered`).
+    private(set) var hoveredID: UUID?
 
     public init(actions: Actions) {
         self.actions = actions
@@ -425,7 +425,7 @@ public final class QuickAccessController {
         schedule.removeAll()
         selectedID = nil
         keyboardHolder = nil
-        hoverFocusedID = nil
+        hoveredID = nil
         stack?.quickLook.close()
         stack?.quickLook.detach()
         panel?.orderOut(nil)
@@ -615,25 +615,25 @@ public final class QuickAccessController {
 
     /// Gives the keyboard to a card: ringed, and its keys answered. The panel takes the keys without the
     /// app coming forward, so the app in front stays in front and is typed in again once the keys go back.
-    private func focus(on id: UUID?, fromHover: Bool = false) {
+    private func focus(on id: UUID?) {
         guard let id, items.contains(where: { $0.id == id }), let panel, let stack else { return }
-        if !fromHover { hoverFocusedID = nil }
         select(id)
         panel.allowsKey = true
         panel.makeKey()
         panel.makeFirstResponder(stack)
     }
 
+    /// Tracks which card the pointer actively entered, and when the panel already holds the keyboard,
+    /// moves the selection ring to the hovered card without ordering or re-keying the panel.
     private func pointerHovered(_ id: UUID, hovering: Bool) {
         if hovering {
             guard items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
-            hoverFocusedID = id
-            focus(on: id, fromHover: true)
-        } else if hoverFocusedID == id {
-            hoverFocusedID = nil
-            if stack?.quickLook.isShowing != true {
-                endKeyboard()
+            hoveredID = id
+            if panel?.isKeyWindow == true, selectedID != id {
+                select(id)
             }
+        } else if hoveredID == id {
+            hoveredID = nil
         }
     }
 
@@ -656,7 +656,6 @@ public final class QuickAccessController {
     /// Gives the keyboard back to the app in front: the ring goes, and the panel is ordered out and in again,
     /// which hands the keys on without hiding the cards.
     private func endKeyboard() {
-        hoverFocusedID = nil
         select(nil)
         // With no card selected, the preview closing does not take the keys back.
         stack?.quickLook.close()
