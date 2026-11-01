@@ -182,6 +182,7 @@ GitHub Releases 上的签名 appcast；Debug 版从不检查更新。发布、�
 
 - **反馈 Bug 或提出功能建议**：请到 [Issues](https://github.com/MMFoundation/OhMyShot/issues)，中文或英文均可。
   请写明 macOS 版本、显示器配置和复现步骤。
+- **提问或交流**：请到 MMFoundation 的 [Discord](https://mmfoundation.dev/discord)。
 - **参与翻译**：不需要 Xcode，详见 [Docs/localization.md](Docs/localization.md)。
 - **提交 Pull Request**：推送前请运行 `Scripts/test.sh`，提交信息遵循
   [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)（如 `feat(ocr): …`、`fix(studio): …`）。

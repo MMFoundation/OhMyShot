@@ -175,6 +175,7 @@ Contributions are welcome, whether code, translations, bug reports, or measureme
 
 - **Report a bug or ask for a feature** in [Issues](https://github.com/MMFoundation/OhMyShot/issues). Include
   your macOS version, your displays, and the steps that lead to the problem.
+- **Ask a question or talk with us** on MMFoundation's [Discord](https://mmfoundation.dev/discord).
 - **Translate.** You don't need Xcode: [Docs/localization.md](Docs/localization.md) explains how.
 - **Send a pull request.** Run `Scripts/test.sh` before you push, and write commit messages as
   [Conventional Commits](https://www.conventionalcommits.org) (`feat(ocr): …`, `fix(studio): …`). Changes that
