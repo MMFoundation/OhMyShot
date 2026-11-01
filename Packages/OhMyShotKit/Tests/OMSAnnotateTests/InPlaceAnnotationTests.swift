@@ -133,5 +133,11 @@ struct InPlaceAnnotationTests {
         annotator.simulateKey(" ", keyCode: 49)
         annotator.simulateDrag(from: CGPoint(x: 150, y: 80), to: CGPoint(x: 170, y: 90))
         #expect(annotator.selectionRect == beforeRect.offsetBy(dx: 20, dy: 10))
+        #expect(annotator.placementZone == .below)
+
+        // Moving the selection near the bottom of the display transitions `placementZone` to `.above`.
+        annotator.simulateKey(" ", keyCode: 49)
+        annotator.simulateDrag(from: CGPoint(x: 170, y: 90), to: CGPoint(x: 170, y: 260))
+        #expect(annotator.placementZone == .above)
     }
 }

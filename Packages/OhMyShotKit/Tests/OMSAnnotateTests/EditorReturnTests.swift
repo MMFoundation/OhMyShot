@@ -125,4 +125,89 @@ struct EditorReturnTests {
         try drag(from: CGPoint(x: 190, y: 90), to: CGPoint(x: 250, y: 150), modifiers: .shift)
         #expect(session.selection == [first.id, second.id])
     }
+
+    @Test func doubleClickTextEditCommandClickSelectionEyedropperAndSmartGuides() throws {
+        let (canvas, session, window) = try makeCanvas(tool: .arrow)
+        defer { window.close() }
+
+        // 1. Canvas color eyedropper (I key) samples capture pixel color and sets current tool color.
+        let iDown = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "i", charactersIgnoringModifiers: "i", isARepeat: false, keyCode: 34
+        ))
+        canvas.keyDown(with: iDown)
+        #expect(canvas.isPickingColor)
+        let sampled = try #require(canvas.sampleColor(at: CGPoint(x: 10, y: 10)))
+        let clickPick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: canvas.convert(CGPoint(x: 50, y: 50), to: nil), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        canvas.mouseDown(with: clickPick)
+        #expect(!canvas.isPickingColor)
+        #expect(session.settings(for: .arrow).color == sampled)
+
+        // 2. Command-click selects an unselected area mark (filled rectangle) even while holding .arrow.
+        let filledBox = Annotation(
+            shape: .rectangle(Box(rect: CGRect(x: 40, y: 40, width: 100, height: 80), filled: true)),
+            style: Style()
+        )
+        let targetBox = Annotation(
+            shape: .rectangle(Box(rect: CGRect(x: 200, y: 40, width: 60, height: 60))),
+            style: Style()
+        )
+        let textMark = Annotation(
+            shape: .text(TextBlock(origin: CGPoint(x: 300, y: 120), string: "Hello", fontSize: 20, look: .plain)),
+            style: Style()
+        )
+        var doc = session.document
+        doc.items = [filledBox, targetBox, textMark]
+        session.commit(doc, actionName: "Setup")
+        session.select([])
+
+        let interiorViewPt = CGPoint(x: canvas.bounds.minX + 90 * (canvas.bounds.width / 800), y: canvas.bounds.minY + 80 * (canvas.bounds.height / 400))
+        let cmdDown = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: canvas.convert(interiorViewPt, to: nil), modifierFlags: .command, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let cmdUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: canvas.convert(interiorViewPt, to: nil), modifierFlags: .command, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        canvas.mouseDown(with: cmdDown)
+        canvas.mouseUp(with: cmdUp)
+        #expect(session.selection == [filledBox.id])
+
+        // 3. Moving `targetBox` near `filledBox`'s top edge (y = 40) activates smart alignment guides when Command is not held.
+        // Click on the top edge at x = 215 (between the topLeft handle at 200 and top handle at 230) so it moves rather than reshapes.
+        session.select([targetBox.id])
+        let edgePt = canvas.windowPoint(forDocument: CGPoint(x: 215, y: 40))
+        let nearTopPt = canvas.windowPoint(forDocument: CGPoint(x: 215, y: 41))
+        let moveDown = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: edgePt, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let moveDrag = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: nearTopPt, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let moveUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: nearTopPt, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        canvas.mouseDown(with: moveDown)
+        canvas.mouseDragged(with: moveDrag)
+        #expect(!canvas.alignmentGuides.isEmpty)
+        canvas.mouseUp(with: moveUp)
+        #expect(canvas.alignmentGuides.isEmpty)
+
+        // 4. Double-clicking `textMark` while `.pen` is selected enters inline text editing directly.
+        session.tool = .pen
+        let textPt = canvas.windowPoint(forDocument: CGPoint(x: 310, y: 130))
+        let doubleClick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: textPt, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1
+        ))
+        canvas.mouseDown(with: doubleClick)
+        #expect(canvas.isEditingText)
+    }
 }

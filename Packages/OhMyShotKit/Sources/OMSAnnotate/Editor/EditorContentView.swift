@@ -51,6 +51,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
         capsule.onCropRatio = { [weak self] ratio in self?.canvas.chooseCropRatio(ratio) }
+        capsule.onPickCanvasColor = { [weak self] in self?.canvas.toggleColorPicker() }
+        canvas.onColorPickerChange = { [weak self] in self?.refreshCapsule() }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
             canvas.commitCrop()
@@ -134,6 +136,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
                 blur: session.blurredCapture
             ))
         } else {
+            capsule.isPickingCanvasColor = canvas.isPickingColor
             capsule.show(
                 kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
                 suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,

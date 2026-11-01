@@ -228,6 +228,22 @@ nonisolated final class SelectionLayer: StillLayer {
     var marqueeRect: CGRect? {
         didSet { if marqueeRect != oldValue { setNeedsDisplay() } }
     }
+    struct Guide: Equatable {
+        var start: CGPoint
+        var end: CGPoint
+    }
+    /// Smart alignment guides shown while moving a mark that snaps to another mark or the canvas center, in view points.
+    var alignmentGuides: [Guide] = [] {
+        didSet { if alignmentGuides != oldValue { setNeedsDisplay() } }
+    }
+    struct EyedropperPreview: Equatable {
+        var point: CGPoint
+        var color: RGBA
+    }
+    /// Swatch preview shown near the pointer while the canvas color eyedropper is active.
+    var eyedropperPreview: EyedropperPreview? {
+        didSet { if eyedropperPreview != oldValue { setNeedsDisplay() } }
+    }
 
     static let handleSize: CGFloat = 9
 
@@ -267,6 +283,15 @@ nonisolated final class SelectionLayer: StillLayer {
             context.setLineWidth(line)
             context.stroke(rect.insetBy(dx: line / 2, dy: line / 2))
         }
+        if !alignmentGuides.isEmpty {
+            context.saveGState()
+            context.setStrokeColor(accent)
+            context.setLineWidth(line)
+            for guide in alignmentGuides {
+                context.strokeLineSegments(between: [guide.start, guide.end])
+            }
+            context.restoreGState()
+        }
         for outline in outlines {
             if let box = outline.box {
                 context.setStrokeColor(accent)
@@ -285,6 +310,22 @@ nonisolated final class SelectionLayer: StillLayer {
                 context.setLineWidth(line)
                 context.strokeEllipse(in: rect.insetBy(dx: line / 2, dy: line / 2))
             }
+        }
+        if let preview = eyedropperPreview {
+            let size: CGFloat = 22
+            let center = CGPoint(x: preview.point.x + 16, y: preview.point.y - 16)
+            let rect = CGRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: contentsAreFlipped() ? 1 : -1), blur: 3, color: CGColor(gray: 0, alpha: 0.35))
+            context.setFillColor(preview.color.cgColor)
+            context.fillEllipse(in: rect)
+            context.restoreGState()
+            context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+            context.setLineWidth(2)
+            context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
+            context.setStrokeColor(CGColor(gray: 0, alpha: 0.25))
+            context.setLineWidth(0.5)
+            context.strokeEllipse(in: rect)
         }
     }
 }

@@ -1,6 +1,8 @@
 import AppKit
+import ImageIO
 import OMSCore
 import QuartzCore
+import UniformTypeIdentifiers
 import VisionKit
 
 /// How pins look, from Settings; every pin takes it again when it changes.
@@ -20,6 +22,7 @@ final class PinWindow: NSPanel {
     /// The pin's size in points at 100 percent.
     let baseSize: CGSize
     private(set) var zoom: CGFloat
+    private var previousZoom: CGFloat?
     private(set) var opacity: CGFloat = 1
     private(set) var isLocked = false
     private(set) var lockBadgePanel: NSPanel?
@@ -129,6 +132,36 @@ final class PinWindow: NSPanel {
         invalidateShadow()
         pinView.showReading(String(localized: "\(Int((zoom * 100).rounded()))%", bundle: .module))
         updateAccessibilityValue()
+    }
+
+    /// Toggles between 100% actual size and the previous zoom (or 200% when already at 100%), anchored at `anchor`.
+    func toggleZoom(around anchor: CGPoint? = nil) {
+        if abs(zoom - 1.0) > 0.01 {
+            previousZoom = zoom
+            setZoom(1.0, around: anchor)
+        } else {
+            let target = previousZoom ?? 2.0
+            previousZoom = nil
+            setZoom(target, around: anchor)
+        }
+    }
+
+    /// Returns a file URL suitable for dragging this picture pin into another app.
+    func fileForDrag() -> URL? {
+        if let url = actions.fileForDrag?(pin) { return url }
+        guard case .image(let image, _) = pin.content else { return nil }
+        if case .file(let url) = pin.origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+            return url
+        }
+        let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(pin.id.uuidString).png")
+        if FileManager.default.fileExists(atPath: tempURL.path(percentEncoded: false)) {
+            return tempURL
+        }
+        guard let destination = CGImageDestinationCreateWithURL(tempURL as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? tempURL : nil
     }
 
     /// Fades the picture only: its readings, buttons, and ring stay solid, so the reading that says how
@@ -301,7 +334,7 @@ final class PinWindow: NSPanel {
 /// edge, an accent ring while it has the keys, the Close and More buttons on hover, and a reading capsule
 /// for its zoom and opacity as they change (a color's value rests there). A picture's text can be selected
 /// in place with Live Text once VisionKit has read it.
-final class PinView: NSView {
+final class PinView: NSView, NSDraggingSource {
     weak var pinWindow: PinWindow?
 
     private let content: PinController.Content
@@ -325,6 +358,7 @@ final class PinView: NSView {
     /// Close and More show while the pointer is over an unlocked pin, and take clicks only then.
     private var controlsShown = false
     private var resizingCorner: PinGeometry.Corner?
+    private var optionDragStart: CGPoint?
 
     var lockMarkFrame: CGRect { lockMark.frame }
     private let textReader: PinTextReader?
@@ -791,10 +825,24 @@ final class PinView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if let corner = resizeCorner(at: point) {
             resizingCorner = corner
+            optionDragStart = nil
             window?.makeKey()
             return
         }
         resizingCorner = nil
+        if event.clickCount == 2, !isLocked, !takesTextPress(at: point) {
+            optionDragStart = nil
+            window?.makeKey()
+            let screenPoint = window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+            pinWindow?.toggleZoom(around: screenPoint)
+            return
+        }
+        if event.modifierFlags.contains(.option), !isLocked, case .image = content {
+            optionDragStart = point
+            window?.makeKey()
+            return
+        }
+        optionDragStart = nil
         // A press on the picture away from its text clears a selection, as a click elsewhere does in Preview;
         // one by the border or with ⌘ held only moves the pin. (The drag returns at once, so whether the pin
         // moved is not known here.)
@@ -807,6 +855,16 @@ final class PinView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let start = optionDragStart, case .image(let image, _) = content {
+            let point = convert(event.locationInWindow, from: nil)
+            guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+            optionDragStart = nil
+            guard let fileURL = pinWindow?.fileForDrag() else { return }
+            let draggingItem = NSDraggingItem(pasteboardWriter: fileURL as NSURL)
+            draggingItem.setDraggingFrame(bounds, contents: NSImage(cgImage: image, size: bounds.size))
+            beginDraggingSession(with: [draggingItem], event: event, source: self)
+            return
+        }
         guard let corner = resizingCorner, let pin = pinWindow else {
             super.mouseDragged(with: event)
             return
@@ -817,11 +875,16 @@ final class PinView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        optionDragStart = nil
         if resizingCorner != nil {
             resizingCorner = nil
             return
         }
         super.mouseUp(with: event)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? [.copy] : []
     }
 
     /// A middle click closes the pin.
