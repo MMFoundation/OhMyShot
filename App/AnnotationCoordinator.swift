@@ -112,6 +112,9 @@ final class AnnotationCoordinator {
     /// The captures open in an editor: never expired from under it.
     var openCaptureIDs: Set<UUID> { Set(editors.keys).union(opening) }
 
+    /// Whether an editor is open or on its way, a project's too.
+    var isEditing: Bool { !editors.isEmpty || !opening.isEmpty || !projectEditors.isEmpty }
+
     /// Keeps every open editor's edits, for quitting.
     func keepAll() {
         editors.values.forEach { $0.keepNow() }

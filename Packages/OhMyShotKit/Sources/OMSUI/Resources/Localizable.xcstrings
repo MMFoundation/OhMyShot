@@ -3671,6 +3671,40 @@
         }
       }
     },
+    "Ask questions, share ideas, and hear what’s coming from MMFoundation, the people who make OhMyShot." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz preguntas, comparte ideas y entérate de lo que prepara MMFoundation, la gente que hace OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posez vos questions, partagez vos idées et découvrez ce que prépare MMFoundation, l’équipe qui crée OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "質問したりアイデアを共有したり、OhMyShotを作っているMMFoundationからこれからの予定を聞いたりできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这里提问、分享想法，并了解 OhMyShot 的开发者 MMFoundation 接下来的计划。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這裡提問、分享想法，並了解 OhMyShot 的開發者 MMFoundation 接下來的計畫。"
+          }
+        }
+      }
+    },
     "Audio" : {
       "localizations" : {
         "es" : {
@@ -11761,6 +11795,40 @@
         }
       }
     },
+    "Join Discord" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unirse a Discord"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoindre Discord"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discordに参加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入 Discord"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入 Discord"
+          }
+        }
+      }
+    },
     "Join Lines" : {
       "localizations" : {
         "es" : {
@@ -11791,6 +11859,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "合併行"
+          }
+        }
+      }
+    },
+    "Join Us on Discord" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Únete a nosotros en Discord"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoignez-nous sur Discord"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discordに参加しませんか"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入我们的 Discord"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入我們的 Discord"
           }
         }
       }
