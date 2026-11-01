@@ -32,6 +32,10 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
     /// Tab: the area being chosen (or one around the crosshair) is framed for a size typed and a shape kept.
     func overlayViewDidRequestSizing(_ view: OverlayView)
+    /// L: recalls the last captured area, framed to adjust or take again.
+    func overlayViewDidRequestLastArea(_ view: OverlayView)
+    /// Backspace or right-click during a drag: resets the current drag back to the crosshair without closing the overlay.
+    func overlayViewDidResetDrag(_ view: OverlayView)
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
@@ -46,6 +50,8 @@ extension OverlayViewDelegate {
             overlayView(view, didSelectWindow: first, modifiers: modifiers)
         }
     }
+    func overlayViewDidRequestLastArea(_ view: OverlayView) {}
+    func overlayViewDidResetDrag(_ view: OverlayView) {}
 }
 
 /// The capture overlay on one display: a lightly dimmed screen, the selection with its size, a small
@@ -360,9 +366,12 @@ final class OverlayView: NSView {
 
     /// Draws the controller's selection: the part of it on this display, the size reading if this
     /// display has it. The All-In-One bar steps out of the way while a region is being dragged.
+    private(set) var isDraggingSelection = false
+
     func show(selection: SelectionModel, showsReading: Bool, isDragging: Bool) {
         self.selection = selection
         self.showsReading = showsReading
+        self.isDraggingSelection = isDragging
         let hidesPicker = usesCenteredPicker && !hasStartedAreaSelection && (isDragging || selection.rect != nil)
         // A click with no drag leaves no selection: the lens comes back, so the hidden pointer is never lost.
         let restoresPicker = usesCenteredPicker && hasStartedAreaSelection && !isDragging && selection.rect == nil
@@ -531,6 +540,18 @@ final class OverlayView: NSView {
         }
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        guard !isAnnotating else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        if isDraggingSelection {
+            delegate?.overlayViewDidResetDrag(self)
+        } else {
+            delegate?.overlayViewDidCancel(self)
+        }
+    }
+
     override func flagsChanged(with event: NSEvent) {
         guard !isAnnotating else { return }
         delegate?.overlayView(self, didChangeModifiers: event.modifierFlags)
@@ -561,6 +582,8 @@ final class OverlayView: NSView {
         switch event.keyCode {
         case 53: // Escape
             delegate?.overlayViewDidCancel(self)
+        case 51 where isDraggingSelection && mode == .area, 117 where isDraggingSelection && mode == .area:
+            delegate?.overlayViewDidResetDrag(self)
         case 49 where !picks:
             // While dragging, Space moves the selection; before a drag it switches between capturing a
             // region and capturing a window, as in macOS's own screenshot tool.
@@ -616,6 +639,9 @@ final class OverlayView: NSView {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
             } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = Self.allInOneKeys[character ?? ""] {
                 toolbarChose(choice)
+            } else if character == "l", !event.modifierFlags.contains(.command), mode == .area, !isDraggingSelection,
+                      purpose == .screenshot || purpose == .annotate {
+                delegate?.overlayViewDidRequestLastArea(self)
             } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, purpose != .record, purpose != .scroll, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
                 // Option it opens the color card, as an Option-click does.

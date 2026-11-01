@@ -206,7 +206,8 @@ struct GeneralSettingsView: View {
     let expiredCount: (HistoryRetention) -> Int
     /// The updater's state, in builds that look for updates.
     let updates: UpdateStatus?
-    @State private var launchAtLogin = LoginItem.isEnabled
+    @State private var launchAtLogin = false
+    @State private var loadedLaunchAtLogin = false
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
     @State private var language = AppLanguage.chosen ?? ""
@@ -250,8 +251,13 @@ struct GeneralSettingsView: View {
                     Toggle(isOn: $launchAtLogin) {
                         Text("Launch at login", bundle: .module)
                     }
+                    .task {
+                        guard !loadedLaunchAtLogin else { return }
+                        loadedLaunchAtLogin = true
+                        launchAtLogin = LoginItem.isEnabled
+                    }
                     .onChange(of: launchAtLogin) { _, enabled in
-                        guard enabled != LoginItem.isEnabled else { return }
+                        guard loadedLaunchAtLogin, enabled != LoginItem.isEnabled else { return }
                         do {
                             try LoginItem.setEnabled(enabled)
                             loginItemError = nil

@@ -24,6 +24,10 @@ final class StyleCapsule: NSView {
     var onBackdropPresets: ((NSView) -> Void)?
     /// A shape was chosen for the crop frame.
     var onCropRatio: ((CropRatio) -> Void)?
+    /// Toggles sampling a color directly from the canvas picture (shortcut I).
+    var onPickCanvasColor: (() -> Void)?
+    /// Whether the canvas color eyedropper is currently active.
+    var isPickingCanvasColor = false
     /// The colors a person has kept; the chips beside the inks, and the one that keeps another.
     var savedColors = SavedColors.shared
 
@@ -207,7 +211,15 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            sections.append(inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip())
+            var colorChips = inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
+            if onPickCanvasColor != nil {
+                let label = String(localized: "Pick Color from Canvas (I)", bundle: .module)
+                let eyedropper = symbolChip("eyedropper", name: label, selected: isPickingCanvasColor) { [weak self] in
+                    self?.onPickCanvasColor?()
+                }
+                colorChips.append(eyedropper)
+            }
+            sections.append(colorChips)
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }

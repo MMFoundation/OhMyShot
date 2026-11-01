@@ -33,6 +33,8 @@ struct OverlayKeyTests {
             nudge = pixels
         }
         func overlayViewDidRequestSizing(_ view: OverlayView) { heard.append("size") }
+        func overlayViewDidRequestLastArea(_ view: OverlayView) { heard.append("lastArea") }
+        func overlayViewDidResetDrag(_ view: OverlayView) { heard.append("resetDrag") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
         func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
@@ -214,5 +216,40 @@ struct OverlayKeyTests {
         ))
         view.mouseUp(with: clickUp)
         #expect(recorder.heard == ["windows [20, 10]"])
+    }
+
+    @Test func recallLastAreaAndMidDragReset() throws {
+        // L in area mode for screenshot/annotate requests recalling the last captured area.
+        #expect(try press(37, characters: "l", in: .screenshot).heard == ["lastArea"])
+        #expect(try press(37, characters: "l", in: .annotate).heard == ["lastArea"])
+
+        // During a selection drag, Backspace or right-click resets the drag instead of cancelling the overlay.
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot)
+        var selection = SelectionModel(bounds: Self.display.frame, pixelsPerPoint: 2)
+        selection.begin(at: CGPoint(x: 100, y: 200))
+        selection.drag(to: CGPoint(x: 200, y: 100))
+        view.show(selection: selection, showsReading: true, isDragging: true)
+
+        let backspace = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\u{8}", charactersIgnoringModifiers: "\u{8}", isARepeat: false, keyCode: 51
+        ))
+        view.keyDown(with: backspace)
+        #expect(recorder.heard == ["resetDrag"])
+
+        let rightClick = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: CGPoint(x: 150, y: 150), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.rightMouseDown(with: rightClick)
+        #expect(recorder.heard == ["resetDrag", "resetDrag"])
+
+        // Once not dragging, right-click cancels the overlay session.
+        view.show(selection: SelectionModel(bounds: Self.display.frame, pixelsPerPoint: 2), showsReading: false, isDragging: false)
+        view.rightMouseDown(with: rightClick)
+        #expect(recorder.heard.last == "cancel")
     }
 }

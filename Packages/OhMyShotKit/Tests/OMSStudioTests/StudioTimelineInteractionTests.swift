@@ -152,4 +152,22 @@ struct StudioTimelineInteractionTests {
             at: CGPoint(x: 16 + 700, y: 120), width: width, viewport: viewport, zooms: [zoom], cuts: cuts, cameraSegments: [layout]
         ) == .layoutMove(layout.id))
     }
+
+    @Test func magneticSnappingAlignsWithinFivePointsAndRespectsCommandBypass() {
+        let viewport = StudioTimelineViewport(duration: 10)
+        let width: CGFloat = 1032 // span = 1000 -> 100 pt/s -> 5 pt = 0.05 s
+        let candidates: [Double] = [2.0, 4.5]
+
+        // Within 5 pt (2.03 s is 3 pt away from 2.0 s) -> snaps to 2.0
+        let snapped = StudioTimeline.snappedTime(2.03, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: true)
+        #expect(snapped.snapped && abs(snapped.time - 2.0) < 0.0001)
+
+        // Outside 5 pt (2.08 s is 8 pt away from 2.0 s) -> does not snap
+        let unsnapped = StudioTimeline.snappedTime(2.08, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: true)
+        #expect(!unsnapped.snapped && abs(unsnapped.time - 2.08) < 0.0001)
+
+        // Disabled (Command held) -> does not snap even within 5 pt
+        let bypassed = StudioTimeline.snappedTime(2.03, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: false)
+        #expect(!bypassed.snapped && abs(bypassed.time - 2.03) < 0.0001)
+    }
 }

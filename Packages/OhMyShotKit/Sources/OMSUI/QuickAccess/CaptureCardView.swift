@@ -47,6 +47,8 @@ final class CardStackView: NSView {
     var onHold: ((UUID, CardCountdown.Hold, Bool) -> Void)?
     /// A card was clicked: the keyboard goes to it.
     var onFocus: ((UUID) -> Void)?
+    /// The pointer actively entered or left a card: gives the non-activating panel keyboard focus while hovered.
+    var onPointerHover: ((UUID, Bool) -> Void)?
     /// A key of the table arrived while the panel has the keyboard; whether the stack's owner took it.
     var onKey: ((CardCommand) -> Bool)?
 
@@ -261,6 +263,7 @@ final class CardStackView: NSView {
         card.cardCount = { [weak self] in self?.cardCount() ?? 1 }
         card.onHold = { [weak self, weak card] hold, on in card.map { self?.onHold?($0.item.id, hold, on) } }
         card.onFocus = { [weak self, weak card] in card.map { self?.onFocus?($0.item.id) } }
+        card.onPointerHover = { [weak self, weak card] hovering in card.map { self?.onPointerHover?($0.item.id, hovering) } }
         card.onCopy = { [weak self, weak card] in
             guard let card else { return }
             self?.onCopy?(card.item)
@@ -327,6 +330,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     var onHold: ((CardCountdown.Hold, Bool) -> Void)?
     /// The card was clicked: the keyboard goes to it.
     var onFocus: (() -> Void)?
+    /// The pointer actively crossed into or out of the card (`mouseEntered`/`mouseExited`).
+    var onPointerHover: ((Bool) -> Void)?
     /// Undo on a card waiting to go to the Trash.
     var onUndoTrash: (() -> Void)?
 
@@ -843,10 +848,12 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
 
     override func mouseEntered(with event: NSEvent) {
         setHovering(true)
+        if !isTrashing { onPointerHover?(true) }
     }
 
     override func mouseExited(with event: NSEvent) {
         setHovering(false)
+        onPointerHover?(false)
     }
 
     /// The shade and the buttons fade in over a moment, or simply appear with Reduce Motion on.
