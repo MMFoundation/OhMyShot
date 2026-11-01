@@ -20,6 +20,9 @@ final class CaptureCoordinator {
     /// Receives every finished capture, already in the history; the composition root decides whether
     /// it gets a Quick Access card.
     var onCaptured: ((QuickAccessItem) -> Void)?
+    /// Every screenshot kept in the history, with a card or without one (pinned, opened in the editor, or with
+    /// Quick Access off).
+    var onKept: ((HistoryItem) -> Void)?
     /// A capture was kept and is to be uploaded: Settings says so, or its follow-up's action does. The default
     /// destination gets it. Not called, after Settings, for a pin or a capture opened in the editor, which are kept
     /// without a card.
@@ -738,6 +741,7 @@ final class CaptureCoordinator {
             case .copy, .save, .upload, nil: break
             }
             if carded { onCaptured?(item) }
+            onKept?(entry)
             followUp.finish(entry)
             return entry
         } catch {

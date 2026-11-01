@@ -216,6 +216,9 @@ final class CompositionRoot {
     private var automation: AutomationController?
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindow: OnboardingWindowController?
+    /// The invitation to MMFoundation's Discord: counted as captures are kept, shown once, at a later launch.
+    private let communityInvite = CommunityInvite()
+    private var communityInviteWindow: CommunityInviteWindowController?
     private var historyWindow: HistoryWindowController?
     private var observations: [Task<Void, Never>] = []
     private var pictureSweep: Task<Void, Never>?
@@ -432,6 +435,7 @@ final class CompositionRoot {
                 },
             ],
             appEntries: [
+                .init(title: String(localized: "Join Discord")) { NSWorkspace.shared.open(CommunityInvite.discord) },
                 .init(
                     title: String(localized: "Check for Updates…"),
                     isEnabled: { [weak self] in self?.updates?.status.canCheck ?? false },
@@ -514,6 +518,9 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
+        // Card or not, a screenshot or a recording kept counts toward the invitation to the Discord.
+        captures.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
+        recordings.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
         recordings.copiedToClipboard = { [weak self] id in self?.recordingCopied(id) }
         // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
         captures.files.recordingCopied = { [weak self] id in self?.recordingCopied(id) }
@@ -625,6 +632,7 @@ final class CompositionRoot {
         }
 
         logStartup()
+        communityInvite.launched()
         // What a crash or a forced quit left of a recording is finished and kept.
         recordings.recoverLeftovers()
         permissions.refresh([.screenRecording])
@@ -645,6 +653,8 @@ final class CompositionRoot {
         } else {
             showOnboarding()
         }
+        // On the next turn, once what launched the app (a URL, a file to annotate) has begun.
+        Task { @MainActor [weak self] in self?.offerCommunityInvite() }
     }
 
     /// Keeps edits still open in the editor before the app quits.
@@ -781,6 +791,36 @@ final class CompositionRoot {
         }
         onboardingWindow = controller
         controller.show()
+    }
+
+    /// At launch, the invitation to MMFoundation's Discord, once, when `CommunityInvite` says it may appear. Never as a
+    /// capture is kept, though that is when it becomes due: the capture is on the clipboard on its way somewhere, and a
+    /// window coming forward would take the keys it is pasted with.
+    private func offerCommunityInvite() {
+        guard communityInvite.mayAppear(busy: isBusyForCommunityInvite) else { return }
+        communityInvite.shown()
+        Log.app.notice("Showing the invitation to the Discord")
+        let controller = CommunityInviteWindowController()
+        controller.onClose = { [weak self, weak controller] in
+            // Released on the next turn so the window is not deallocated inside its own delegate call.
+            Task { @MainActor in
+                if self?.communityInviteWindow === controller { self?.communityInviteWindow = nil }
+                MemoryRelief.returnFreedPages()
+            }
+        }
+        communityInviteWindow = controller
+        controller.show()
+    }
+
+    /// Whatever the invitation must not come in front of: a capture's overlay or countdown, a recording, a scrolling
+    /// capture, an editor (a recording's or Studio's too), onboarding, a window asking for an answer, or a window of the
+    /// app's in use.
+    private var isBusyForCommunityInvite: Bool {
+        overlay.isActive || captures.isSelfTimerRunning || recordings.isRecording || recordings.isCountingDown
+            || scrolling.isCapturing || annotations.isEditing || !recordings.openRecordingIDs.isEmpty
+            || onboardingWindow != nil || communityInviteWindow != nil
+            || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
+            || NSApp.keyWindow != nil
     }
 
     // MARK: - Commands
