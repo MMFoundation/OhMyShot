@@ -2035,17 +2035,27 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let ink: NSColor
         let fill = NSColor(cgColor: item.style.color.cgColor) ?? .systemRed
         switch block.look {
-        case .plain, .outlined:
+        case .plain:
             ink = fill
+            view.outlineColor = nil
+            view.drawsBackground = false
+            view.layer?.backgroundColor = nil
+        case .outlined:
+            ink = fill
+            view.outlineColor = item.style.color.prefersDarkOutline ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
+            view.outlineFontSize = block.fontSize * scale * zoom
+            view.outlineWrapWidth = block.width.map { $0 * zoom }
             view.drawsBackground = false
             view.layer?.backgroundColor = nil
         case .label:
             ink = item.style.color.prefersDarkInk ? NSColor(white: 0, alpha: 0.88) : .white
+            view.outlineColor = nil
             view.drawsBackground = false
             view.wantsLayer = true
             view.layer?.backgroundColor = fill.cgColor
             view.layer?.cornerRadius = layout.cornerRadius * zoom
         }
+        view.needsDisplay = true
         // The baseline sits where the renderer puts it: TextKit centers the font's box in a line taller
         // than the font, as the layout does.
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink, .paragraphStyle: paragraph]
@@ -2092,6 +2102,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         document.items[index].shape = .text(block)
         session.updateLive(document)
         positionTextView()
+        editing.view.needsDisplay = true
     }
 
     public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -2233,6 +2244,10 @@ final class FlippedHostView: NSView {
 
 /// The field a text mark is edited in: plain text, no automatic substitutions, transparent.
 final class MarkTextView: NSTextView {
+    var outlineColor: CGColor?
+    var outlineFontSize: CGFloat = 20
+    var outlineWrapWidth: CGFloat?
+
     override init(frame frameRect: NSRect) {
         let storage = NSTextStorage()
         let layoutManager = NSLayoutManager()
@@ -2259,5 +2274,20 @@ final class MarkTextView: NSTextView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if let outlineColor, !string.isEmpty, let context = NSGraphicsContext.current?.cgContext {
+            let block = TextBlock(origin: .zero, string: string, fontSize: outlineFontSize, look: .outlined, width: outlineWrapWidth)
+            let layout = TextLayout(block, scale: 1)
+            context.saveGState()
+            context.setStrokeColor(outlineColor)
+            context.setLineWidth(layout.outlineWidth)
+            context.setLineJoin(.round)
+            context.addPath(layout.glyphPath(at: .zero))
+            context.strokePath()
+            context.restoreGState()
+        }
+        super.draw(dirtyRect)
     }
 }
