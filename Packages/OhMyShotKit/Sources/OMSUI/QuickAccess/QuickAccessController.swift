@@ -575,7 +575,11 @@ public final class QuickAccessController {
     private func scheduleCloser() {
         closer?.cancel()
         closer = nil
-        guard let soonest = schedule.timeUntilNextClose(at: Self.now) else { return }
+        let now = Self.now
+        for item in liveItems {
+            stack?.setCountdown(schedule.countdownState(for: item.id, at: now), for: item.id)
+        }
+        guard let soonest = schedule.timeUntilNextClose(at: now) else { return }
         closer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(soonest + 0.02))
             guard !Task.isCancelled else { return }

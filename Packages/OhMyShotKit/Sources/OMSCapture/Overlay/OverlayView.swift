@@ -21,6 +21,7 @@ protocol OverlayViewDelegate: AnyObject {
     /// The whole display, chosen with the All-In-One bar.
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
+    func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
     func overlayViewDidCancel(_ view: OverlayView)
     /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
@@ -37,6 +38,14 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance)
     /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
+}
+
+extension OverlayViewDelegate {
+    func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
+        if let first = targets.first {
+            overlayView(view, didSelectWindow: first, modifiers: modifiers)
+        }
+    }
 }
 
 /// The capture overlay on one display: a lightly dimmed screen, the selection with its size, a small
@@ -58,7 +67,8 @@ final class OverlayView: NSView {
 
     private(set) var mode: Mode = .area
     private var windows: [WindowTarget] = []
-    private var hoveredWindow: WindowTarget?
+    private(set) var hoveredWindow: WindowTarget?
+    private(set) var selectedWindows: [WindowTarget] = []
     /// The controller's selection, of which this display draws its part.
     private var selection: SelectionModel
     /// Whether this display shows the selection's size: only one does.
@@ -149,6 +159,7 @@ final class OverlayView: NSView {
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
+        selectedWindows = []
         selection.reset()
         hasStartedAreaSelection = false
         showsReading = false
@@ -226,6 +237,7 @@ final class OverlayView: NSView {
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
+        selectedWindows = []
         selection.reset()
         toolbar.select(mode == .area ? .area : .window)
         withoutAnimation {
@@ -467,9 +479,42 @@ final class OverlayView: NSView {
         }
     }
 
+    /// Cycles through overlapping windows under the pointer, or all on-screen windows when fewer than two lie under it.
+    func cycleWindow(backward: Bool = false) {
+        guard mode == .window, !windows.isEmpty else { return }
+        hoveredWindow = WindowCatalog.cycledTarget(
+            from: hoveredWindow, at: pointer.map(global), in: windows, backward: backward
+        )
+        withoutAnimation { updateSelectionLayers() }
+        announceValue()
+    }
+
     override func mouseUp(with event: NSEvent) {
         guard !isAnnotating else { return }
         if mode == .window {
+            let allowsMultiple = purpose == .screenshot || purpose == .annotate || purpose == .text
+            if allowsMultiple, event.modifierFlags.contains(.shift), let hoveredWindow {
+                if let index = selectedWindows.firstIndex(of: hoveredWindow) {
+                    selectedWindows.remove(at: index)
+                } else {
+                    selectedWindows.append(hoveredWindow)
+                }
+                withoutAnimation { updateSelectionLayers() }
+                announceValue()
+                return
+            }
+            if !selectedWindows.isEmpty {
+                var targets = selectedWindows
+                if let hoveredWindow, !targets.contains(hoveredWindow) {
+                    targets.append(hoveredWindow)
+                }
+                if targets.count == 1 {
+                    delegate?.overlayView(self, didSelectWindow: targets[0], modifiers: event.modifierFlags)
+                } else {
+                    delegate?.overlayView(self, didSelectWindows: targets, modifiers: event.modifierFlags)
+                }
+                return
+            }
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
             return
         }
@@ -537,6 +582,17 @@ final class OverlayView: NSView {
             }
             delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
         case 36, 76: // Return, and Enter on the keypad
+            if mode == .window {
+                var targets = selectedWindows
+                if targets.isEmpty, let hoveredWindow { targets = [hoveredWindow] }
+                if targets.count == 1 {
+                    delegate?.overlayView(self, didSelectWindow: targets[0], modifiers: event.modifierFlags.subtracting(.shift))
+                    return
+                } else if targets.count > 1 {
+                    delegate?.overlayView(self, didSelectWindows: targets, modifiers: event.modifierFlags.subtracting(.shift))
+                    return
+                }
+            }
             switch purpose {
             case .color:
                 if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags, keyboard: true) }
@@ -547,11 +603,16 @@ final class OverlayView: NSView {
             }
         case 48 where purpose == .measure:
             if let measure { delegate?.overlayView(self, didChangeUnit: measure.unit.toggled) }
+        case 48 where mode == .window && !windows.isEmpty:
+            cycleWindow(backward: event.modifierFlags.contains(.shift))
         case 48 where mode == .area && !isAllInOne && (purpose == .screenshot || purpose == .annotate):
             // Tab frames the area for a size typed and a shape kept; the drag itself needs none of this.
             delegate?.overlayViewDidRequestSizing(self)
         default:
-            if character == "u", purpose == .measure, let measure {
+            if mode == .window, !windows.isEmpty, character == "[" || character == "]",
+               event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+                cycleWindow(backward: character == "[")
+            } else if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
             } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = Self.allInOneKeys[character ?? ""] {
                 toolbarChose(choice)
@@ -761,7 +822,12 @@ final class OverlayView: NSView {
     private func updateSelectionLayers() {
         let roomPath = CGMutablePath()
         roomPath.addRect(bounds)
-        let target = mode == .window ? hoveredWindow?.frame.intersection(display.frame) : selection.rect
+        var activeWindows = selectedWindows
+        if let hoveredWindow, !activeWindows.contains(hoveredWindow) {
+            activeWindows.append(hoveredWindow)
+        }
+        let windowBounds = activeWindows.dropFirst().reduce(activeWindows.first?.frame) { $0?.union($1.frame) }
+        let target = mode == .window ? windowBounds?.intersection(display.frame) : selection.rect
         guard let globalRect = target, !globalRect.isNull, !globalRect.isEmpty else {
             room.path = roomPath
             outline.path = nil
@@ -782,11 +848,17 @@ final class OverlayView: NSView {
         snapEdges.path = mode == .area ? Self.path(of: selection.snappedEdges, in: drawn) : nil
 
         let text: String
-        if mode == .window, let hoveredWindow {
+        if mode == .window, let windowBounds {
             let scale = display.pixelsPerPoint
-            let width = Int((hoveredWindow.frame.width * scale).rounded())
-            let height = Int((hoveredWindow.frame.height * scale).rounded())
-            text = hoveredWindow.ownerName.isEmpty ? "\(width) × \(height)" : "\(hoveredWindow.ownerName)  ·  \(width) × \(height)"
+            let width = Int((windowBounds.width * scale).rounded())
+            let height = Int((windowBounds.height * scale).rounded())
+            if activeWindows.count > 1 {
+                text = String(localized: "\(activeWindows.count) windows  ·  \(width) × \(height)", bundle: .module)
+            } else if let win = activeWindows.first {
+                text = win.ownerName.isEmpty ? "\(width) × \(height)" : "\(win.ownerName)  ·  \(width) × \(height)"
+            } else {
+                text = "\(width) × \(height)"
+            }
         } else {
             let size = selection.pixelSize
             text = "\(size.width) × \(size.height)"

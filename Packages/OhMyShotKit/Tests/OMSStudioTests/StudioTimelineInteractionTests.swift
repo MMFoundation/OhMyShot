@@ -135,4 +135,21 @@ struct StudioTimelineInteractionTests {
         #expect(loader.images[firstKey] == nil)
         #expect(loader.images[secondKey] != nil)
     }
+
+    @Test func timelineLaneHitDistinguishesRulerZoomHandlesClipRangeAndCuts() {
+        let viewport = StudioTimelineViewport(duration: 10)
+        let zoom = StudioProject.Zoom(start: 2, end: 4, scale: 2, isAutomatic: false)
+        let layout = StudioProject.CameraSegment(start: 6, end: 8, layout: .cameraOnly)
+        let cuts: [ClosedRange<Double>] = [4.5...5.5]
+        let width: CGFloat = 1032 // span = 1000 -> 100 pt per second, inset = 16
+
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 200, y: 10), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .ruler)
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 200, y: 40), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .zoomResize(zoom.id, start: true))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 300, y: 40), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .zoomMove(zoom.id))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 500, y: 80), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .cut(4.5))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 100, y: 80), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .clipRange)
+        #expect(StudioTimeline.laneHit(
+            at: CGPoint(x: 16 + 700, y: 120), width: width, viewport: viewport, zooms: [zoom], cuts: cuts, cameraSegments: [layout]
+        ) == .layoutMove(layout.id))
+    }
 }

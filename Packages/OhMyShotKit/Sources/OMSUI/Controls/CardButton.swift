@@ -59,6 +59,15 @@ final class CardButton: NSControl {
         }
     }
 
+    /// A pill's height: slightly shorter on a compact short card so the picture around it stays reachable.
+    var pillHeight: CGFloat = 30 {
+        didSet {
+            guard pillHeight != oldValue else { return }
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
     private let style: Style
     private var pressed = false {
         didSet { needsDisplay = true }
@@ -101,7 +110,7 @@ final class CardButton: NSControl {
     override var intrinsicContentSize: NSSize {
         switch style {
         case .pill:
-            NSSize(width: pillWidth, height: 30)
+            NSSize(width: pillWidth, height: pillHeight)
         case .round, .chipIcon:
             NSSize(width: 24, height: 24)
         case .barIcon:

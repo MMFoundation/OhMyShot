@@ -50,6 +50,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case moving(start: CGPoint, originals: [Annotation])
         case reshaping(handle: Handle, original: Annotation)
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
+        case panning(start: CGPoint, originalFocus: CGPoint)
+        case marquee(start: CGPoint, initialSelection: [Annotation.ID], additive: Bool)
     }
 
     private final class TextEditing {
@@ -105,6 +107,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var editing: TextEditing?
     /// The crop being chosen while the crop tool is in hand, in capture pixels.
     private var cropRect: CGRect?
+    /// Whether Space is held down: pans a zoomed-in canvas, or in place moves the capture selection.
+    public private(set) var isSpaceHeld = false
+
+    /// The marquee selection rectangle currently drawn on the canvas, in view points.
+    var marqueeRect: CGRect? { selectionLayer.marqueeRect }
+
+    /// The document point centered in the viewport while zoomed in.
+    var viewportFocus: CGPoint? { focus }
 
     public init(session: AnnotationSession) {
         self.session = session
@@ -910,9 +920,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             endEditing()
         }
         window?.makeFirstResponder(self)
+        let location = convert(event.locationInWindow, from: nil)
+        if isSpaceHeld, !isInPlace {
+            let currentFocus = focus ?? documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+            drag = .panning(start: location, originalFocus: currentFocus)
+            NSCursor.closedHand.set()
+            return
+        }
         // The background's controls set it; the picture itself takes no clicks meanwhile.
         if session.tool == .background { return }
-        let location = convert(event.locationInWindow, from: nil)
         let point = documentPoint(location)
         let shift = event.modifierFlags.contains(.shift)
         let scale = session.document.scale
@@ -965,8 +981,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
-        session.select([])
         let tool = session.tool
+        if tool == .select {
+            if isInPlace, event.clickCount == 2 {
+                onCopy?()
+                return
+            }
+            if !shift { session.select([]) }
+            drag = .marquee(start: point, initialSelection: shift ? session.selection : [], additive: shift)
+            selectionLayer.marqueeRect = nil
+            return
+        }
+        session.select([])
         let settings = session.settings(for: tool)
         switch tool {
         case .select, .crop, .background:
@@ -1065,6 +1091,34 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             rect = rect.standardized
             cropRect = rect
             cropLayer.frameRect = viewRect(rect)
+        case .panning(let start, let originalFocus):
+            guard userZoom != nil else { return }
+            let dx = location.x - start.x
+            let dy = location.y - start.y
+            focus = CGPoint(x: originalFocus.x - dx / zoom, y: originalFocus.y - dy / zoom)
+            updateViewport()
+            focus = documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+        case .marquee(let start, let initialSelection, let additive):
+            let docRect = CGRect(
+                x: min(start.x, point.x),
+                y: min(start.y, point.y),
+                width: abs(point.x - start.x),
+                height: abs(point.y - start.y)
+            )
+            selectionLayer.marqueeRect = viewRect(docRect)
+            let scale = session.document.scale
+            let enclosed = session.document.items.compactMap { item -> Annotation.ID? in
+                item.bounds(scale: scale).intersects(docRect) ? item.id : nil
+            }
+            if additive {
+                var combined = initialSelection
+                for id in enclosed where !combined.contains(id) {
+                    combined.append(id)
+                }
+                session.select(combined)
+            } else {
+                session.select(enclosed)
+            }
         }
     }
 
@@ -1113,6 +1167,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 self.cropRect = session.document.canvas
                 cropLayer.frameRect = viewRect(session.document.canvas)
             }
+        case .panning:
+            break
+        case .marquee:
+            selectionLayer.marqueeRect = nil
         }
     }
 
@@ -1404,6 +1462,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             override.set()
             return
         }
+        if isSpaceHeld, !isInPlace {
+            NSCursor.openHand.set()
+            return
+        }
         let cursor: NSCursor
         if session.tool == .background {
             cursor = .arrow
@@ -1456,10 +1518,31 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    public override func keyUp(with event: NSEvent) {
+        if event.keyCode == 49 {
+            isSpaceHeld = false
+            if let window {
+                let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                if bounds.contains(location) { updateCursor(at: location) }
+            }
+            if isInPlace { super.keyUp(with: event) }
+            return
+        }
+        super.keyUp(with: event)
+    }
+
     private func handleKey(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let step: CGFloat = flags.contains(.shift) ? 10 : 1
         switch event.keyCode {
+        case 49 where editing == nil:
+            isSpaceHeld = true
+            if let window {
+                let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                if bounds.contains(location) { updateCursor(at: location) }
+            }
+            if isInPlace { return false }
+            return true
         case 51, 117:
             session.deleteSelection()
             return true
@@ -1476,7 +1559,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.nudgeSelection(by: CGSize(width: 0, height: -step))
             return true
         case 53:
-            if session.isInLiveChange {
+            if case .marquee(_, let initialSelection, _) = drag {
+                drag = nil
+                selectionLayer.marqueeRect = nil
+                session.select(initialSelection)
+            } else if session.isInLiveChange {
                 drag = nil
                 session.cancelLiveChange()
             } else if session.tool == .crop {
@@ -1494,6 +1581,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case 36, 76:
             if session.tool == .crop {
                 commitCrop()
+                session.leavePictureMode()
                 return true
             }
             if session.tool == .background {

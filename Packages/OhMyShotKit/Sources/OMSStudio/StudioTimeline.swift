@@ -44,7 +44,18 @@ struct StudioTimeline: View {
         case resizeLayout(UUID, start: Bool)
     }
 
+    enum LaneHit: Equatable, Sendable {
+        case ruler
+        case zoomResize(UUID, start: Bool)
+        case zoomMove(UUID)
+        case layoutResize(UUID, start: Bool)
+        case layoutMove(UUID)
+        case cut(Double)
+        case clipRange
+    }
+
     @State private var drag: Drag?
+    @State private var hoverX: CGFloat?
     @State private var viewport: StudioTimelineViewport
     @State private var filmstrip = StudioTimelineFilmstrip()
     @FocusState private var timelineFocused: Bool
@@ -66,11 +77,21 @@ struct StudioTimeline: View {
                     zooms(width: width)
                     clip(width: width, request: request)
                     if document.canChangeLayoutAlongTheTimeline { layouts(width: width) }
+                    ghostPlayhead(width: width, height: geometry.size.height)
                     playhead(width: width, height: geometry.size.height)
                 }
                 .frame(width: width, height: geometry.size.height, alignment: .topLeading)
                 .clipped()
                 .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        let clamped = min(max(location.x, Self.inset), max(Self.inset, width - Self.inset))
+                        hoverX = location.x >= Self.inset && location.x <= width - Self.inset ? clamped : nil
+                    case .ended:
+                        hoverX = nil
+                    }
+                }
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
@@ -330,6 +351,7 @@ struct StudioTimeline: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(lineColor, lineWidth: lineWidth))
                 .frame(width: clipWidth, height: Self.clipHeight)
+                .pointerStyle(.horizontalText)
                 .offset(x: left, y: Self.clipTop)
             ForEach(document.project.cuts.filter { viewport.contains($0.lowerBound, $0.upperBound) }, id: \.lowerBound) { cut in
                 let chosen = document.selectedCut == cut.lowerBound
@@ -354,6 +376,7 @@ struct StudioTimeline: View {
                             .strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth)
                     )
                     .frame(width: max(cutRight - cutLeft, 6), height: Self.clipHeight)
+                    .pointerStyle(.link)
                     .contextMenu {
                         Button { document.restoreCut(at: cut.lowerBound) } label: { Text("Restore Cut", bundle: .module) }
                     }
@@ -400,6 +423,50 @@ struct StudioTimeline: View {
         .frame(width: width, height: Self.clipHeight, alignment: .leading)
         .clipped()
         .accessibilityHidden(true)
+    }
+
+    /// A subtle hover indicator showing where a click or I/O mark on the timeline will land.
+    @ViewBuilder
+    private func ghostPlayhead(width: CGFloat, height: CGFloat) -> some View {
+        if let hoverX, drag == nil {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.28))
+                .frame(width: 1, height: height)
+                .offset(x: hoverX - 0.5)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Classifies what a point on the timeline hits, for lane cursor and interaction testing.
+    static func laneHit(
+        at point: CGPoint, width: CGFloat, viewport: StudioTimelineViewport,
+        zooms: [StudioProject.Zoom], cuts: [ClosedRange<Double>],
+        cameraSegments: [StudioProject.CameraSegment] = []
+    ) -> LaneHit {
+        let span = max(width - Self.inset * 2, 1)
+        func x(_ t: Double) -> CGFloat { Self.inset + viewport.position(of: t, width: span) }
+        let at = viewport.time(at: point.x - Self.inset, width: span)
+        if point.y < Self.rulerHeight { return .ruler }
+        if point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight,
+           let zoom = zooms.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
+            if abs(point.x - x(zoom.start)) <= Self.handleReach { return .zoomResize(zoom.id, start: true) }
+            if abs(point.x - x(zoom.end)) <= Self.handleReach { return .zoomResize(zoom.id, start: false) }
+            return .zoomMove(zoom.id)
+        }
+        if !cameraSegments.isEmpty, point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight,
+           let seg = cameraSegments.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
+            if abs(point.x - x(seg.start)) <= Self.handleReach { return .layoutResize(seg.id, start: true) }
+            if abs(point.x - x(seg.end)) <= Self.handleReach { return .layoutResize(seg.id, start: false) }
+            return .layoutMove(seg.id)
+        }
+        if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight {
+            if let cut = cuts.first(where: { $0.contains(at) }) {
+                return .cut(cut.lowerBound)
+            }
+            return .clipRange
+        }
+        return .ruler
     }
 
     /// The playhead; for VoiceOver, where the movie is, moved half a second at a time.

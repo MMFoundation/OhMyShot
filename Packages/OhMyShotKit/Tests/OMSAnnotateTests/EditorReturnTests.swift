@@ -42,13 +42,87 @@ struct EditorReturnTests {
         #expect(returned == 2)
     }
 
-    /// Crop's Return applies the frame, as it always has: the window stays.
+    /// Crop's Return applies the frame and leaves Crop mode, as Done does: the window stays.
     @Test func cropKeepsItsReturn() throws {
-        let (canvas, _, window) = try makeCanvas(tool: .crop)
+        let (canvas, session, window) = try makeCanvas(tool: .crop)
         defer { window.close() }
         var returned = 0
         canvas.onReturn = { returned += 1 }
         canvas.keyDown(with: try returnKey())
         #expect(returned == 0)
+        #expect(session.tool != .crop && !session.tool.isPictureMode)
+    }
+
+    @Test func spaceDragPansAZoomedCanvasWithoutDrawingMarks() throws {
+        let (canvas, session, window) = try makeCanvas(tool: .arrow)
+        defer { window.close() }
+        canvas.zoomIn()
+        let initialFocus = try #require(canvas.viewportFocus)
+        let spaceDown = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49
+        ))
+        canvas.keyDown(with: spaceDown)
+        #expect(canvas.isSpaceHeld)
+        let down = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: 200, y: 100), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let dragged = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 150, y: 80), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let up = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 150, y: 80), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        canvas.mouseDown(with: down)
+        canvas.mouseDragged(with: dragged)
+        canvas.mouseUp(with: up)
+        #expect(session.document.items.isEmpty)
+        let updatedFocus = try #require(canvas.viewportFocus)
+        #expect(updatedFocus.x > initialFocus.x)
+        let spaceUp = try #require(NSEvent.keyEvent(
+            with: .keyUp, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49
+        ))
+        canvas.keyUp(with: spaceUp)
+        #expect(!canvas.isSpaceHeld)
+    }
+
+    @Test func marqueeSelectionSelectsEnclosedMarksAndSupportsShiftAdditiveSelection() throws {
+        let (canvas, session, window) = try makeCanvas(tool: .select)
+        defer { window.close() }
+        let first = Annotation(shape: .rectangle(Box(rect: CGRect(x: 20, y: 20, width: 30, height: 30))), style: Style())
+        let second = Annotation(shape: .rectangle(Box(rect: CGRect(x: 200, y: 100, width: 40, height: 40))), style: Style())
+        var document = session.document
+        document.items = [first, second]
+        session.commit(document, actionName: "Add")
+
+        func drag(from start: CGPoint, to end: CGPoint, modifiers: NSEvent.ModifierFlags = []) throws {
+            let down = try #require(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: canvas.convert(start, to: nil), modifierFlags: modifiers, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+            let move = try #require(NSEvent.mouseEvent(
+                with: .leftMouseDragged, location: canvas.convert(end, to: nil), modifierFlags: modifiers, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+            let up = try #require(NSEvent.mouseEvent(
+                with: .leftMouseUp, location: canvas.convert(end, to: nil), modifierFlags: modifiers, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+            canvas.mouseDown(with: down)
+            canvas.mouseDragged(with: move)
+            #expect(canvas.marqueeRect != nil)
+            canvas.mouseUp(with: up)
+            #expect(canvas.marqueeRect == nil)
+        }
+
+        try drag(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 60, y: 60))
+        #expect(session.selection == [first.id])
+
+        try drag(from: CGPoint(x: 190, y: 90), to: CGPoint(x: 250, y: 150), modifiers: .shift)
+        #expect(session.selection == [first.id, second.id])
     }
 }

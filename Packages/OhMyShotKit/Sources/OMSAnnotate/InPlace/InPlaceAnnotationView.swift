@@ -264,9 +264,13 @@ public final class InPlaceAnnotationView: NSView {
         placeAccessories()
     }
 
-    /// The chip of the tool in hand puts it down again: the selection itself is adjusted then.
+    /// The chip of the tool in hand puts it down again: the selection itself or its marks are adjusted then.
     private func choose(_ tool: AnnotationTool) {
-        session.tool = session.tool == tool ? .select : tool
+        if tool == .select {
+            session.tool = .select
+        } else {
+            session.tool = session.tool == tool ? .select : tool
+        }
         window?.makeFirstResponder(canvas)
     }
 
@@ -325,8 +329,9 @@ public final class InPlaceAnnotationView: NSView {
 
     // MARK: Input
 
-    /// Presses on the selection's frame, and with no tool in hand on its empty inside, adjust the
-    /// selection here; everything else goes to the canvas, the toolbar, and the capsule.
+    /// Presses on the selection's frame, with Space held inside it, or with no tool in hand on its empty
+    /// inside before any marks are drawn, adjust the selection here; everything else goes to the canvas,
+    /// the toolbar, and the capsule.
     public override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         if hit === toolbar || hit.isDescendant(of: toolbar) || hit === capsule || hit.isDescendant(of: capsule) { return hit }
@@ -334,7 +339,8 @@ public final class InPlaceAnnotationView: NSView {
         if canvas.isEditingText, hit !== self, hit.isDescendant(of: canvas) { return hit }
         if handle(at: local, toolInHand: session.tool != .select) != nil { return self }
         if hit === canvas || hit.isDescendant(of: canvas) {
-            if session.tool == .select, canvas.mark(at: convert(local, to: canvas)) == nil { return self }
+            if canvas.isSpaceHeld { return self }
+            if session.tool == .select, session.document.items.isEmpty, canvas.mark(at: convert(local, to: canvas)) == nil { return self }
             return hit
         }
         return self
@@ -380,8 +386,14 @@ public final class InPlaceAnnotationView: NSView {
             case .start, .end, .bend: .crosshair
             }
         }
+        if canvas.isSpaceHeld, selectionRect.contains(point) {
+            return .openHand
+        }
         if session.tool == .select, selectionRect.contains(point) {
-            return overCanvas && canvas.mark(at: convert(point, to: canvas)) != nil ? nil : .openHand
+            if session.document.items.isEmpty {
+                return overCanvas && canvas.mark(at: convert(point, to: canvas)) != nil ? nil : .openHand
+            }
+            return nil
         }
         return overCanvas ? nil : (session.document.items.isEmpty ? .crosshair : .arrow)
     }

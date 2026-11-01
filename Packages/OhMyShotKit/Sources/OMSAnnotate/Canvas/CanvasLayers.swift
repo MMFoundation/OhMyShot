@@ -224,6 +224,10 @@ nonisolated final class SelectionLayer: StillLayer {
     var dropFrame: CGRect? {
         didSet { if dropFrame != oldValue { setNeedsDisplay() } }
     }
+    /// The marquee rectangle being dragged in Select mode, in view points.
+    var marqueeRect: CGRect? {
+        didSet { if marqueeRect != oldValue { setNeedsDisplay() } }
+    }
 
     static let handleSize: CGFloat = 9
 
@@ -252,6 +256,16 @@ nonisolated final class SelectionLayer: StillLayer {
             context.setStrokeColor(accent)
             context.setLineWidth(3)
             context.stroke(dropFrame.insetBy(dx: -2.5, dy: -2.5))
+        }
+        if let marquee = marqueeRect, !marquee.isNull, !marquee.isEmpty {
+            let rect = marquee.standardized
+            if let fill = accent.copy(alpha: increasedContrast ? 0.18 : 0.10) {
+                context.setFillColor(fill)
+                context.fill(rect)
+            }
+            context.setStrokeColor(accent)
+            context.setLineWidth(line)
+            context.stroke(rect.insetBy(dx: line / 2, dy: line / 2))
         }
         for outline in outlines {
             if let box = outline.box {

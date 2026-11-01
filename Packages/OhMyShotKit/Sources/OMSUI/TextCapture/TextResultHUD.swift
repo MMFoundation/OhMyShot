@@ -64,6 +64,8 @@ public final class TextResultHUD {
     public var onToggleJoin: (() -> Void)?
     /// Copy was pressed on a card whose text wasn't copied.
     public var onCopy: (() -> Void)?
+    /// Open in Panel was pressed to inspect the capture in the Recognized Text window.
+    public var onOpenInPanel: (() -> Void)?
 
     private var panel: TextResultPanel?
     private var card: TextResultCard?
@@ -153,6 +155,12 @@ public final class TextResultHUD {
         card.onCopy = { [weak self, weak card] in
             guard let self, let card, self.card === card else { return }
             onCopy?()
+        }
+        card.onOpenInPanel = { [weak self, weak card] in
+            guard let self, let card, self.card === card else { return }
+            let open = onOpenInPanel
+            dismiss()
+            open?()
         }
         card.onClose = { [weak self, weak card] in
             guard let self, let card, self.card === card else { return }
@@ -308,6 +316,7 @@ final class TextResultPanel: NSPanel {
 final class TextResultCard: NSView {
     var onToggleJoin: (() -> Void)?
     var onCopy: (() -> Void)?
+    var onOpenInPanel: (() -> Void)?
     var onClose: (() -> Void)?
     var onHover: ((Bool) -> Void)?
 
@@ -323,7 +332,8 @@ final class TextResultCard: NSView {
     private let detail = NSTextField(labelWithString: "")
     /// Who read the text, or why this Mac's reading was copied instead: two lines at most.
     private let note = NSTextField(wrappingLabelWithString: "")
-    private let joinButton = CardButton(style: .chip, title: "", symbolName: "arrow.right.to.line")
+    let joinButton = CardButton(style: .chip, title: "", symbolName: "arrow.right.to.line")
+    let openInPanelButton = CardButton(style: .chip, title: String(localized: "Open in Panel", bundle: .module), symbolName: "arrow.up.forward.square")
     private let closeButton = CardButton(style: .chipIcon, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private var state: TextResultHUD.State = .empty
     private var noteText: String?
@@ -367,9 +377,11 @@ final class TextResultCard: NSView {
         note.cell?.truncatesLastVisibleLine = true
         joinButton.target = self
         joinButton.action = #selector(toggleJoin)
+        openInPanelButton.target = self
+        openInPanelButton.action = #selector(openInPanel)
         closeButton.target = self
         closeButton.action = #selector(close)
-        for view in [symbol, title, count, preview, detail, note, joinButton, closeButton] as [NSView] {
+        for view in [symbol, title, count, preview, detail, note, joinButton, openInPanelButton, closeButton] as [NSView] {
             addSubview(view)
         }
         setAccessibilityElement(true)
@@ -388,6 +400,7 @@ final class TextResultCard: NSView {
     @objc private func displayOptionsChanged() {
         applyAppearance()
         joinButton.needsDisplay = true
+        openInPanelButton.needsDisplay = true
         closeButton.needsDisplay = true
     }
 
@@ -456,6 +469,7 @@ final class TextResultCard: NSView {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold).applying(.init(paletteColors: Self.symbolColors(for: state))))
         preview.isHidden = !Self.isCopied(state)
         joinButton.isHidden = joinButton.isHidden || !Self.isCopied(state)
+        openInPanelButton.isHidden = !Self.isCopied(state)
         detail.isHidden = state != .empty && state != .noFormula
         setAccessibilityLabel([title.stringValue, count.stringValue, noteText ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))
         needsLayout = true
@@ -477,7 +491,7 @@ final class TextResultCard: NSView {
         }
         if !detail.isHidden { height += 4 + 16 }
         if !note.isHidden { height += 4 + noteHeight(width: inner) }
-        if !joinButton.isHidden { height += 10 + 26 }
+        if !joinButton.isHidden || !openInPanelButton.isHidden { height += 10 + 26 }
         return ceil(height)
     }
 
@@ -518,10 +532,18 @@ final class TextResultCard: NSView {
             note.frame = CGRect(x: column - 2, y: y, width: right - column + 2, height: height)
             y += height
         }
-        if !joinButton.isHidden {
+        if !joinButton.isHidden || !openInPanelButton.isHidden {
             y += 10
-            let size = joinButton.intrinsicContentSize
-            joinButton.frame = CGRect(x: column, y: y, width: size.width, height: size.height)
+            var x = column
+            if !joinButton.isHidden {
+                let size = joinButton.intrinsicContentSize
+                joinButton.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+                x = joinButton.frame.maxX + 8
+            }
+            if !openInPanelButton.isHidden {
+                let size = openInPanelButton.intrinsicContentSize
+                openInPanelButton.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+            }
         }
     }
 
@@ -603,5 +625,6 @@ final class TextResultCard: NSView {
     @objc private func toggleJoin() {
         if case .notCopied = state { onCopy?() } else { onToggleJoin?() }
     }
+    @objc private func openInPanel() { onOpenInPanel?() }
     @objc private func close() { onClose?() }
 }

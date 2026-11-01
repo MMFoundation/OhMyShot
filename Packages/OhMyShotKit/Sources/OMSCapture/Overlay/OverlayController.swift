@@ -20,6 +20,7 @@ public final class OverlayController {
         /// display's frame had not arrived), and the area is captured now instead.
         case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, frozen: CapturedFrame?)
         case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
+        case windows([WindowTarget], modifiers: NSEvent.ModifierFlags)
         /// In-place annotation finished (`finishAnnotation`); its own handler has the result.
         case annotated
         /// A color taken off the frozen screen (the color picker, or C over a capture's magnifier), where
@@ -1218,6 +1219,25 @@ extension OverlayController: OverlayViewDelegate {
             return
         }
         end(.window(target, modifiers: modifiers))
+    }
+
+    func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
+        guard let first = targets.first else { return }
+        if targets.count == 1 {
+            overlayView(view, didSelectWindow: first, modifiers: modifiers)
+            return
+        }
+        let unionFrame = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        if isAllInOne, purpose == .screenshot, let mode = allInOneMode {
+            endAllInOne(mode, unionFrame.intersection(view.display.frame), on: view.display)
+            return
+        }
+        if purpose == .annotate {
+            let area = unionFrame.intersection(view.display.frame)
+            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: view.display.id, area: area) }
+            return
+        }
+        end(.windows(targets, modifiers: modifiers))
     }
 
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {

@@ -146,6 +146,8 @@ final class CaptureCoordinator {
                 }
             case .window(let target, let modifiers):
                 Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
+            case .windows(let targets, let modifiers):
+                Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
             case .record(let target, let display, let choices):
                 if case .area(let rect) = target { remember(rect, on: display) }
                 onRecord?(target, display, choices, app)
@@ -284,6 +286,13 @@ final class CaptureCoordinator {
                 countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
             case .window(let target, let modifiers):
                 countDown(to: .window(target, modifiers), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
+            case .windows(let targets, _):
+                if let first = targets.first {
+                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                    countDown(to: .area(union), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
+                } else {
+                    followUp.finish(nil)
+                }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
@@ -493,6 +502,8 @@ final class CaptureCoordinator {
                 // A window is captured on its own, frozen or not: with its shadow and its transparent
                 // corners, which the frozen screen does not have.
                 Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
+            case .windows(let targets, let modifiers):
+                Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
@@ -519,6 +530,29 @@ final class CaptureCoordinator {
             )
         } catch {
             Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
+            followUp.finish(nil)
+        }
+    }
+
+    private func captureWindows(
+        _ targets: [WindowTarget], copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none, modifiers: NSEvent.ModifierFlags = []
+    ) async {
+        guard let first = targets.first else { return followUp.finish(nil) }
+        if targets.count == 1 {
+            await captureWindow(first, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers)
+            return
+        }
+        let probe = LatencyProbe("capture.window")
+        do {
+            let frame = try await capturer.captureWindows(targets, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
+            probe.end()
+            let background = await windowBackground(for: frame, shiftHeld: false)
+            await deliver(
+                frame, appName: first.ownerName, windowTitle: first.title, copiesToClipboard: copiesToClipboard, background: background,
+                pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
+            )
+        } catch {
+            Log.capture.error("Multi-window capture failed: \(error.localizedDescription, privacy: .public)")
             followUp.finish(nil)
         }
     }
