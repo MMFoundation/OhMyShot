@@ -21,7 +21,9 @@ final class CompositionRoot {
     private let shareableContent = ShareableContentCache()
     lazy var capturer = ScreenCapturer(content: shareableContent)
     lazy var overlay = OverlayController(topology: displays, capturer: capturer)
-    lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history)
+    /// Saves, copies, and hands over captures in the format Settings choose.
+    lazy var files = ScreenshotFiles(settings: settings, history: history)
+    lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, files: files)
     lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
     /// Uploads to the user's own storage; idle unless one is in flight.
     lazy var uploads: UploadCoordinator = {
@@ -105,7 +107,9 @@ final class CompositionRoot {
     }()
     lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
-    lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
+    lazy var recordings = RecordingCoordinator(
+        settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions, files: files
+    )
     lazy var scrolling = ScrollingCaptureCoordinator(displays: displays, capturer: capturer, overlay: overlay, permissions: permissions, captures: captures)
     /// Hide Desktop Icons: nothing exists unless the icons are hidden.
     lazy var desktopIcons: DesktopCover = {
@@ -140,7 +144,7 @@ final class CompositionRoot {
     )
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
-        permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: captures.files, packs: readerPacks,
+        permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,
         pins: pins, displays: displays,
         showOnboarding: { [weak self] in self?.showOnboarding() },
         run: { [weak self] command, done in
@@ -250,7 +254,7 @@ final class CompositionRoot {
         recordings.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
         recordings.copiedToClipboard = { [weak self] id in self?.retention.recordingCopied(id) }
         // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
-        captures.files.recordingCopied = { [weak self] id in self?.retention.recordingCopied(id) }
+        files.recordingCopied = { [weak self] id in self?.retention.recordingCopied(id) }
         // A recording's window holds the recording while it is open, and lets go of it when it closes.
         recordings.windowClosed = { [weak self] id in self?.retention.releaseIfUnheld(id) }
         captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
@@ -267,12 +271,6 @@ final class CompositionRoot {
             case .idle:
                 self.statusItem?.endRecording()
             }
-        }
-        recordings.save = { [weak self] url in
-            self?.captures.save(fileAt: url)
-        }
-        recordings.copyFile = { [weak self] url in
-            self?.captures.files.copy(fileAt: url)
         }
         recordings.onChanged = { [weak self] entry in
             self?.recordingChanged(entry)
@@ -329,23 +327,23 @@ final class CompositionRoot {
         // A card is not closed by itself under the editor that has its capture open.
         annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }
         annotations.saveCopy = { [weak self] entry, file in
-            guard let self, let saved = await captures.files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
+            guard let self, let saved = await files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)
             return saved
         }
         annotations.saveAs = { [weak self] file, entry, scale in
-            guard let self, let saved = await captures.files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale) else { return nil }
+            guard let self, let saved = await files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale) else { return nil }
             if let entry { quickAccess.markSaved(entry.id, at: saved) }
             return saved
         }
         annotations.saveFile = { [weak self] file, scale in
-            await self?.captures.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
+            await self?.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
         }
         annotations.fileToHandOver = { [weak self] file, scale in
-            self?.captures.files.fileToHandOver(file, scale: scale) ?? file
+            self?.files.fileToHandOver(file, scale: scale) ?? file
         }
         annotations.copyPicture = { [weak self] image, png, name, scale in
-            await self?.captures.files.copy(.init(image), png: png, name: name, scale: scale)
+            await self?.files.copy(.init(image), png: png, name: name, scale: scale)
         }
 
         displays.onChange = { [weak self] _ in

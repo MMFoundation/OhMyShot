@@ -19,14 +19,14 @@ extension CompositionRoot {
             copy: { [weak self] pin in
                 guard let self, case .image(let image, let scale) = pin.content else { return }
                 // The picture alone, as pins have always copied; it follows the 1×, sRGB, and border settings.
-                Task { await captures.files.copy(.init(image), png: nil, name: String(localized: "Pin"), scale: Double(scale), withFile: false) }
+                Task { await files.copy(.init(image), png: nil, name: String(localized: "Pin"), scale: Double(scale), withFile: false) }
             },
             save: { [weak self] pin in
                 guard let self, case .image(let image, let scale) = pin.content else { return }
                 if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
-                    Task { _ = await self.captures.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true) }
+                    Task { _ = await self.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true) }
                 } else {
-                    Task { _ = await self.captures.save(image: image, scale: Double(scale)) }
+                    Task { _ = await self.files.saveScreenshot(.init(image), scale: Double(scale), asks: true) }
                 }
             },
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
@@ -47,7 +47,7 @@ extension CompositionRoot {
                 switch pin.origin {
                 case .capture(let id):
                     if let entry = history.item(id: id) {
-                        return captures.files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
+                        return files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
                     }
                 case .file(let url):
                     if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
@@ -142,6 +142,6 @@ extension CompositionRoot {
 
     private func savePinAs(_ pin: PinController.Pin) {
         guard case .image(let image, let scale) = pin.content else { return }
-        Task { _ = await captures.files.saveScreenshotAs(.init(image), scale: Double(scale)) }
+        Task { _ = await files.saveScreenshotAs(.init(image), scale: Double(scale)) }
     }
 }

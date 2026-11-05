@@ -43,7 +43,6 @@ extension CompositionRoot {
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
     /// the copy is made.
     func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
-        let files = captures.files
         guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
@@ -111,9 +110,9 @@ extension CompositionRoot {
 
     func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
-            copy: { [weak self] item in self?.captures.files.copy(fileAt: item.fileURL) },
-            save: { [weak self] item, asks in await self?.captures.save(item, asks: asks) },
-            saveAs: { [weak self] item in await self?.captures.saveAs(item) },
+            copy: { [weak self] item in self?.files.copy(fileAt: item.fileURL) },
+            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) },
+            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
@@ -157,7 +156,7 @@ extension CompositionRoot {
             let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
             printPicture(fileAt: item.fileURL, fallbackScale: scale)
         }
-        actions.fileToHandOver = { [weak self] item in self?.captures.files.fileToHandOver(item.fileURL) ?? item.fileURL }
+        actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
@@ -187,13 +186,13 @@ extension CompositionRoot {
             restore: { [weak self] entry in Task { await self?.restore(entry) } },
             copy: { [weak self] entry in
                 guard let self else { return }
-                captures.files.copy(fileAt: history.fileURL(for: entry))
+                files.copy(fileAt: history.fileURL(for: entry))
             },
             save: { [weak self] entry in
                 guard let self else { return }
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
-                    if let url = await self.captures.save(item) {
+                    if let url = await self.files.saveCapture(fileAt: item.fileURL) {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }
@@ -241,12 +240,12 @@ extension CompositionRoot {
         }
         historyActions.fileToHandOver = { [weak self] entry in
             guard let self else { return nil }
-            return captures.files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
+            return files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
         }
         // Each in the format Settings choose, as one dragged out would be.
         historyActions.copyFiles = { [weak self] entries in
             guard let self else { return }
-            PasteboardWriter.write(fileURLs: entries.map { self.captures.files.fileToHandOver(self.history.fileURL(for: $0), scale: $0.pixelsPerPoint) })
+            PasteboardWriter.write(fileURLs: entries.map { self.files.fileToHandOver(self.history.fileURL(for: $0), scale: $0.pixelsPerPoint) })
         }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }

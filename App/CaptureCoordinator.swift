@@ -15,8 +15,8 @@ final class CaptureCoordinator {
     private let capturer: ScreenCapturer
     private let overlay: OverlayController
     private let history: HistoryStore
-    /// Saves, copies, and hands over screenshots in the format Settings choose.
-    let files: ScreenshotFiles
+    /// Saves and copies screenshots in the format Settings choose.
+    private let files: ScreenshotFiles
     /// Receives every finished capture, already in the history; the composition root decides whether
     /// it gets a Quick Access card.
     var onCaptured: ((QuickAccessItem) -> Void)?
@@ -52,13 +52,16 @@ final class CaptureCoordinator {
         byReference: true
     )
 
-    init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore) {
+    init(
+        settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore,
+        files: ScreenshotFiles
+    ) {
         self.settings = settings
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
         self.history = history
-        files = ScreenshotFiles(settings: settings, history: history)
+        self.files = files
     }
 
     /// - Parameters:
@@ -242,12 +245,6 @@ final class CaptureCoordinator {
     /// - Parameter freezes: whether the screen holds still while choosing; nil follows the setting.
     func pinArea(freezes: Bool? = nil, followUp: CaptureFollowUp = .none) {
         begin(mode: .area, freezes: freezes, followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, done: followUp.done))
-    }
-
-    /// Saves a picture with no file of its own (a pin from the clipboard) to the export location, named
-    /// as captures are.
-    func save(image: CGImage, scale: Double?) async -> URL? {
-        await files.saveScreenshot(.init(image), scale: scale, asks: true)
     }
 
     // MARK: Self-Timer
@@ -439,40 +436,6 @@ final class CaptureCoordinator {
         await deliver(frame, appName: "Demo", copiesToClipboard: false)
     }
     #endif
-
-    // MARK: Saving
-
-    /// Saves a copy of a capture to the export location, in the format Settings choose and named from the file name
-    /// pattern; asks for the name first when Settings say so and `asks` is true (a save nobody waits at, as a card's
-    /// closing by itself or Save All is, passes false). Nil when it was cancelled or failed.
-    func save(_ item: QuickAccessItem, asks: Bool = true) async -> URL? {
-        guard ExportedFiles.isPicture(item.fileURL) else { return save(fileAt: item.fileURL) }
-        return await files.saveScreenshot(fileAt: item.fileURL, asks: asks)
-    }
-
-    /// Saves a copy of a recording's file, or any file that is no screenshot, to the export location, under the file's
-    /// name and kind.
-    func save(fileAt url: URL) -> URL? {
-        do {
-            let directory = settings.exportDirectory
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let name = url.deletingPathExtension().lastPathComponent
-            let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: url.pathExtension)
-            try FileManager.default.copyItem(at: url, to: destination)
-            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
-            return destination
-        } catch {
-            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
-        }
-    }
-
-    /// Asks where to save a copy. A screenshot is saved in the format of the name typed, else the one Settings choose.
-    func saveAs(_ item: QuickAccessItem) async -> URL? {
-        guard ExportedFiles.isPicture(item.fileURL) else { return await files.saveRecordingAs(item.fileURL) }
-        return await files.saveScreenshotAs(fileAt: item.fileURL)
-    }
 
     // MARK: Private
 

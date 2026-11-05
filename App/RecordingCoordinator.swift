@@ -25,6 +25,8 @@ final class RecordingCoordinator {
     private let overlay: OverlayController
     private let history: HistoryStore
     private let permissions: PermissionCenter
+    /// Saves and copies kept recordings, as their cards do.
+    private let files: ScreenshotFiles
     private let drafts = RecordingDrafts.standard()
     private let countdown = SelfTimerCountdown()
     private let outline = AreaOutline()
@@ -57,8 +59,6 @@ final class RecordingCoordinator {
     var copiedToClipboard: ((UUID) -> Void)?
     /// The composition root shows it in the menu bar.
     var onStatus: ((Status) -> Void)?
-    /// Saves a copy of a kept recording to the export folder, as Save on its card does.
-    var save: ((URL) -> URL?)?
     /// The keys of Record Screen, told to VoiceOver as the way to stop; nil when it has none.
     var shortcutKeys: (() -> String?)?
 
@@ -120,13 +120,17 @@ final class RecordingCoordinator {
     private var makingGIFs = 0
     private var gifProgress = 0.0
 
-    init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore, permissions: PermissionCenter) {
+    init(
+        settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore,
+        permissions: PermissionCenter, files: ScreenshotFiles
+    ) {
         self.settings = settings
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
         self.history = history
         self.permissions = permissions
+        self.files = files
         // All-In-One sets up a recording in its own session: the bar starts with the choices it has here.
         overlay.onWillSetUpRecording = { [weak self] in self?.configureOverlayForRecording() }
     }
@@ -693,7 +697,7 @@ final class RecordingCoordinator {
             id: entry.id, kind: .recording, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
             pixelHeight: entry.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: entry.duration
         )
-        if after.saves { item.savedURL = save?(url) }
+        if after.saves { item.savedURL = files.saveRecording(fileAt: url) }
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
     }
@@ -783,8 +787,6 @@ final class RecordingCoordinator {
     /// A kept recording changed (edited, or put back as it was made): the composition root refreshes its
     /// card and Capture History.
     var onChanged: ((HistoryItem) -> Void)?
-    /// Copies a recording's file, as Copy on its card does.
-    var copyFile: ((URL) -> Void)?
 
     /// Opens a kept recording in the recording window: to play, trim, leave the sound out, make smaller, or
     /// make a GIF of; a GIF only plays.
@@ -860,8 +862,8 @@ final class RecordingCoordinator {
                     guard let self else { throw CocoaError(.userCancelled) }
                     return try keepStudioMovie(movie, madeWith: project, of: id)
                 },
-                copy: { [weak self] url in self?.copyFile?(url) },
-                save: { [weak self] url in self?.save?(url) },
+                copy: { [weak self] url in self?.files.copy(fileAt: url) },
+                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
                 progress: { [weak self] fraction in self?.showStudioExport(fraction) }
             )
         )
@@ -939,8 +941,8 @@ final class RecordingCoordinator {
                     guard let self else { throw CocoaError(.userCancelled) }
                     try await makeGIF(of: id, edit: edit)
                 },
-                save: { [weak self] url in self?.save?(url) },
-                copy: { [weak self] url in self?.copyFile?(url) }
+                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
+                copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )
         controller.onClose = { [weak self] in
