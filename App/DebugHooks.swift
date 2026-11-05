@@ -1130,10 +1130,11 @@ struct DebugHooks {
             let denied = Self.intParameter("denied", in: url) == 1
             let asks = Self.intParameter("ask", in: url) == 1
             let dark = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "mode" }?.value == "dark"
+            let level = Self.intParameter("mic", in: url).map { Double($0) / 100 }
             let window = RecordingControlBar.debugHiddenWindow(
                 elapsed: .seconds(Self.intParameter("elapsed", in: url) ?? 42), paused: paused, dark: dark,
-                microphoneLevel: Self.intParameter("mic", in: url).map { Double($0) / 100 }, microphoneStalled: stalled,
-                microphoneDenied: denied, asksDelete: asks
+                microphone: denied ? .denied : level != nil || stalled ? .metered : .none, microphoneLevel: level, microphoneStalled: stalled,
+                asksDelete: asks
             )
             Task {
                 await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")\(stalled ? "-stalled" : "")\(denied ? "-denied" : "")\(asks ? "-ask" : "")")

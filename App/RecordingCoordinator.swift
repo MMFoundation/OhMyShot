@@ -1136,7 +1136,7 @@ final class RecordingCoordinator {
             // Inside a whole display, the bar keeps clear of the keys shown at its foot.
             controls.show(
                 by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight,
-                microphone: plan.choices.recordsMicrophone, microphoneDenied: microphoneDenied
+                microphone: plan.choices.recordsMicrophone ? .metered : microphoneDenied ? .denied : .none
             )
         }
         if plan.choices.recordsMicrophone || plan.choices.recordsSystemAudio { startMeter() }

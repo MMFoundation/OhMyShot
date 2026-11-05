@@ -141,12 +141,9 @@ public final class QuickAccessController {
     /// cards do.
     private var schedule = CardCloseSchedule()
     private var closer: Task<Void, Never>?
-    /// The card that has the keyboard, once the panel was clicked or asked for.
+    /// The card that has the keyboard, once the panel was clicked or asked for; it is held from closing by the
+    /// keyboard, and let go when the keys go to another card.
     private var selectedID: UUID?
-    /// A card's hold by the keyboard, to be given back when the keys go to another card.
-    private var keyboardHolder: UUID?
-    /// The card the pointer is actively hovering over (`mouseEntered`).
-    private(set) var hoveredID: UUID?
 
     public init(actions: Actions) {
         self.actions = actions
@@ -424,8 +421,6 @@ public final class QuickAccessController {
         closer = nil
         schedule.removeAll()
         selectedID = nil
-        keyboardHolder = nil
-        hoveredID = nil
         stack?.quickLook.close()
         stack?.quickLook.detach()
         panel?.orderOut(nil)
@@ -532,7 +527,6 @@ public final class QuickAccessController {
     /// Moves the capture of a card that waited under Undo, and is out of the stack, to the Trash.
     private func sendToTrash(_ item: QuickAccessItem) {
         if let index = trashing.firstIndex(where: { $0.id == item.id }) { trashing.remove(at: index).sender.cancel() }
-        if keyboardHolder == item.id { keyboardHolder = nil }
         actions.moveToTrash(item)
     }
 
@@ -604,25 +598,19 @@ public final class QuickAccessController {
         panel.makeFirstResponder(stack)
     }
 
-    /// Tracks which card the pointer actively entered, and when the panel already holds the keyboard,
-    /// moves the selection ring to the hovered card without ordering or re-keying the panel.
+    /// The pointer actively entered a card (or left it, which changes nothing): when the panel already holds the
+    /// keyboard, the selection ring moves to the card under it, without ordering or re-keying the panel.
     private func pointerHovered(_ id: UUID, hovering: Bool) {
-        if hovering {
-            guard items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
-            hoveredID = id
-            if panel?.isKeyWindow == true, selectedID != id {
-                select(id)
-            }
-        } else if hoveredID == id {
-            hoveredID = nil
+        guard hovering, items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
+        if panel?.isKeyWindow == true, selectedID != id {
+            select(id)
         }
     }
 
     /// Rings a card, holds it from closing, and lets the one before go; nil takes the ring away.
     private func select(_ id: UUID?) {
-        if let previous = keyboardHolder { hold(.keyboard, for: previous, if: false) }
+        if let previous = selectedID { hold(.keyboard, for: previous, if: false) }
         selectedID = id
-        keyboardHolder = id
         if let id { hold(.keyboard, for: id, if: true) }
         stack?.select(id)
     }
