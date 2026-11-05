@@ -86,6 +86,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
         content.canvas.onImageSize = { [weak self] in self?.presentImageSize() }
+        // The capture, dragged out from the toolbar's handle, is not combined into itself.
+        content.canvas.isHostsOwnDrag = { $0.draggingSource is DragOutView }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
         session.observe { [weak self] event in
             guard let self else { return }
