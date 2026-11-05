@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import OMSCore
 import UniformTypeIdentifiers
 
 /// A capture with its marks in one file, opened again with every mark still editable: the capture as it
@@ -79,7 +80,7 @@ nonisolated public struct AnnotationProject: Sendable {
     /// The project as a file's contents. Pictures missing from `store` are left out; they draw as their
     /// stand-ins when the project opens.
     public func data(pictures store: PictureStore = .shared) throws -> Data {
-        let png = try capturePNG ?? Self.png(capture)
+        let png = try capturePNG ?? ImageExporter.encoded(capture, as: .png)
         var pictures: [String: Data] = [:]
         for name in Self.pictureNames(of: document) {
             pictures[name] = try? Data(contentsOf: store.url(named: name))
@@ -87,16 +88,6 @@ nonisolated public struct AnnotationProject: Sendable {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         return try encoder.encode(Contents(version: Self.version(for: document), capture: png, document: document, pictures: pictures))
-    }
-
-    private static func png(_ image: CGImage) throws -> Data {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
-        return data as Data
     }
 
     public func write(to url: URL, pictures store: PictureStore = .shared) throws {

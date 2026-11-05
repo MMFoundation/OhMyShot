@@ -811,13 +811,6 @@ final class TextCaptureCoordinator {
     func closeLens() { lens.close(animated: false) }
     #endif
 
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
-    }
-
     // MARK: OCR panel
 
     /// Opens the OCR panel on `image`, read in full: text, tables, links, and codes. `scale` is the

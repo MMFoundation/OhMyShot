@@ -313,7 +313,7 @@ final class CaptureCoordinator {
         timerFollowUp?.finish(nil)
         timerFollowUp = nil
         Log.capture.notice("Self-Timer cancelled")
-        announce(String(localized: "Self-Timer cancelled."))
+        VoiceOver.announce(String(localized: "Self-Timer cancelled."))
     }
 
     private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool, followUp: CaptureFollowUp) {
@@ -322,7 +322,7 @@ final class CaptureCoordinator {
         case .window(let window, _): window.frame
         }
         let keys = selfTimerKeys?()
-        announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
+        VoiceOver.announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
             ?? String(localized: "Capturing in \(seconds) seconds. Choose Cancel Self-Timer in the menu bar to cancel."))
         timerFollowUp = followUp
         countdown.start(seconds: seconds, area: area, layout: displays.layout) { [weak self] in
@@ -350,12 +350,6 @@ final class CaptureCoordinator {
                 }
             }
         }
-    }
-
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
     }
 
     /// The area last chosen for a capture, in global points: what Capture Previous Area takes again.
@@ -753,9 +747,7 @@ final class CaptureCoordinator {
             }
             // Said out loud too: the overlay is gone, and nothing else would show that the capture was not kept.
             NSSound.beep()
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "The capture couldn’t be kept."), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "The capture couldn’t be kept."))
             followUp.finish(nil)
             return nil
         }

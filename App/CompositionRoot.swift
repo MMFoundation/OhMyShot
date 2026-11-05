@@ -112,11 +112,11 @@ final class CompositionRoot {
         let center = ModelPackCenter(store: store, downloader: ModelPackDownloader(store: store))
         // Said aloud, as uploads are: a download outlives the Settings window it started in.
         center.onInstalled = { [weak self] pack, folder in
-            Self.announce(String(localized: "“\(pack.name)” installed"))
+            VoiceOver.announce(String(localized: "“\(pack.name)” installed"))
             self?.packInstalled(pack, in: folder)
         }
         center.onFailed = { pack, _ in
-            Self.announce(String(localized: "“\(pack.name)” couldn’t download"))
+            VoiceOver.announce(String(localized: "“\(pack.name)” couldn’t download"))
         }
         center.onRemoved = { [weak self] in self?.tidyReaderCache() }
         return center
@@ -188,12 +188,6 @@ final class CompositionRoot {
             guard let self, settings.historyRetention != .never else { return }
             textReader.readSoon()
         }
-    }
-
-    private static func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
     }
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)

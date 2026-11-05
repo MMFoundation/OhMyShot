@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import Observation
 import OMSCore
 import SwiftUI
@@ -308,7 +307,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     public func keepNow() {
         content.canvas.endEditing()
         let document = session.document
-        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = Self.png(image),
+        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = try? ImageExporter.encoded(image, as: .png),
               let url = actions.keep(document, png, image) else { return }
         fileURL = url
         if session.document == document { session.markKept() }
@@ -323,9 +322,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         Task {
             guard let rendered = await render() else {
                 NSSound.beep()
-                NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
-                    .announcement: String(localized: "The picture couldn’t be copied.", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-                ])
+                VoiceOver.announce(String(localized: "The picture couldn’t be copied.", bundle: .module), from: content.canvas)
                 return
             }
             if let copy = actions.copy {
@@ -334,9 +331,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 PasteboardWriter.write(png: rendered.png, image: rendered.image)
             }
             model.flashCopied()
-            NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: content.canvas)
             _ = keep(rendered)
             if thenClose { window?.performClose(nil) }
         }
@@ -390,9 +385,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                     try await Self.write(project, to: url)
                     self?.model.flashSaved()
                     if let canvas = self?.content.canvas {
-                        NSAccessibility.post(element: canvas, notification: .announcementRequested, userInfo: [
-                            .announcement: String(localized: "Saved", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-                        ])
+                        VoiceOver.announce(String(localized: "Saved", bundle: .module), from: canvas)
                     }
                 } catch {
                     NSSound.beep()
@@ -520,13 +513,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         fileURL = url
         if session.document == rendered.document { session.markKept() }
         return url
-    }
-
-    private static func png(_ image: CGImage) -> Data? {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
-        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 }
 

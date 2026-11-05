@@ -135,10 +135,7 @@ public final class InPlaceAnnotationView: NSView {
     /// fall through to this view.
     public func begin() {
         window?.makeFirstResponder(canvas)
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Mark up the selection. Press Return to copy it, or Escape to cancel.", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Mark up the selection. Press Return to copy it, or Escape to cancel.", bundle: .module), from: self)
     }
 
     // MARK: Geometry

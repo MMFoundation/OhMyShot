@@ -496,9 +496,7 @@ final class ControlBarView: NSView {
         button.title = help
         time.stringValue = question
         applyAppearance()
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: help, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(help, from: self)
         disarming = Task { [weak self] in
             try? await Task.sleep(for: Self.confirmTime)
             guard !Task.isCancelled else { return }

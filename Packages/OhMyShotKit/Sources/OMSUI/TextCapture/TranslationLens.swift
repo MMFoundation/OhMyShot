@@ -61,7 +61,7 @@ public final class TranslationLens {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
-        Self.announce(shortened
+        VoiceOver.announce(shortened
             ? String(localized: "Translated, \(summary). Some lines are shortened; Return opens them all. Escape closes it.", bundle: .module)
             : String(localized: "Translated, \(summary). Escape closes it.", bundle: .module))
     }
@@ -97,14 +97,7 @@ public final class TranslationLens {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         (panel?.contentView as? LensView)?.showCopied()
-        Self.announce(String(localized: "Translation copied", bundle: .module))
-    }
-
-    private static func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Translation copied", bundle: .module))
     }
 }
 

@@ -535,9 +535,7 @@ public final class QuickAccessController {
         updateCountdowns()
         if hadKeyboard, next != nil, panel?.isKeyWindow == true { select(next) }
         if let panel {
-            NSAccessibility.post(element: panel, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Moved to Trash", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "Moved to Trash", bundle: .module), from: panel)
         }
     }
 

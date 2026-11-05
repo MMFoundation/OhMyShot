@@ -665,10 +665,7 @@ final class OverlayView: NSView {
     /// or change the reading; the pointer's own moves only update the value.
     func announceValue() {
         guard let value = accessibilityValue() as? String, !value.isEmpty else { return }
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: value,
-            .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-        ])
+        VoiceOver.announce(value, from: self, priority: .medium)
     }
 
     override func keyUp(with event: NSEvent) {

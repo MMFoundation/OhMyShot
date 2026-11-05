@@ -64,7 +64,7 @@ final class ReplayCoordinator {
             } else {
                 Task { await buffer.stop() }
             }
-            announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
+            VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
             return
         }
         if starting.contains(display.id) {
@@ -93,16 +93,16 @@ final class ReplayCoordinator {
             try await buffer.start()
             if cancelled.remove(display.id) != nil {
                 await buffer.stop()
-                announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
+                VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
                 return
             }
             buffers[display.id] = buffer
-            announce(String(localized: "Keeping the last 15 seconds of \(display.name)."))
+            VoiceOver.announce(String(localized: "Keeping the last 15 seconds of \(display.name)."))
         } catch {
             cancelled.remove(display.id)
             Log.recording.error("The replay couldn't start on a display: \(String(describing: error), privacy: .public)")
             NSSound.beep()
-            announce(String(localized: "Couldn’t keep the last 15 seconds of \(display.name)."))
+            VoiceOver.announce(String(localized: "Couldn’t keep the last 15 seconds of \(display.name)."))
         }
     }
 
@@ -129,7 +129,7 @@ final class ReplayCoordinator {
     private func stopped(_ display: DisplayInfo, _ ending: ReplayBuffer.Ending) {
         guard buffers.removeValue(forKey: display.id) != nil else { return }
         if ending == .bufferFailed { NSSound.beep() }
-        announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
+        VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
     }
 
     /// How saving one display's clip went.
@@ -146,7 +146,7 @@ final class ReplayCoordinator {
         guard saving == 0 else { return NSSound.beep() }
         guard !buffers.isEmpty else {
             NSSound.beep()
-            announce(String(localized: "Nothing is being kept. Choose a display in Keep Last 15 Seconds in the menu bar."))
+            VoiceOver.announce(String(localized: "Nothing is being kept. Choose a display in Keep Last 15 Seconds in the menu bar."))
             return
         }
         let kept = buffers.sorted { $0.key < $1.key }
@@ -186,7 +186,7 @@ final class ReplayCoordinator {
             sentences.append(String(localized: "The last 15 seconds couldn’t be saved."))
         }
         if saved < outcomes.count { NSSound.beep() }
-        if !sentences.isEmpty { announce(sentences.joined(separator: " ")) }
+        if !sentences.isEmpty { VoiceOver.announce(sentences.joined(separator: " ")) }
     }
 
     private func save(_ buffer: ReplayBuffer, of displayID: CGDirectDisplayID, at savedAt: Date) async -> Saved {
@@ -247,12 +247,6 @@ final class ReplayCoordinator {
             done()
         }
         return true
-    }
-
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
     }
 
     #if DEBUG

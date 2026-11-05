@@ -92,7 +92,7 @@ final class UploadCoordinator {
     func retry(captureID: UUID) {
         if !center.retry(captureID: captureID) {
             Log.upload.notice("Retry not possible: the destination is gone")
-            announce(String(localized: "That destination was removed. Choose Upload again to pick another."))
+            VoiceOver.announce(String(localized: "That destination was removed. Choose Upload again to pick another."))
             center.forget(captureID: captureID)
             quickAccess.setUpload(nil, for: captureID)
         }
@@ -142,7 +142,7 @@ final class UploadCoordinator {
     func copyLink(of record: UploadRecord) {
         guard !record.isExpired() else { return }
         write(record.link)
-        announce(String(localized: "Link copied."))
+        VoiceOver.announce(String(localized: "Link copied."))
     }
 
     func open(_ record: UploadRecord) {
@@ -199,7 +199,7 @@ final class UploadCoordinator {
             refreshCard(record)
         case .request:
             guard let destination = destinations.destination(id: record.destinationID) else {
-                announce(String(localized: "That destination was removed, so the file can’t be deleted from here."))
+                VoiceOver.announce(String(localized: "That destination was removed, so the file can’t be deleted from here."))
                 return
             }
             let asked = confirmDeletion(
@@ -239,7 +239,7 @@ final class UploadCoordinator {
     /// The reading by the pointer, and aloud.
     private func tell(_ message: String, near captureID: UUID?) {
         copied.show(message.count > 90 ? String(message.prefix(89)) + "…" : message, near: NSEvent.mouseLocation)
-        announce(message)
+        VoiceOver.announce(message)
     }
 
     private static func askToDelete(title: String, message: String, button: String, destructive: Bool) -> Bool {
@@ -302,7 +302,7 @@ final class UploadCoordinator {
         quickAccess.setUpload(cardUpload(status, for: captureID), for: captureID)
         if case .failed(let message) = status {
             Log.upload.error("Upload to \(destinationName, privacy: .private) failed")
-            announce(String(localized: "Upload failed. \(message)"))
+            VoiceOver.announce(String(localized: "Upload failed. \(message)"))
             if quickAccess.item(captureID) != nil {
                 NSSound.beep()
             } else if showsCard?(captureID) ?? settings.showQuickAccess {
@@ -332,7 +332,7 @@ final class UploadCoordinator {
         if quickAccess.item(captureID) == nil {
             copied.show(text, near: NSEvent.mouseLocation)
         } else {
-            announce(announcement)
+            VoiceOver.announce(announcement)
         }
     }
 
@@ -344,11 +344,5 @@ final class UploadCoordinator {
     private func write(_ link: URL) {
         pasteboard.clearContents()
         pasteboard.setString(link.absoluteString, forType: .string)
-    }
-
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
     }
 }

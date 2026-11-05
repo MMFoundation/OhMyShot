@@ -63,10 +63,7 @@ final class RecordingSetupView: NSView {
     /// Says what to do next, and what is chosen to begin with.
     func begin() {
         onChange?(target, choices)
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Press Return to start recording, or Escape to cancel.", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Press Return to start recording, or Escape to cancel.", bundle: .module), from: self)
     }
 
     /// The frame of what is chosen, in this view's points from the top-left corner.

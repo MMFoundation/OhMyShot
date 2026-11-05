@@ -41,6 +41,20 @@ public enum Theme {
         public static let rimWidth: CGFloat = 3
     }
 
+    /// The checkerboard that shows transparent room on screen, never in an export: under a clear background in the
+    /// editor, and under a translucent color's pin.
+    public enum Checkerboard {
+        /// A square's side, in points on screen at any zoom.
+        public static let square: CGFloat = 8
+
+        /// The two squares' grays: quiet in either appearance, a little firmer with Increase Contrast.
+        public static func colors(dark: Bool, increasedContrast: Bool) -> (light: CGColor, dark: CGColor) {
+            dark
+                ? (CGColor(gray: 0.20, alpha: 1), CGColor(gray: increasedContrast ? 0.30 : 0.25, alpha: 1))
+                : (CGColor(gray: 1, alpha: 1), CGColor(gray: increasedContrast ? 0.84 : 0.91, alpha: 1))
+        }
+    }
+
     /// Short, eased, and skipped entirely with Reduce Motion; nothing trails the pointer.
     public enum Motion {
         /// Cards sliding in, out, and into their new places.

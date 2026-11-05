@@ -907,10 +907,7 @@ final class TextRecognitionModel {
     /// Copying changes nothing on screen but a symbol; VoiceOver hears it.
     private func announce(_ message: String) {
         guard let window = NSApp?.keyWindow ?? NSApp?.mainWindow else { return }
-        NSAccessibility.post(element: window, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(message, from: window)
     }
 }
 

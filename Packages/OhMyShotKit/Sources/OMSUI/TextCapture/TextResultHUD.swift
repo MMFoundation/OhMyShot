@@ -282,10 +282,7 @@ public final class TextResultHUD {
         }
         let message = [said, note].compactMap { $0 }.joined(separator: ". ")
         guard let element = card else { return }
-        NSAccessibility.post(element: element, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(message, from: element)
     }
 }
 

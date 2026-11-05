@@ -401,9 +401,7 @@ final class ScrollingCaptureCoordinator {
     private func failed(_ error: any Error) {
         Log.capture.error("Scrolling capture couldn't start: \(String(describing: error), privacy: .public)")
         NSSound.beep()
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "The scrolling capture couldn’t start."), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "The scrolling capture couldn’t start."))
     }
 
     private func makePanel() -> ScrollingPanel {
@@ -429,10 +427,7 @@ final class ScrollingCaptureCoordinator {
         } else {
             Task { await permissions.request(.accessibility) }
         }
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security, then start the scrolling capture again."),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security, then start the scrolling capture again."))
     }
 
     private func setAutoScroll(_ on: Bool) {

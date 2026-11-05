@@ -105,9 +105,7 @@ final class AllInOneSetupView: NSView {
 
     /// Says what to do next.
     func begin() {
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: instructions, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(instructions, from: self)
     }
 
     /// The area in this view's points from the top-left corner.

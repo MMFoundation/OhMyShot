@@ -823,9 +823,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
                 noticeBadge.hide()
             }
         }
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
         copiedReset?.cancel()
         copiedReset = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))

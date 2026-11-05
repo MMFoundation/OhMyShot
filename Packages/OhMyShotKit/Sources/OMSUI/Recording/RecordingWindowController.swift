@@ -436,9 +436,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     private func announce(_ message: String) {
-        NSAccessibility.post(element: window as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(message, from: window)
     }
 
     #if DEBUG

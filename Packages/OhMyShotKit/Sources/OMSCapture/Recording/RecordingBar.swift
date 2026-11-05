@@ -411,10 +411,7 @@ final class RecordingBar: NSView {
             sender.state = .off
             if PermissionCenter.hasAsked(.inputMonitoring) {
                 NSSound.beep()
-                NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                    .announcement: String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings, Privacy and Security, Input Monitoring.", bundle: .module),
-                    .priority: NSAccessibilityPriorityLevel.high.rawValue,
-                ])
+                VoiceOver.announce(String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings, Privacy and Security, Input Monitoring.", bundle: .module), from: self)
             } else {
                 PermissionCenter.markAsked(.inputMonitoring)
                 _ = CGRequestListenEventAccess()
@@ -526,10 +523,7 @@ final class RecordingBar: NSView {
         default:
             // Chosen all the same, so the chip steps back and says where access is turned on; no bubble shows.
             NSSound.beep()
-            NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Camera access is off. Turn on OhMyShot in System Settings, Privacy and Security, Camera.", bundle: .module),
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "Camera access is off. Turn on OhMyShot in System Settings, Privacy and Security, Camera.", bundle: .module), from: self)
             onCamera?(id)
         }
     }

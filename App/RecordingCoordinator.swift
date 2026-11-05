@@ -210,7 +210,7 @@ final class RecordingCoordinator {
             if plan.choices.recordsMicrophone, !(await microphoneAllowed()) {
                 Log.recording.notice("Recording without the microphone: access is off")
                 microphoneDenied = true
-                announce(String(localized: "Microphone access is off in System Settings. Recording without it."))
+                VoiceOver.announce(String(localized: "Microphone access is off in System Settings. Recording without it."))
                 var choices = plan.choices
                 choices.microphone = false
                 plan = Plan(target: plan.target, display: plan.display, choices: choices, appName: plan.appName)
@@ -232,7 +232,7 @@ final class RecordingCoordinator {
             if case .area = plan.target { outline.show(area, layout: displays.layout, style: settings.recordingHighlight) }
             guard seconds > 0 else { return await start(plan) }
             let keys = shortcutKeys?()
-            announce(keys.map { String(localized: "Recording in \(seconds) seconds. Press \($0) to cancel.") }
+            VoiceOver.announce(keys.map { String(localized: "Recording in \(seconds) seconds. Press \($0) to cancel.") }
                 ?? String(localized: "Recording in \(seconds) seconds."))
             countdown.start(seconds: seconds, area: area, layout: displays.layout, outlinesArea: false) { [weak self] in
                 Task { await self?.start(plan) }
@@ -246,7 +246,7 @@ final class RecordingCoordinator {
         outline.hide()
         camera.hide()
         showStatusAfterRecording()
-        announce(String(localized: "Recording cancelled."))
+        VoiceOver.announce(String(localized: "Recording cancelled."))
     }
 
     /// Whether the microphone may be recorded, asking the first time. Reading its status starts the
@@ -341,7 +341,7 @@ final class RecordingCoordinator {
                 keyMonitor = monitor
             }
             let stopKeys = shortcutKeys?()
-            announce(stopKeys.map { String(localized: "Recording. Press \($0) again to stop.") }
+            VoiceOver.announce(stopKeys.map { String(localized: "Recording. Press \($0) again to stop.") }
                 ?? String(localized: "Recording. Click the time in the menu bar to stop."))
         } catch {
             Log.recording.error("Recording could not start: \(String(describing: error), privacy: .public)")
@@ -354,7 +354,7 @@ final class RecordingCoordinator {
             camera.hide()
             showStatusAfterRecording()
             NSSound.beep()
-            announce(String(localized: "The recording couldn’t start."))
+            VoiceOver.announce(String(localized: "The recording couldn’t start."))
             // Said where the person is looking too: a beep alone says nothing of what went wrong.
             notice.show(String(localized: "The recording couldn’t start."), near: NSEvent.mouseLocation)
         }
@@ -478,7 +478,7 @@ final class RecordingCoordinator {
         session.recorder.pause()
         session.camera?.pause(at: CMClockGetTime(CMClockGetHostTimeClock()))
         tick()
-        announce(String(localized: "Recording paused."))
+        VoiceOver.announce(String(localized: "Recording paused."))
     }
 
     func resume() {
@@ -486,7 +486,7 @@ final class RecordingCoordinator {
         session.recorder.resume()
         session.camera?.resume(at: CMClockGetTime(CMClockGetHostTimeClock()))
         tick()
-        announce(String(localized: "Recording resumed."))
+        VoiceOver.announce(String(localized: "Recording resumed."))
     }
 
     /// Throws the recording so far away and records the same thing again, after the countdown.
@@ -504,7 +504,7 @@ final class RecordingCoordinator {
         self.session = nil
         endChrome()
         discard(session)
-        announce(String(localized: "Recording deleted."))
+        VoiceOver.announce(String(localized: "Recording deleted."))
     }
 
     private func discard(_ session: Session) {
@@ -604,7 +604,7 @@ final class RecordingCoordinator {
                 studioDisplays[entry.id] = displayID
                 onKept?(entry)
                 probe.end()
-                announce(String(localized: "Recording stopped. Opening Studio."))
+                VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
                 await openStudio(entry)
                 return
             }
@@ -615,12 +615,12 @@ final class RecordingCoordinator {
             drafts.remove(draft)
             probe.end()
             Log.recording.notice("Kept a recording of \(file.duration, format: .fixed(precision: 2), privacy: .public) s, \(file.pixelWidth, privacy: .public)x\(file.pixelHeight, privacy: .public), \(file.byteCount, privacy: .public) bytes as \(entry.fileName, privacy: .public)\(writer.map { ", \($0.framesWritten) frames written, \($0.framesDropped) dropped" } ?? "", privacy: .public)")
-            announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
+            VoiceOver.announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
         } catch {
             try? FileManager.default.removeItem(at: destination)
             Log.recording.error("Keeping the recording failed: \(String(describing: error), privacy: .public)")
             NSSound.beep()
-            announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
+            VoiceOver.announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
         }
     }
 
@@ -704,7 +704,7 @@ final class RecordingCoordinator {
             let movie = try await RecordingFinisher.finish(draft.movieURL, to: destination)
             return KeptFile(url: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration, byteCount: movie.byteCount)
         case .gif:
-            announce(String(localized: "Making the GIF."))
+            VoiceOver.announce(String(localized: "Making the GIF."))
             // As large as things were on screen: half the pixels of a Retina recording.
             let options = GIFMaker.Options(framesPerSecond: settings.recordingGIFFrameRate, scale: 1 / max(draft.info?.pixelsPerPoint ?? 1, 1))
             let probe = LatencyProbe("recording.gif")
@@ -908,7 +908,7 @@ final class RecordingCoordinator {
         for window in studioWindows.values where window.isExportingAfterClosing {
             window.cancelExport()
         }
-        announce(String(localized: "Studio export cancelled."))
+        VoiceOver.announce(String(localized: "Studio export cancelled."))
     }
 
     /// How far along a Studio export is while its window is gone, in the menu bar; nil when it is done.
@@ -1249,7 +1249,7 @@ final class RecordingCoordinator {
             controls.update(microphoneStalled: microphone)
             if microphone {
                 Log.recording.error("The microphone stopped sending sound")
-                announce(String(localized: "The microphone stopped sending sound. It may have been disconnected."))
+                VoiceOver.announce(String(localized: "The microphone stopped sending sound. It may have been disconnected."))
             } else if recorder.state == .recording {
                 Log.recording.notice("The microphone is sending sound again")
             }
@@ -1295,11 +1295,5 @@ final class RecordingCoordinator {
         #else
         false
         #endif
-    }
-
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
     }
 }

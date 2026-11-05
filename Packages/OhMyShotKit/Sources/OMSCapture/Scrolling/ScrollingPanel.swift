@@ -112,9 +112,7 @@ public final class ScrollingPanel {
         let announcement = doneKeys.map {
             String(localized: "Scroll what is under the area to capture it. Click Done, or press \($0) again, when you have all of it.", bundle: .module)
         } ?? String(localized: "Scroll what is under the area to capture it. Click Done when you have all of it.", bundle: .module)
-        NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
-            .announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(announcement, from: card)
     }
 
     /// Shows how the capture is going.
@@ -219,9 +217,7 @@ public final class ScrollingPanel {
     }
 
     private func announce(_ hint: Hint) {
-        NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
-            .announcement: Self.text(for: hint), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(Self.text(for: hint), from: card)
     }
 
     private static func text(for hint: Hint) -> String {

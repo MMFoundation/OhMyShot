@@ -544,10 +544,7 @@ final class PinView: NSView, NSDraggingSource {
             contentLayer.borderColor = CGColor(gray: 0, alpha: contrast ? 0.35 : 0.18)
         }
         reading.applyAppearance(dark: dark, contrast: contrast)
-        // The checkerboard token: quiet in either appearance, a little firmer with Increase Contrast.
-        checker.colors = dark
-            ? (CGColor(gray: 0.20, alpha: 1), CGColor(gray: contrast ? 0.30 : 0.25, alpha: 1))
-            : (CGColor(gray: 1, alpha: 1), CGColor(gray: contrast ? 0.84 : 0.91, alpha: 1))
+        checker.colors = Theme.Checkerboard.colors(dark: dark, increasedContrast: contrast)
         CATransaction.commit()
         textView?.needsDisplay = true
         updateRing()
@@ -1214,13 +1211,12 @@ final class PinTextView: NSTextView {
     }
 }
 
-/// The checkerboard under a translucent color: squares a fixed 8 pt on screen at any zoom, in the
-/// checkerboard token's grays.
+/// The checkerboard under a translucent color, in the checkerboard token's squares and grays.
 nonisolated private final class PinCheckerLayer: CALayer {
-    var colors: (light: CGColor, dark: CGColor) = (CGColor(gray: 1, alpha: 1), CGColor(gray: 0.91, alpha: 1)) {
+    var colors = Theme.Checkerboard.colors(dark: false, increasedContrast: false) {
         didSet { setNeedsDisplay() }
     }
-    private static let side: CGFloat = 8
+    private static let side = Theme.Checkerboard.square
 
     override init() {
         super.init()

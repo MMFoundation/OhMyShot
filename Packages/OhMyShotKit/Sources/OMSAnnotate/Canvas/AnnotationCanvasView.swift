@@ -658,14 +658,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let count = session.openRedactionSuggestions.count
             if finished, session.tool == .redact {
                 // VoiceOver hears the end of the reading even when it found nothing, or failed.
-                NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                    .announcement: session.couldNotFindRedactions
+                VoiceOver.announce(
+                    session.couldNotFindRedactions
                         ? String(localized: "Couldn’t read text", bundle: .module)
                         : count > 0
                         ? String(localized: "\(count) suggestions to redact", bundle: .module)
                         : String(localized: "No suggestions to redact", bundle: .module),
-                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-                ])
+                    from: self,
+                    priority: .medium
+                )
             }
         case .textLines:
             // A pointer resting on text takes the text cursor once the lines are known.
@@ -677,14 +678,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 // VoiceOver hears whether highlights will snap, even when no text was found, or the reading
                 // failed.
                 let count = session.textLines.count
-                NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                    .announcement: session.couldNotFindTextLines
+                VoiceOver.announce(
+                    session.couldNotFindTextLines
                         ? String(localized: "Couldn’t read text", bundle: .module)
                         : count > 0
                         ? String(localized: "\(count) lines of text to highlight", bundle: .module)
                         : String(localized: "No text to highlight", bundle: .module),
-                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-                ])
+                    from: self,
+                    priority: .medium
+                )
             }
         }
         // Covered suggestions go, and the tool's own come and go with it.
@@ -1947,9 +1949,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let canvas = session.document.canvas.standardized
             announcement = String(localized: "Resized to \(Int(canvas.width)) by \(Int(canvas.height)) pixels", bundle: .module)
         }
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: announcement, .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-        ])
+        VoiceOver.announce(announcement, from: self, priority: .medium)
     }
 
     @objc public override func selectAll(_ sender: Any?) {
@@ -2204,10 +2204,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             // text and dark pages included, without reaching onto the text it surrounds.
             suggestionHalo.strokeColor = CGColor(gray: 1, alpha: contrast ? 1 : 0.85)
             suggestionHalo.lineWidth = contrast ? 2 : 1.5
-            // Quiet in either appearance, a little firmer with Increase Contrast.
-            backdropLayer.checker = dark
-                ? (CGColor(gray: 0.20, alpha: 1), CGColor(gray: contrast ? 0.30 : 0.25, alpha: 1))
-                : (CGColor(gray: 1, alpha: 1), CGColor(gray: contrast ? 0.84 : 0.91, alpha: 1))
+            backdropLayer.checker = Theme.Checkerboard.colors(dark: dark, increasedContrast: contrast)
         }
         selectionLayer.increasedContrast = contrast
         cropLayer.increasedContrast = contrast

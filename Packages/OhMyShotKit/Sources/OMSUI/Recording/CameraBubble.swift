@@ -192,10 +192,7 @@ public final class CameraBubble {
             bubble = Self.corner(of: area, side: side)
             wasMoved = false
         }
-        NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-            .announcement: fills ? String(localized: "Camera fills the recording", bundle: .module) : String(localized: "Camera in a bubble", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(fills ? String(localized: "Camera fills the recording", bundle: .module) : String(localized: "Camera in a bubble", bundle: .module), from: view)
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return layout() }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Theme.Motion.fade

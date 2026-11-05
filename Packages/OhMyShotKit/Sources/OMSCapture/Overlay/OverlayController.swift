@@ -372,10 +372,7 @@ public final class OverlayController {
             case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.", bundle: .module)
             case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.", bundle: .module)
             }
-            NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-                .announcement: announcement,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(announcement, from: view)
         }
         if let id = pointerDisplay?.id, let entry = entries[id] {
             entry.panel.makeKey()
@@ -1215,9 +1212,7 @@ extension OverlayController: OverlayViewDelegate {
         case .record?: String(localized: "Record. Drag over an area to record it.", bundle: .module)
         case .screenshot?, nil: String(localized: "Capture. Drag over an area, then choose what to do with it.", bundle: .module)
         }
-        NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-            .announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(announcement, from: view)
     }
 
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {

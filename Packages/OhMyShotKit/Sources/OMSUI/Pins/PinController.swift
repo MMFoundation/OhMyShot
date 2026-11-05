@@ -129,10 +129,7 @@ public final class PinController {
         // clicked: a pin stays, and taking them now would leave the app in front unable to type.
         window.invalidateShadow()
         windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
-        NSAccessibility.post(element: window, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Pinned.", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Pinned.", bundle: .module), from: window, priority: .medium)
         onChange?()
         return pin.id
     }

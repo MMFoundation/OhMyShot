@@ -795,11 +795,7 @@ enum TestPicture {
         context.addPath(CGPath(roundedRect: CGRect(x: 36, y: 26, width: 88, height: 48), cornerWidth: 12, cornerHeight: 12, transform: nil))
         context.fillPath()
         guard let image = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
-        return data as Data
+        return try ImageExporter.encoded(image, as: .png)
     }
 }
 

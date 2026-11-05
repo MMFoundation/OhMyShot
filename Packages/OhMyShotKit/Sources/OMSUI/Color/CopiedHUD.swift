@@ -42,10 +42,7 @@ public final class CopiedHUD {
         panel.orderFrontRegardless()
         windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
         if let view = panel.contentView {
-            NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-                .announcement: text,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(text, from: view)
         }
         fade = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(900))

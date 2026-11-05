@@ -59,10 +59,7 @@ public final class TextSelectionHighlight {
             } else {
                 text.map(TextResultCard.copiedCount) ?? String(localized: "No text found", bundle: .module)
             }
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-                .announcement: message,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(message)
         }
         guard let panel else { return }
         self.panel = nil

@@ -56,9 +56,7 @@ final class ScrollingSetupView: NSView {
 
     /// Says what to do next.
     func begin() {
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: Self.instructions, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(Self.instructions, from: self)
     }
 
     /// The area in this view's points from the top-left corner.

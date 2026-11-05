@@ -177,10 +177,7 @@ public final class ColorCardHUD {
 
     private func announce(_ message: String) {
         guard let card, !message.isEmpty else { return }
-        NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(message, from: card)
     }
 }
 
@@ -613,10 +610,7 @@ final class ColorCard: NSView {
             guard !Task.isCancelled, let self else { return }
             self.rows.first { $0.format == row.format }?.copy.symbolName = "doc.on.doc"
         }
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Copied \(color.string(in: row.format))", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Copied \(color.string(in: row.format))", bundle: .module), from: self)
     }
 
     @objc private func close() { onClose?() }
@@ -631,10 +625,7 @@ final class ColorCard: NSView {
         refreshContrast()
         needsLayout = true
         if let summary = contrastSummary {
-            NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                .announcement: summary,
-                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-            ])
+            VoiceOver.announce(summary, from: self, priority: .medium)
         }
     }
 }
