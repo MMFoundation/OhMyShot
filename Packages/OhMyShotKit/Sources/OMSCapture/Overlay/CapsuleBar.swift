@@ -174,9 +174,7 @@ class CapsuleBar: NSView {
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            let boost: CGFloat = contrast ? 2 : 1
-            let selected = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let (selected, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             var fillsAll = false
             #if DEBUG
             fillsAll = debugFillsAll
@@ -186,6 +184,16 @@ class CapsuleBar: NSView {
                     : (chip === hovered || fillsAll) && chip.isEnabled ? hover : .clear
             }
         }
+    }
+
+    /// The fill of a chip that is on, and of one under the pointer: white over dark, black over light, doubled under
+    /// Increase Contrast. Every capsule bar's chips fill alike, and All-In-One's size fields as its chips do.
+    static func chipFills(dark: Bool, increasedContrast: Bool) -> (selected: CGColor, hover: CGColor) {
+        let boost: CGFloat = increasedContrast ? 2 : 1
+        return (
+            dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost),
+            dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+        )
     }
 
     #if DEBUG

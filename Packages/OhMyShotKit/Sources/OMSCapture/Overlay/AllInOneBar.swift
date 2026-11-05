@@ -16,6 +16,46 @@ final class AllInOneBar: NSView {
         case scroll
         case record
         case cancel
+
+        /// The letter that chooses it in All-In-One (Escape cancels). Text, scrolling, and recording keep their
+        /// letters once the area is framed too (`AllInOneSetupView.choice(for:)`), so they are said here once.
+        var key: String? {
+            switch self {
+            case .area: "a"
+            case .window: "w"
+            case .fullscreen: "f"
+            case .text: "o"
+            case .scroll: "s"
+            case .record: "r"
+            case .cancel: nil
+            }
+        }
+
+        /// The choice with `key` as its letter.
+        init?(key: String) {
+            guard let choice = Self.allCases.first(where: { $0.key == key }) else { return nil }
+            self = choice
+        }
+
+        /// What the next area is for, when this mode says: its text, a scrolling capture, or a recording.
+        var purpose: AllInOneChoice? {
+            switch self {
+            case .text: .text
+            case .scroll: .scroll
+            case .record: .record
+            case .area, .window, .fullscreen, .cancel: nil
+            }
+        }
+
+        /// The mode that marks `purpose` on the bar; none for a plain capture.
+        init?(purpose: AllInOneChoice) {
+            switch purpose {
+            case .text: self = .text
+            case .scroll: self = .scroll
+            case .record: self = .record
+            case .screenshot: return nil
+            }
+        }
     }
 
     var onSelect: ((Choice) -> Void)?
@@ -187,9 +227,7 @@ final class AllInOneBar: NSView {
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            let boost: CGFloat = contrast ? 2 : 1
-            let highlight = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let (highlight, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             for (candidate, button) in buttons {
                 button.layer?.backgroundColor = (candidate == selected || candidate == purpose) && candidate != .cancel ? highlight
                     : candidate == hovered ? hover
