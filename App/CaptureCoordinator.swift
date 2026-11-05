@@ -288,8 +288,7 @@ final class CaptureCoordinator {
             case .window(let target, let modifiers):
                 countDown(to: .window(target, modifiers), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
             case .windows(let targets, _):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     countDown(to: .area(union), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
                 } else {
                     followUp.finish(nil)

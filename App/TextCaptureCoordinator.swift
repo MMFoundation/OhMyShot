@@ -137,8 +137,7 @@ final class TextCaptureCoordinator {
                 Task { await self.openPanel(window: target) }
             case .windows(let targets, let modifiers) where modifiers.contains(.option):
                 done?(nil)
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     Task { await self.openPanel(region: union) }
                 }
             case .region(let rect, _, _, let frozen):
@@ -148,8 +147,7 @@ final class TextCaptureCoordinator {
                 highlight.show(target.frame)
                 captureReading = Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .windows(let targets, _):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     highlight.show(union)
                     captureReading = Task { await self.recognize(region: union, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
                 } else {
@@ -543,8 +541,7 @@ final class TextCaptureCoordinator {
                 highlight.show(target.frame)
                 Task { await self.readFormula(window: target, done: done) }
             case .windows(let targets, let modifiers):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     if modifiers.contains(.option) {
                         done?(nil)
                         Task { await self.openPanel(region: union) }
@@ -650,8 +647,7 @@ final class TextCaptureCoordinator {
                 self?.highlight.show(target.frame)
                 Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
             case .windows(let targets, let modifiers):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     self?.highlight.show(union)
                     Task { await self?.translate(region: union, frozen: nil, inPanel: modifiers.contains(.option)) }
                 }
