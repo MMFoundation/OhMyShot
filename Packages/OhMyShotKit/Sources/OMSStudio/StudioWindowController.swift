@@ -477,11 +477,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             checks["undoRestoresRange"] = await until { studio.project.cuts == oldCuts }
         }
         if let id = studio.project.zooms.first?.id {
-            studio.selectedZoom = id
+            studio.selection = .zoom(id)
             _ = await until { find { value($0, kAXIdentifierAttribute as CFString) as? String == "studio-start-time" } != nil }
             if let field = find({ value($0, kAXIdentifierAttribute as CFString) as? String == "studio-start-time" }) {
                 checks["timeFieldFocus"] = AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
-                let start = min(studio.project.zooms[0].start + 0.1, studio.project.zooms[0].end - 0.3)
+                let start = min(studio.project.zooms[0].start + 0.1, studio.project.zooms[0].end - StudioProject.shortestZoom)
                 checks["timeFieldSet"] = AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, StudioTimeInput.format(start) as CFString) == .success
                 key(36, "\r")
                 checks["returnCommitsTime"] = await until { abs((studio.project.zooms.first { $0.id == id }?.start ?? -1) - start) < 0.002 }
@@ -564,7 +564,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     /// Chooses the first zoom, as a click on the timeline would, for scripted renders.
     public func debugSelectFirstZoom() {
-        studio.selectedZoom = studio.project.zooms.first?.id
+        if let id = studio.project.zooms.first?.id { studio.selection = .zoom(id) }
     }
 
     /// Exports as Copy would, without the clipboard: keeps the movie in the history.
@@ -579,7 +579,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     /// Chooses a stretch on the clip, as a drag along it does, for scripted renders.
     public func debugChoose(_ range: ClosedRange<Double>?) {
-        studio.selectedRange = range
+        if let range { studio.selection = .range(range) } else if studio.selectedRange != nil { studio.selection = .none }
     }
 
     /// Sends Undo down the window's responder chain as Edit › Undo would, for scripted checks; returns who

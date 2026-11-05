@@ -308,10 +308,7 @@ struct StudioInspector: View {
             if let id = document.selectedZoom, let zoom = document.project.zooms.first(where: { $0.id == id }) {
                 Section {
                     StudioTimeRangeFields(start: zoom.start, end: zoom.end) { value, start in
-                        document.updateZoom(id) {
-                            if start { $0.start = min(value, $0.end - 0.3) } else { $0.end = max(value, $0.start + 0.3) }
-                        }
-                        return document.project.zooms.first { $0.id == id }.map { $0.start...$0.end } ?? zoom.start...zoom.end
+                        document.setZoomEdge(id, start: start, to: value) ?? zoom.start...zoom.end
                     }
                     .id(id)
                     LabeledSlider(
@@ -488,11 +485,7 @@ struct StudioInspector: View {
                     if document.canChangeLayoutAlongTheTimeline {
                         if let id = document.selectedSegment, let segment = document.project.cameraSegments.first(where: { $0.id == id }) {
                             StudioTimeRangeFields(start: segment.start, end: segment.end) { value, start in
-                                document.updateCameraSegment(id) {
-                                    if start { $0.start = min(value, $0.end - StudioProject.shortestSegment) }
-                                    else { $0.end = max(value, $0.start + StudioProject.shortestSegment) }
-                                }
-                                return document.project.cameraSegments.first { $0.id == id }.map { $0.start...$0.end } ?? segment.start...segment.end
+                                document.setCameraSegmentEdge(id, start: start, to: value) ?? segment.start...segment.end
                             }
                             .id(id)
                             .id(Self.chosenLayoutID)
