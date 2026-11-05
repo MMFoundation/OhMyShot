@@ -36,16 +36,17 @@ final class TextCaptureCoordinator {
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
-    /// The model pack the OCR panel reads with beside Vision, and the text reader that reads with it (L2 beside L1,
-    /// Docs/ocr.md › L2 beside L1); nil while none is installed. Asked as each panel opens.
-    var secondReader: (() -> (pack: TextReaderPack, helper: URL)?)?
-    /// The formula pack's folder and the text reader that reads with it (Capture Formula, and the formulas among text;
-    /// Docs/ocr.md › The formula pack); nil while the pack isn't installed.
-    var formulaReader: (() -> (pack: URL, helper: URL)?)?
-    /// The formula pack's and the VLM pack's folders, whichever are installed, and the text reader that reads with them
-    /// (the formulas, tables, and charts among text; Docs/ocr.md › Formulas among text, › The VLM pack); nil while neither
-    /// is installed.
-    var elementReader: (() -> (formulas: URL?, vlm: URL?, helper: URL)?)?
+    /// The text reader and the model packs installed for it, asked as each reading starts (as each panel opens): the
+    /// pack the OCR panel reads with beside Vision (L2 beside L1, Docs/ocr.md › L2 beside L1), the formula pack (Capture
+    /// Formula, and the formulas among text; Docs/ocr.md › The formula pack), and the VLM pack (the tables and charts
+    /// among text; Docs/ocr.md › Formulas among text, › The VLM pack). Nil while the reader isn't in the app.
+    var readers: (() -> TextReaderPacks.Installed?)?
+    /// The text reader with the packs that read the formulas, tables, and charts among text, the formula pack and the
+    /// VLM pack, whichever are installed; nil while neither is.
+    private var elementReader: TextReaderPacks.Installed? {
+        guard let reader = readers?(), reader.formula != nil || reader.vlm != nil else { return nil }
+        return reader
+    }
     /// How long Capture Text lets the VLM read tables and charts before it copies Vision's reading of what is left: a
     /// table takes 0.2–1.2 s once the model's files are in memory, the first after a restart about 7 s
     /// (Docs/ocr.md › The VLM pack).
@@ -286,11 +287,11 @@ final class TextCaptureCoordinator {
         let cloud = allowsCloud ? captureTextCloud?() : nil
         let cloudReading = cloud.map { cloud in Task { try await cloud.read(image, joinLines) } }
         waitingForCloud = cloudReading
-        let reader = elementReader?()
+        let reader = elementReader
         let vlm = reader?.vlm.flatMap { isTerminal(place) ? nil : $0 }
         if reader?.vlm != nil, vlm == nil { Log.capture.notice("Capture Text leaves the tables to Vision: the picture is of a terminal") }
         let formulas = reader.map { reader in
-            Task { await Self.elements(in: image, formulas: reader.formulas, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
+            Task { await Self.elements(in: image, formulas: reader.formula, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
         }
         defer {
             cloudReading?.cancel()
@@ -523,7 +524,7 @@ final class TextCaptureCoordinator {
     /// (`copiesToClipboard`) and choose whether the screen freezes (`freezes`, else Settings').
     func captureFormula(copiesToClipboard: Bool = true, freezes: Bool? = nil, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
-        guard formulaReader?() != nil else {
+        guard readers?()?.formula != nil else {
             Log.capture.error("Capture Formula needs the formula pack, which isn't installed")
             NSSound.beep()
             done?(nil)
@@ -607,7 +608,7 @@ final class TextCaptureCoordinator {
         let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
         lastCapturedImage = (image, capturedScale, String(localized: "Screen Area"), nil)
         let showsCard = settings.showTextResult
-        guard let reader = formulaReader?() else {
+        guard let reader = readers?(), let pack = reader.formula else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
             if showsCard { presentCard(.noFormula, near: selection) }
             done?(nil)
@@ -615,7 +616,7 @@ final class TextCaptureCoordinator {
         }
         let probe = LatencyProbe("ocr.formula")
         let started = ContinuousClock.now
-        let formula = await Self.formula(in: image, pack: reader.pack, helper: reader.helper)
+        let formula = await Self.formula(in: image, pack: pack, helper: reader.helper)
         probe.end()
         guard let formula, formula.isFormula else {
             Log.capture.notice("Capture Formula found no formula (\(formula?.ending ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
@@ -866,7 +867,7 @@ final class TextCaptureCoordinator {
     /// screen (`place`), the apps' characters while Settings says so.
     func analyzer(for place: AppTextPlace?) -> @Sendable (CGImage) async throws -> TextAnalysis {
         let pipeline = pipeline
-        let second = secondReader?()
+        let second = readers?().flatMap { reader in reader.second.map { (pack: $0, helper: reader.helper) } }
         let place = settings.readsAppText ? place : nil
         let layout = displays.layout
         return { image in
@@ -901,8 +902,8 @@ final class TextCaptureCoordinator {
     /// pack is installed. Asked as each panel
     /// opens.
     private func panelElements(readsTables: Bool = true) -> TextRecognitionWindowController.Elements? {
-        guard let found = elementReader?() else { return nil }
-        let reader = (formulas: found.formulas, vlm: readsTables ? found.vlm : nil, helper: found.helper)
+        guard let found = elementReader else { return nil }
+        let reader = (formulas: found.formula, vlm: readsTables ? found.vlm : nil, helper: found.helper)
         guard reader.formulas != nil || reader.vlm != nil else { return nil }
         let pipeline = pipeline
         return .init(
