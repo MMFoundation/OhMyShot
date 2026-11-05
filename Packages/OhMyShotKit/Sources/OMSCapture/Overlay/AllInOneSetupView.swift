@@ -391,7 +391,7 @@ final class AllInOneActionBar: CapsuleBar {
             item.state = ratio == preset ? .on : .off
             menu.addItem(item)
         }
-        popUp(menu, under: ratioChip)
+        menu.popUp(under: ratioChip)
     }
 
     @objc private func ratioChosen(_ sender: NSMenuItem) {
@@ -400,17 +400,6 @@ final class AllInOneActionBar: CapsuleBar {
             return
         }
         onRatio?(AspectRatio(width: sides[0], height: sides[1]))
-    }
-
-    /// The menu over the overlay: the panel sits just above pop-up menus, so it steps below them while the menu is open.
-    private func popUp(_ menu: NSMenu, under button: NSButton) {
-        let window = button.window
-        let level = window?.level
-        if let window, window.level >= .popUpMenu {
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
-        }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.isFlipped ? button.bounds.maxY + 6 : -6), in: button)
-        if let window, let level { window.level = level }
     }
 
     /// `sizingOnly` is Capture Area's size control: Capture, the size, the shape, and Cancel, without the other ways to
@@ -600,9 +589,7 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let boost: CGFloat = contrast ? 2 : 1
-            let selected = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let (selected, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             var fillsAll = false

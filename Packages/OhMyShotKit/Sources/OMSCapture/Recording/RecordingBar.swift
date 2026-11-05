@@ -240,9 +240,7 @@ final class RecordingBar: NSView {
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            let boost: CGFloat = contrast ? 2 : 1
-            let selected = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let (selected, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             for (candidate, button) in outputs {
                 button.layer?.backgroundColor = candidate == output ? selected : button === hovered ? hover : .clear
             }
@@ -448,7 +446,7 @@ final class RecordingBar: NSView {
             item.state = recording && device.id == chosen ? .on : .off
             menu.addItem(item)
         }
-        popUp(menu, under: button)
+        menu.popUp(under: button)
     }
 
     @objc private func microphoneChosen(_ sender: NSMenuItem) {
@@ -506,7 +504,7 @@ final class RecordingBar: NSView {
         mirror.target = self
         mirror.state = cameraStyle.mirrored ? .on : .off
         menu.addItem(mirror)
-        popUp(menu, under: button)
+        menu.popUp(under: button)
     }
 
     @objc private func cameraChosen(_ sender: NSMenuItem) {
@@ -543,18 +541,6 @@ final class RecordingBar: NSView {
     @objc private func cameraMirrorToggled(_ sender: NSMenuItem) {
         cameraStyle.mirrored.toggle()
         onCameraStyle?(cameraStyle)
-    }
-
-    /// Menus float at the pop-up menu level, under the overlay's panel, which steps just below them while the
-    /// menu is open.
-    private func popUp(_ menu: NSMenu, under button: NSButton) {
-        let window = button.window
-        let level = window?.level
-        if let window, window.level >= .popUpMenu {
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
-        }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.isFlipped ? button.bounds.maxY + 6 : -6), in: button)
-        if let window, let level { window.level = level }
     }
 
     @objc private func recordClicked() {

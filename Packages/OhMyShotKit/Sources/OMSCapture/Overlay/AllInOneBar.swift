@@ -187,9 +187,7 @@ final class AllInOneBar: NSView {
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            let boost: CGFloat = contrast ? 2 : 1
-            let highlight = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let (highlight, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             for (candidate, button) in buttons {
                 button.layer?.backgroundColor = (candidate == selected || candidate == purpose) && candidate != .cancel ? highlight
                     : candidate == hovered ? hover
