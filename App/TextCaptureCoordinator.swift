@@ -671,10 +671,10 @@ final class TextCaptureCoordinator {
             }
             return .init(
                 formulas: read.formulas.map { formula in
-                    FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
+                    FormulaMerge.Formula(kind: formula.kind == .display ? .display : .inline, box: formula.box, latex: formula.latex)
                 },
                 tables: read.tables.map { table in
-                    TableMerge.Table(kind: table.kind == "chart" ? .chart : .table, box: table.box, rows: table.rows, isWhole: table.whole)
+                    TableMerge.Table(kind: table.kind == .chart ? .chart : .table, box: table.box, rows: table.rows, isWhole: table.whole)
                 }
             )
         } catch {

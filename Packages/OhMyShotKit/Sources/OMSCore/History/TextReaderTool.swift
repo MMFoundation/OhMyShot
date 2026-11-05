@@ -78,13 +78,19 @@ public enum TextReaderTool {
 
     /// A formula the formula pack found in a picture and read whole.
     public struct FoundFormula: Codable, Sendable, Equatable {
-        /// "display", set apart on a line of its own, or "inline", within text.
-        public var kind: String
+        public enum Kind: String, Codable, Sendable {
+            /// Set apart, on a line of its own.
+            case display
+            /// Within a line of text.
+            case inline
+        }
+
+        public var kind: Kind
         /// In the picture's pixels, top-left origin.
         public var box: CGRect
         public var latex: String
 
-        public init(kind: String, box: CGRect, latex: String) {
+        public init(kind: Kind, box: CGRect, latex: String) {
             self.kind = kind
             self.box = box
             self.latex = latex
@@ -93,15 +99,20 @@ public enum TextReaderTool {
 
     /// A table or chart the VLM pack read in a picture, as rows of cells (a chart's data).
     public struct FoundTable: Codable, Sendable, Equatable {
-        /// "table" or "chart".
-        public var kind: String
+        public enum Kind: String, Codable, Sendable {
+            case table
+            /// A chart, read as its data.
+            case chart
+        }
+
+        public var kind: Kind
         /// In the picture's pixels, top-left origin.
         public var box: CGRect
         public var rows: [[String]]
         /// Whether the model said it was done, rather than stopping at its length or the deadline.
         public var whole: Bool
 
-        public init(kind: String, box: CGRect, rows: [[String]], whole: Bool) {
+        public init(kind: Kind, box: CGRect, rows: [[String]], whole: Bool) {
             self.kind = kind
             self.box = box
             self.rows = rows
@@ -148,11 +159,9 @@ public enum TextReaderTool {
         let timeout = timeout ?? seconds.map { .seconds($0) + .seconds(2) } ?? .seconds(120)
         let job = Job(
             id: UUID().uuidString, path: url.path(percentEncoded: false), formulas: formulas?.path(percentEncoded: false),
-            vlm: vlm?.path(percentEncoded: false), seconds: seconds, pressure: pressure?.name
+            vlm: vlm?.path(percentEncoded: false), seconds: seconds, pressure: pressure
         )
-        let answer = try await run(job, helper: helper, priority: priority, resources: resources, timeout: timeout) { progress in
-            if let count = progress.found { found?(Found(formulas: count - (progress.foundTables ?? 0), tables: progress.foundTables ?? 0)) }
-        }
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources, timeout: timeout, progress: found)
         if let formulas = answer.formulas { return (formulas, answer.tables ?? [], answer.tablesLeft ?? 0) }
         throw Failure.unreadable(answer.error ?? "")
     }
@@ -180,18 +189,21 @@ public enum TextReaderTool {
     /// What the formula pack read in a picture.
     public struct Formula: Sendable, Equatable {
         public var latex: String
-        /// How the reading ended: "end" when the model finished the formula; "repeats", "cacheFull", or "deadline"
-        /// when it was stopped.
-        public var ending: String
+        /// How the reading ended: `end` when the model finished the formula; `repeats`, `cacheFull`, or `deadline` when
+        /// it was stopped.
+        public var ended: TextReaderWire.Ending
 
-        public init(latex: String, ending: String) {
+        public init(latex: String, ended: TextReaderWire.Ending) {
             self.latex = latex
-            self.ending = ending
+            self.ended = ended
         }
+
+        /// How the reading ended, by name ("end", "repeats", "cacheFull", "deadline"), as the app's logs say it.
+        public var ending: String { ended.rawValue }
 
         /// Whether this is a formula to give the person: a whole reading with something in it.
         public var isFormula: Bool {
-            ending == "end" && !latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ended == .end && !latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -204,7 +216,7 @@ public enum TextReaderTool {
         let job = Job(id: UUID().uuidString, path: url.path(percentEncoded: false), formula: pack.path(percentEncoded: false))
         let answer = try await run(job, helper: helper, priority: priority, resources: resources, timeout: timeout)
         if let latex = answer.latex, let ending = answer.ending {
-            return Formula(latex: latex.trimmingCharacters(in: .whitespacesAndNewlines), ending: ending)
+            return Formula(latex: latex.trimmingCharacters(in: .whitespacesAndNewlines), ended: ending)
         }
         throw Failure.unreadable(answer.error ?? "")
     }
@@ -229,11 +241,11 @@ public enum TextReaderTool {
         throw Failure.unreadable(answer.error ?? "")
     }
 
-    /// Runs the reader on `job`. A line telling how far it got (`Answer.isProgress`) goes to `progress`; the answer is
-    /// the last other line for the job.
+    /// Runs the reader on `job`. A line telling how far it got (`Answer.progress`) goes to `progress`; the answer is the
+    /// last other line for the job.
     private static func run(
         _ job: Job, helper: URL, priority: QualityOfService, resources: ActiveResources, timeout: Duration,
-        progress: (@Sendable (Answer) -> Void)? = nil
+        progress: (@Sendable (Found) -> Void)? = nil
     ) async throws -> Answer {
         try Task.checkCancellation()
         var jobLine = try JSONEncoder().encode(job)
@@ -320,7 +332,7 @@ public enum TextReaderTool {
             var status: Int32?
             func receive(_ data: Data) {
                 guard let decoded = try? JSONDecoder().decode(Answer.self, from: data), decoded.id == job.id else { return }
-                if decoded.isProgress { progress?(decoded) } else { answer = decoded }
+                if let found = decoded.progress { progress?(found) } else { answer = decoded }
             }
             for await next in events {
                 switch next {
@@ -363,38 +375,6 @@ public enum TextReaderTool {
         case cancelled
     }
 
-    private struct Job: Encodable {
-        let id: String
-        var path: String?
-        var joinsWrappedLines: Bool?
-        var pack: String?
-        var lines: Bool?
-        var warm: Bool?
-        var formula: String?
-        var formulas: String?
-        var tidy: Bool?
-        var vlm: String?
-        var seconds: Double?
-        var pressure: String?
-    }
-
-    private struct Answer: Decodable {
-        let id: String
-        let text: String?
-        let lines: [Line]?
-        let latex: String?
-        let ending: String?
-        let found: Int?
-        let foundTables: Int?
-        let formulas: [FoundFormula]?
-        let tables: [FoundTable]?
-        let tablesLeft: Int?
-        let removed: Int?
-        let error: String?
-
-        /// How many formulas, tables, and charts the reader found, said before it reads them.
-        var isProgress: Bool {
-            found != nil && text == nil && lines == nil && latex == nil && formulas == nil && tables == nil && removed == nil && error == nil
-        }
-    }
+    private typealias Job = TextReaderWire.Job
+    private typealias Answer = TextReaderWire.Answer
 }

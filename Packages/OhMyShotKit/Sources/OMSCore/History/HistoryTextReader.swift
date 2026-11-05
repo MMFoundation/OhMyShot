@@ -140,7 +140,9 @@ public final class HistoryTextReader {
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)] = [:]
         var jobs = Data()
         for item in store.needingText(store.items(), reading: pack?.reading) where !failed.contains(item.id) {
-            let job = Job(id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false), pack: pack?.folder.path(percentEncoded: false))
+            let job = TextReaderWire.Job(
+                id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false), pack: pack?.folder.path(percentEncoded: false)
+            )
             guard let stamp = store.stamp(of: item), var line = try? JSONEncoder().encode(job) else { continue }
             line.append(0x0A)
             jobs.append(line)
@@ -209,7 +211,7 @@ public final class HistoryTextReader {
     }
 
     private func received(_ line: String, in run: Run) {
-        guard let result = try? JSONDecoder().decode(Result.self, from: Data(line.utf8)),
+        guard let result = try? JSONDecoder().decode(TextReaderWire.Answer.self, from: Data(line.utf8)),
               let (item, stamp) = run.sent.removeValue(forKey: result.id)
         else { return }
         reading = run.sent.count
@@ -246,17 +248,5 @@ public final class HistoryTextReader {
         guard let again = runsAgain else { return }
         runsAgain = nil
         read(priority: again)
-    }
-
-    private struct Job: Encodable {
-        let id: String
-        let path: String
-        let pack: String?
-    }
-
-    private struct Result: Decodable {
-        let id: String
-        let text: String?
-        let error: String?
     }
 }

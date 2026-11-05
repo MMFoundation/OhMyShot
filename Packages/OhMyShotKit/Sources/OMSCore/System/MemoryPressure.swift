@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 
 /// How hard pressed the system is for memory, as the kernel says it (`kern.memorystatus_vm_pressure_level`, which Activity
 /// Monitor's memory pressure graph shows): green, yellow, red. The text reader asks before it loads the VLM pack, whose
@@ -37,5 +38,22 @@ public enum MemoryPressure: Int, Sendable, Comparable {
 
     public static func < (lhs: MemoryPressure, rhs: MemoryPressure) -> Bool {
         lhs.rawValue < rhs.rawValue
+    }
+}
+
+/// Said by name (`name`, "pressure": "warning" in a text reader's job), not by the kernel's number for it.
+extension MemoryPressure: Codable {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let name = try container.decode(String.self)
+        guard let pressure = MemoryPressure(name: name) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "No memory pressure is called \(name)")
+        }
+        self = pressure
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(name)
     }
 }
