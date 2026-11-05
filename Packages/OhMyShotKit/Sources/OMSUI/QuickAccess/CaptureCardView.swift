@@ -10,35 +10,17 @@ import QuickLookUI
 /// Not flipped: cards are placed from the bottom up, so they stay put on screen while the panel grows or
 /// shrinks at the top.
 final class CardStackView: NSView {
-    var onCopy: ((QuickAccessItem) -> Void)?
-    var onSave: ((QuickAccessItem) -> Void)?
-    var onSaveAs: ((QuickAccessItem) -> Void)?
-    var onOpen: ((QuickAccessItem) -> Void)?
-    var onAnnotate: ((QuickAccessItem) -> Void)?
-    var onReveal: ((QuickAccessItem) -> Void)?
-    var onRecognizeText: ((QuickAccessItem) -> Void)?
-    var onPin: ((QuickAccessItem) -> Void)?
-    var onPrint: ((QuickAccessItem) -> Void)?
-    var onMoveToTrash: ((QuickAccessItem) -> Void)?
-    /// Undo on a card waiting to go to the Trash.
-    var onUndoTrash: ((QuickAccessItem) -> Void)?
-    var onClose: ((QuickAccessItem) -> Void)?
+    /// What a card's buttons, menu, or VoiceOver asked of its capture. The keys arrive apart (`onKey`): the card that
+    /// has the keyboard is the owner's to know, and a command from a key gives the keyboard back where a click does not.
+    var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
     /// The file to hand to another app for a capture, dragged out or shared.
     var fileToHandOver: ((QuickAccessItem) -> URL)?
     /// What the menu offers for uploading, read each time a menu opens (see `UploadMenu`).
     var uploadMenu: () -> UploadMenu = { .hidden }
-    var onUpload: ((QuickAccessItem, UUID?) -> Void)?
-    var onCancelUpload: ((QuickAccessItem) -> Void)?
-    var onRetryUpload: ((QuickAccessItem) -> Void)?
-    var onCopyLink: ((QuickAccessItem) -> Void)?
     var hasLink: ((QuickAccessItem) -> Bool)?
     var canDeleteFromStorage: ((QuickAccessItem) -> Bool)?
-    var onDeleteFromStorage: ((QuickAccessItem) -> Void)?
     /// The upload a capture has now, for a card made after it began (restored from Recently Closed).
     var currentUpload: ((QuickAccessItem) -> CardUpload?)?
-    /// What the menu and the keyboard add to the actions above: Quick Look, a change to the picture, and the
-    /// commands of the whole stack.
-    var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
     /// What can be done to a capture's picture now, read when a menu opens.
     var pictureOffer: (QuickAccessItem) -> PictureChangeOffer = { _ in .unsupported }
     /// How many cards the stack has.
@@ -264,34 +246,10 @@ final class CardStackView: NSView {
         card.onHold = { [weak self, weak card] hold, on in card.map { self?.onHold?($0.item.id, hold, on) } }
         card.onFocus = { [weak self, weak card] in card.map { self?.onFocus?($0.item.id) } }
         card.onPointerHover = { [weak self, weak card] hovering in card.map { self?.onPointerHover?($0.item.id, hovering) } }
-        card.onCopy = { [weak self, weak card] in
-            guard let card else { return }
-            self?.onCopy?(card.item)
-            card.showCopied()
-        }
-        card.onSave = { [weak self, weak card] in
-            guard let card else { return }
-            if card.item.savedURL != nil { self?.onReveal?(card.item) } else { self?.onSave?(card.item) }
-        }
-        card.onSaveAs = { [weak self, weak card] in card.map { self?.onSaveAs?($0.item) } }
-        card.onOpen = { [weak self, weak card] in card.map { self?.onOpen?($0.item) } }
-        card.onAnnotate = { [weak self, weak card] in card.map { self?.onAnnotate?($0.item) } }
-        card.onReveal = { [weak self, weak card] in card.map { self?.onReveal?($0.item) } }
-        card.onRecognizeText = { [weak self, weak card] in card.map { self?.onRecognizeText?($0.item) } }
-        card.onPin = { [weak self, weak card] in card.map { self?.onPin?($0.item) } }
-        card.onPrint = { [weak self, weak card] in card.map { self?.onPrint?($0.item) } }
-        card.onMoveToTrash = { [weak self, weak card] in card.map { self?.onMoveToTrash?($0.item) } }
-        card.onUndoTrash = { [weak self, weak card] in card.map { self?.onUndoTrash?($0.item) } }
-        card.onClose = { [weak self, weak card] in card.map { self?.onClose?($0.item) } }
         card.fileToHandOver = { [weak self, weak card] in card.map { self?.fileToHandOver?($0.item) ?? $0.item.fileURL } }
         card.uploadMenu = { [weak self] in self?.uploadMenu() ?? .hidden }
-        card.onUpload = { [weak self, weak card] destination in card.map { self?.onUpload?($0.item, destination) } }
-        card.onCancelUpload = { [weak self, weak card] in card.map { self?.onCancelUpload?($0.item) } }
-        card.onRetryUpload = { [weak self, weak card] in card.map { self?.onRetryUpload?($0.item) } }
-        card.onCopyLink = { [weak self, weak card] in card.map { self?.onCopyLink?($0.item) } }
         card.hasLink = { [weak self, weak card] in card.flatMap { self?.hasLink?($0.item) } ?? false }
         card.canDeleteFromStorage = { [weak self, weak card] in card.flatMap { self?.canDeleteFromStorage?($0.item) } ?? false }
-        card.onDeleteFromStorage = { [weak self, weak card] in card.map { self?.onDeleteFromStorage?($0.item) } }
         card.upload = currentUpload?(item)
         addSubview(card)
         cards[item.id] = card
@@ -302,28 +260,14 @@ final class CardStackView: NSView {
 /// One capture: the picture with rounded corners and a soft shadow; on hover, buttons to copy or save
 /// it, close it, or reach the rest of its actions.
 final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
-    var onCopy: (() -> Void)?
-    var onSave: (() -> Void)?
-    var onSaveAs: (() -> Void)?
-    var onOpen: (() -> Void)?
-    var onAnnotate: (() -> Void)?
-    var onReveal: (() -> Void)?
-    var onRecognizeText: (() -> Void)?
-    var onPin: (() -> Void)?
-    var onPrint: (() -> Void)?
-    var onMoveToTrash: (() -> Void)?
-    var onClose: (() -> Void)?
+    /// What its buttons, its menu, VoiceOver, a double-click, or a swipe asked of the capture: Undo on a card
+    /// waiting to go to the Trash too. Share, Send by Email, and Copy Error are the card's own, as they need the card
+    /// (a sheet beside it) or only its upload.
+    var onCommand: ((CardCommand) -> Void)?
     var fileToHandOver: (() -> URL?)?
     var uploadMenu: () -> UploadMenu = { .hidden }
-    var onUpload: ((UUID?) -> Void)?
-    var onCancelUpload: (() -> Void)?
-    var onRetryUpload: (() -> Void)?
-    var onCopyLink: (() -> Void)?
     var hasLink: () -> Bool = { false }
     var canDeleteFromStorage: () -> Bool = { false }
-    var onDeleteFromStorage: (() -> Void)?
-    /// Quick Look, a change to the picture, and the commands of the whole stack.
-    var onCommand: ((CardCommand) -> Void)?
     var pictureOffer: () -> PictureChangeOffer = { .unsupported }
     var cardCount: () -> Int = { 1 }
     /// The card is kept from closing, or let go (see `CardCountdown.Hold`).
@@ -332,8 +276,6 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     var onFocus: (() -> Void)?
     /// The pointer actively crossed into or out of the card (`mouseEntered`/`mouseExited`).
     var onPointerHover: ((Bool) -> Void)?
-    /// Undo on a card waiting to go to the Trash.
-    var onUndoTrash: (() -> Void)?
 
     /// How large the card is; its Copy and Save capsules narrow with it.
     var size: QuickAccessSize {
@@ -526,7 +468,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         addSubview(undoButton)
         uploadBadge.onAction = { [weak self] in
             guard let self else { return }
-            if case .failed? = upload { onRetryUpload?() } else { onCancelUpload?() }
+            if case .failed? = upload { onCommand?(.retryUpload) } else { onCommand?(.cancelUpload) }
         }
 
         setAccessibilityElement(true)
@@ -721,19 +663,19 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         func action(_ title: String, _ run: @escaping () -> Void) -> NSAccessibilityCustomAction {
             NSAccessibilityCustomAction(name: title) { run(); return true }
         }
-        if isTrashing { return [action(String(localized: "Undo", bundle: .module)) { [weak self] in self?.onUndoTrash?() }] }
+        if isTrashing { return [action(String(localized: "Undo", bundle: .module)) { [weak self] in self?.onCommand?(.undoTrash) }] }
         // A recording is played, saved, or sent on; marking up, reading text, and pinning are for pictures.
         let isPicture = item.kind == .screenshot
         var actions = [
-            action(String(localized: "Copy", bundle: .module)) { [weak self] in self?.onCopy?() },
-            action(String(localized: "Save", bundle: .module)) { [weak self] in self?.onSave?() },
+            action(String(localized: "Copy", bundle: .module)) { [weak self] in self?.onCommand?(.copy) },
+            action(String(localized: "Save", bundle: .module)) { [weak self] in self?.onCommand?(.save) },
         ]
-        if isPicture { actions.append(action(String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onAnnotate?() }) }
-        actions.append(action(String(localized: "Open", bundle: .module)) { [weak self] in self?.onOpen?() })
+        if isPicture { actions.append(action(String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onCommand?(.annotate) }) }
+        actions.append(action(String(localized: "Open", bundle: .module)) { [weak self] in self?.onCommand?(.open) })
         actions.append(action(String(localized: "Quick Look", bundle: .module)) { [weak self] in self?.onCommand?(.quickLook) })
         if isPicture {
-            actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?() })
-            actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onPin?() })
+            actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onCommand?(.recognizeText) })
+            actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onCommand?(.pin) })
             let offer = pictureOffer()
             if offer.availability == .available {
                 for (title, change) in pictureChanges(for: offer) {
@@ -747,30 +689,30 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         }
         switch upload {
         case .uploading?:
-            actions.append(action(String(localized: "Cancel Upload", bundle: .module)) { [weak self] in self?.onCancelUpload?() })
+            actions.append(action(String(localized: "Cancel Upload", bundle: .module)) { [weak self] in self?.onCommand?(.cancelUpload) })
         case .failed?:
             if !uploadMenu().isHidden {
-                actions.append(action(String(localized: "Retry Upload", bundle: .module)) { [weak self] in self?.onRetryUpload?() })
+                actions.append(action(String(localized: "Retry Upload", bundle: .module)) { [weak self] in self?.onCommand?(.retryUpload) })
             }
             actions.append(action(String(localized: "Copy Error", bundle: .module)) { [weak self] in self?.copyErrorClicked() })
         default:
             switch uploadMenu() {
             case .hidden: break
-            case .upload: actions.append(action(String(localized: "Upload", bundle: .module)) { [weak self] in self?.onUpload?(nil) })
+            case .upload: actions.append(action(String(localized: "Upload", bundle: .module)) { [weak self] in self?.onCommand?(.upload) })
             case .uploadWithChoice(let targets):
                 let name = targets.first(where: \.isDefault)?.name ?? targets[0].name
-                actions.append(action(String(localized: "Upload to \(name)", bundle: .module)) { [weak self] in self?.onUpload?(nil) })
+                actions.append(action(String(localized: "Upload to \(name)", bundle: .module)) { [weak self] in self?.onCommand?(.upload) })
                 for target in targets {
-                    actions.append(action(String(localized: "Upload to \(target.name)", bundle: .module)) { [weak self] in self?.onUpload?(target.id) })
+                    actions.append(action(String(localized: "Upload to \(target.name)", bundle: .module)) { [weak self] in self?.onCommand?(.uploadTo(target.id)) })
                 }
             }
         }
-        if hasLink() { actions.append(action(String(localized: "Copy Link", bundle: .module)) { [weak self] in self?.onCopyLink?() }) }
+        if hasLink() { actions.append(action(String(localized: "Copy Link", bundle: .module)) { [weak self] in self?.onCommand?(.copyLink) }) }
         if canDeleteFromStorage() {
-            actions.append(action(String(localized: "Delete from Storage", bundle: .module)) { [weak self] in self?.onDeleteFromStorage?() })
+            actions.append(action(String(localized: "Delete from Storage", bundle: .module)) { [weak self] in self?.onCommand?(.deleteFromStorage) })
         }
-        actions.append(action(String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onMoveToTrash?() })
-        actions.append(action(String(localized: "Close", bundle: .module)) { [weak self] in self?.onClose?() })
+        actions.append(action(String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onCommand?(.moveToTrash) })
+        actions.append(action(String(localized: "Close", bundle: .module)) { [weak self] in self?.onCommand?(.close) })
         if cardCount() > 1 {
             actions.append(action(String(localized: "Save All", bundle: .module)) { [weak self] in self?.onCommand?(.saveAll) })
             actions.append(action(String(localized: "Close All", bundle: .module)) { [weak self] in self?.onCommand?(.closeAll) })
@@ -919,7 +861,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         guard !isTrashing else { return }
         mouseDownPoint = convert(event.locationInWindow, from: nil)
         // A picture opens in the editor; a recording in the recording window.
-        if event.clickCount == 2 { onAnnotate?() }
+        if event.clickCount == 2 { onCommand?(.annotate) }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -968,7 +910,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
             let shouldClose = abs(swipeDistance) > 50
             swipeDistance = 0
             if shouldClose {
-                onClose?()
+                onCommand?(.close)
             } else {
                 setSwipeOffset(0, animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             }
@@ -1184,12 +1126,15 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         menu.addItem(.separator())
     }
 
-    @objc private func uploadClicked() { onUpload?(nil) }
-    @objc private func uploadToClicked(_ sender: NSMenuItem) { onUpload?(sender.representedObject as? UUID) }
-    @objc private func cancelUploadClicked() { onCancelUpload?() }
-    @objc private func retryUploadClicked() { onRetryUpload?() }
-    @objc private func copyLinkClicked() { onCopyLink?() }
-    @objc private func deleteFromStorageClicked() { onDeleteFromStorage?() }
+    @objc private func uploadClicked() { onCommand?(.upload) }
+    @objc private func uploadToClicked(_ sender: NSMenuItem) {
+        guard let destination = sender.representedObject as? UUID else { return }
+        onCommand?(.uploadTo(destination))
+    }
+    @objc private func cancelUploadClicked() { onCommand?(.cancelUpload) }
+    @objc private func retryUploadClicked() { onCommand?(.retryUpload) }
+    @objc private func copyLinkClicked() { onCommand?(.copyLink) }
+    @objc private func deleteFromStorageClicked() { onCommand?(.deleteFromStorage) }
     /// Puts the failure's sentence on the clipboard, for a bug report or a server's owner.
     @objc private func copyErrorClicked() {
         guard case .failed(let message)? = upload else { return }
@@ -1207,18 +1152,18 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     /// As Share, the file in the format Settings choose.
     @objc private func emailClicked() { EmailSharing.send(fileToHandOver?() ?? item.fileURL) }
 
-    @objc private func copyClicked() { onCopy?() }
-    @objc private func saveClicked() { onSave?() }
-    @objc private func saveAsClicked() { onSaveAs?() }
-    @objc private func openClicked() { onOpen?() }
-    @objc private func annotateClicked() { onAnnotate?() }
-    @objc private func revealClicked() { onReveal?() }
-    @objc private func recognizeTextClicked() { onRecognizeText?() }
-    @objc private func pinClicked() { onPin?() }
-    @objc private func printClicked() { onPrint?() }
-    @objc private func trashClicked() { onMoveToTrash?() }
-    @objc private func undoClicked() { onUndoTrash?() }
-    @objc private func closeClicked() { onClose?() }
+    @objc private func copyClicked() { onCommand?(.copy) }
+    @objc private func saveClicked() { onCommand?(.save) }
+    @objc private func saveAsClicked() { onCommand?(.saveAs) }
+    @objc private func openClicked() { onCommand?(.open) }
+    @objc private func annotateClicked() { onCommand?(.annotate) }
+    @objc private func revealClicked() { onCommand?(.reveal) }
+    @objc private func recognizeTextClicked() { onCommand?(.recognizeText) }
+    @objc private func pinClicked() { onCommand?(.pin) }
+    @objc private func printClicked() { onCommand?(.print) }
+    @objc private func trashClicked() { onCommand?(.moveToTrash) }
+    @objc private func undoClicked() { onCommand?(.undoTrash) }
+    @objc private func closeClicked() { onCommand?(.close) }
     @objc private func quickLookClicked() { onCommand?(.quickLook) }
     @objc private func saveAllClicked() { onCommand?(.saveAll) }
     @objc private func closeAllClicked() { onCommand?(.closeAll) }
