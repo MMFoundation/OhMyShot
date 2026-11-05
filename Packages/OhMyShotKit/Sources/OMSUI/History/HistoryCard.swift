@@ -112,10 +112,6 @@ struct HistoryCard: View {
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
     }
 
-    private var isGIF: Bool {
-        item.fileName.lowercased().hasSuffix(".gif")
-    }
-
     /// The upload entries History offers for the capture now, for its menu and VoiceOver alike. A failed upload is the
     /// card's to show and retry: here a capture is being uploaded or not.
     private var sharingEntries: [SharingEntry] {
@@ -180,23 +176,23 @@ struct HistoryCard: View {
     private var accessibilityLabel: Text {
         let (width, height) = (item.pixelWidth, item.pixelHeight)
         guard let app = item.appName else {
-            return item.kind == .recording
-                ? isGIF
-                    ? Text("GIF, \(width) by \(height) pixels", bundle: .module)
-                    : Text("Recording, \(width) by \(height) pixels", bundle: .module)
-                : Text("Screenshot, \(width) by \(height) pixels", bundle: .module)
+            return switch item.media {
+            case .screenshot: Text("Screenshot, \(width) by \(height) pixels", bundle: .module)
+            case .movie: Text("Recording, \(width) by \(height) pixels", bundle: .module)
+            case .gif: Text("GIF, \(width) by \(height) pixels", bundle: .module)
+            }
         }
-        return item.kind == .recording
-            ? isGIF
-                ? Text("GIF from \(app), \(width) by \(height) pixels", bundle: .module)
-                : Text("Recording from \(app), \(width) by \(height) pixels", bundle: .module)
-            : Text("Screenshot from \(app), \(width) by \(height) pixels", bundle: .module)
+        return switch item.media {
+        case .screenshot: Text("Screenshot from \(app), \(width) by \(height) pixels", bundle: .module)
+        case .movie: Text("Recording from \(app), \(width) by \(height) pixels", bundle: .module)
+        case .gif: Text("GIF from \(app), \(width) by \(height) pixels", bundle: .module)
+        }
     }
 
     /// A small play badge in the corner, or "GIF" for a GIF, with the length when it is known.
     private var recordingBadge: some View {
         HStack(spacing: 4) {
-            if isGIF {
+            if item.media == .gif {
                 Text(verbatim: "GIF")
             } else {
                 Image(systemName: "play.fill")
@@ -259,16 +255,8 @@ struct HistoryCard: View {
         Divider()
         Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
             .keyboardShortcut(.space, modifiers: [])
-        Group {
-            if item.kind == .screenshot {
-                Button { model.actions.annotate(item) } label: { Text("Annotate…", bundle: .module) }
-            } else if isGIF {
-                Button { model.actions.annotate(item) } label: { Text("Play", bundle: .module) }
-            } else {
-                Button { model.actions.annotate(item) } label: { Text("Edit…", bundle: .module) }
-            }
-        }
-        .keyboardShortcut("o")
+        Button { model.actions.annotate(item) } label: { Text(item.media.openMenuTitle) }
+            .keyboardShortcut("o")
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }

@@ -256,10 +256,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     /// is a destination and no upload is going or waiting on Retry (the badge has those), Recognize Text, and
     /// Move to Trash. A recording has the editor (or Play), Upload, and Trash.
     private func updateExtras() {
-        annotateButton.title = item.kind == .recording
-            ? isGIF ? String(localized: "Play", bundle: .module) : String(localized: "Edit", bundle: .module)
-            : String(localized: "Annotate", bundle: .module)
-        annotateButton.symbolName = item.kind == .recording ? isGIF ? "play" : "timeline.selection" : "pencil.and.scribble"
+        annotateButton.title = item.media.openTitle
+        annotateButton.symbolName = item.media.openSymbolName
         let uploads: Bool
         switch upload {
         case .uploading?, .failed?: uploads = false
@@ -354,14 +352,11 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
             durationBadge.isHidden = true
             return
         }
+        let isGIF = item.media == .gif
         durationBadge.isGIF = isGIF
         durationBadge.text = isGIF ? "GIF \(Self.format(duration))" : Self.format(duration)
         durationBadge.isHidden = false
         needsLayout = true
-    }
-
-    private var isGIF: Bool {
-        item.fileURL.pathExtension.lowercased() == "gif"
     }
 
     /// A recording's length as cards show it: 0:42, 12:05, 1:02:09.
@@ -384,11 +379,12 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     }
 
     private func updateAccessibility() {
-        setAccessibilityLabel(item.kind == .recording
-            ? isGIF
-                ? String(localized: "GIF, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
-                : String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
-            : String(localized: "Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module))
+        let label = switch item.media {
+        case .screenshot: String(localized: "Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+        case .movie: String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+        case .gif: String(localized: "GIF, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+        }
+        setAccessibilityLabel(label)
         if isTrashing {
             setAccessibilityValue(String(localized: "Moved to Trash", bundle: .module))
             return
@@ -721,19 +717,11 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked), .save)
         add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked), .saveAs)
         menu.addItem(.separator())
-        if item.kind == .recording {
-            // A movie is trimmed and made smaller there; a GIF only plays.
-            if isGIF {
-                add(String(localized: "Play", bundle: .module), "play", #selector(annotateClicked), .annotate)
-            } else {
-                add(String(localized: "Edit…", bundle: .module), "timeline.selection", #selector(annotateClicked), .annotate)
-            }
-            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
-            add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
-        } else {
-            add(String(localized: "Annotate…", bundle: .module), "pencil.and.scribble", #selector(annotateClicked), .annotate)
-            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
-            add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
+        // A picture is marked up, a movie trimmed and made smaller; a GIF only plays (`CaptureMedia.openMenuTitle`).
+        add(item.media.openMenuTitle, item.media.openSymbolName, #selector(annotateClicked), .annotate)
+        add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
+        add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
+        if item.kind == .screenshot {
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
             add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)
