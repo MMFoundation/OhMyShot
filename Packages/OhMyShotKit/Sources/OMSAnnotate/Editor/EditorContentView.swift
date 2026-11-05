@@ -18,10 +18,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     private var adjustments: BackdropAdjustments?
     private weak var adjustPopover: NSPopover?
 
-    /// The picture last chosen for a background, offered again.
-    /// The last picture chosen for a background, offered again beside the colors.
-    static let lastPictureKey = "annotation.backdropPicture"
-
     private static let railInset: CGFloat = 12
     /// The band along the bottom where the capsule rests when nothing is selected.
     private static let foot: CGFloat = 12 + StyleCapsule.height + 12
@@ -106,7 +102,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         if session.tool == .background {
             capsule.showBackground(StyleCapsule.BackgroundState(
                 backdrop: session.document.backdrop,
-                lastPicture: UserDefaults.standard.string(forKey: Self.lastPictureKey),
+                lastPicture: BackdropPresets.shared.lastPicture,
                 blur: session.blurredCapture
             ))
         } else {
@@ -141,7 +137,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         panel.canChooseDirectories = false
         panel.prompt = String(localized: "Use Picture", bundle: .module)
         panel.message = String(localized: "Choose a picture to set the capture on.", bundle: .module)
-        if UserDefaults.standard.string(forKey: Self.lastPictureKey) == nil {
+        if BackdropPresets.shared.lastPicture == nil {
             let pictures = URL(filePath: "/System/Library/Desktop Pictures", directoryHint: .isDirectory)
             if FileManager.default.fileExists(atPath: pictures.path(percentEncoded: false)) { panel.directoryURL = pictures }
         }
@@ -149,7 +145,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             guard let self, response == .OK, let url = panel.url else { return }
             do {
                 let name = try PictureStore.shared.add(url)
-                UserDefaults.standard.set(name, forKey: Self.lastPictureKey)
+                BackdropPresets.shared.lastPicture = name
                 setFill(.picture(name))
                 // The chip offers the new picture even when the fill was a picture already.
                 refreshCapsule()
