@@ -372,7 +372,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     }
 
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         picture.borderColor = dark ? CGColor(gray: 1, alpha: 0.16) : CGColor(gray: 0, alpha: 0.10)
         picture.backgroundColor = Theme.cgColor(.controlBackgroundColor, for: effectiveAppearance)
         selectionRing.borderColor = Theme.cgColor(.keyboardFocusIndicatorColor, for: effectiveAppearance)

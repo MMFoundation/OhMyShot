@@ -815,7 +815,7 @@ final class OverlayView: NSView {
         loupeShadow.fillColor = translucentPicker ? .clear : .white
         loupeShadow.shadowOpacity = translucentPicker ? 0 : 0.28
         updateLoupeCenter(for: pointer.flatMap { color(at: global($0)) })
-        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let isDark = effectiveAppearance.isDark
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         // Text: the selection reads as selected text (the system's selection color, lightly filled,

@@ -254,7 +254,7 @@ public final class HoverTag {
 
     /// The reading capsule's materials, so every small note over the screen looks alike.
     private func applyAppearance(of appearance: NSAppearance) {
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = appearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         capsule.layer?.backgroundColor = Theme.Material.capsuleFill(dark: dark)
         capsule.layer?.borderWidth = Theme.Material.edgeWidth(contrast: contrast)

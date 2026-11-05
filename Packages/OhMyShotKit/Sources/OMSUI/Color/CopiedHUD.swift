@@ -19,7 +19,7 @@ public final class CopiedHUD {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = NSApp.effectiveAppearance.isDark
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         reading.setScale(screen?.backingScaleFactor ?? 2)

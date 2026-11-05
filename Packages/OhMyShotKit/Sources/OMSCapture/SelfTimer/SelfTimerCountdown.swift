@@ -263,7 +263,7 @@ final class CountdownDisc: NSView {
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             backing.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             track.strokeColor = NSColor.labelColor.withAlphaComponent(contrast ? 0.3 : 0.12).cgColor
             ring.strokeColor = NSColor.controlAccentColor.cgColor

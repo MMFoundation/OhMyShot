@@ -13,7 +13,7 @@ public nonisolated enum CardUpload: Equatable, Sendable {
 /// The materials of the small capsules on a card: white (a dark gray in Dark Mode), the hairline, dark ink.
 enum BadgeMaterial {
     static func apply(to layer: CALayer?, in view: NSView) -> NSColor {
-        let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = view.effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         layer?.backgroundColor = Theme.Material.capsuleFill(dark: dark)
         layer?.borderWidth = Theme.Material.edgeWidth(contrast: contrast)

@@ -91,7 +91,7 @@ public final class KeystrokeDisplay {
     /// The reading capsule's materials, for the system's appearance now; under Increase Contrast, the 1 pt
     /// contrast hairline.
     private func applyAppearance() {
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = NSApp.effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         CATransaction.begin()
         CATransaction.setDisableActions(true)

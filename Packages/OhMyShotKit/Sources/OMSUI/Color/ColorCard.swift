@@ -554,7 +554,7 @@ final class ColorCard: NSView {
 
     /// The text result card's materials, resolved for this view's appearance.
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         CATransaction.begin()
         CATransaction.setDisableActions(true)

@@ -146,7 +146,7 @@ final class CardButton: NSControl {
 
     override func draw(_ dirtyRect: NSRect) {
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let radius = bounds.height / 2
         if let backdrop {
             backdrop.setFill()

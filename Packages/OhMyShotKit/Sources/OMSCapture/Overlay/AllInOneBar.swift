@@ -222,7 +222,7 @@ final class AllInOneBar: NSView {
             // The hairline keeps the capsule's edge on white pages, where the glass alone fades out; Increase Contrast
             // firms it up and doubles the chip fills, as the other capsule bars do.
             let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))

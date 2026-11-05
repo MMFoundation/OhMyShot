@@ -432,7 +432,7 @@ final class ControlBarView: NSView {
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             backing.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             rim.lineWidth = contrast ? 1 : 0.5
             rim.strokeColor = contrast

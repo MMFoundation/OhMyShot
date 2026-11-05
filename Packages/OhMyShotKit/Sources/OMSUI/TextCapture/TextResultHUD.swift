@@ -551,7 +551,7 @@ final class TextResultCard: NSView {
 
     /// The reading capsule's materials, resolved for this view's appearance.
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         background.backgroundColor = Theme.Material.cardFill(dark: dark)
         background.borderWidth = Theme.Material.edgeWidth(contrast: increaseContrast)

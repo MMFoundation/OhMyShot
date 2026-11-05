@@ -755,13 +755,13 @@ struct StudioTimeline: View {
 
     /// The chip fill (black 0.08, white 0.16 in Dark), doubled under Increase Contrast.
     private static let chipFill = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.08)
+        NSColor(cgColor: Theme.ChipFill.selectedColor(dark: appearance.isDark, contrast: false)) ?? .clear
     })
     private static let chipFillStrong = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.28) : NSColor(white: 0, alpha: 0.16)
+        NSColor(cgColor: Theme.ChipFill.selectedColor(dark: appearance.isDark, contrast: true)) ?? .clear
     })
     /// The 1 pt contrast hairline's ink (black 0.35, white 0.5 in Dark).
     private static let contrastHairline = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
+        appearance.isDark ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
     })
 }

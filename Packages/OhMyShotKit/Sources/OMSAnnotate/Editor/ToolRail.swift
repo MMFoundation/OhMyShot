@@ -158,11 +158,11 @@ final class ToolRail: NSView {
             } else {
                 container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35)) : NSColor.separatorColor.cgColor
-            let highlight = ChipFill.selected(dark: dark, contrast: contrast)
-            let hover = ChipFill.hover(dark: dark, contrast: contrast)
+            let highlight = Theme.ChipFill.selectedColor(dark: dark, contrast: contrast)
+            let hover = Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
             for (tool, chip) in chips {
                 chip.layer?.backgroundColor = tool == selected ? highlight : chip.isHovered ? hover : .clear
             }
@@ -221,18 +221,6 @@ final class ToolRail: NSView {
         // The chip toggles itself; the session decides what is selected.
         select(selected)
         onSelect?(tool)
-    }
-}
-
-/// The fills of chips in the rail and the capsule: a light highlight for the selected chip and half of it
-/// on hover, as in the All-In-One bar; about twice as strong with Increase Contrast.
-enum ChipFill {
-    static func selected(dark: Bool, contrast: Bool) -> CGColor {
-        dark ? CGColor(gray: 1, alpha: contrast ? 0.28 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.16 : 0.08)
-    }
-
-    static func hover(dark: Bool, contrast: Bool) -> CGColor {
-        dark ? CGColor(gray: 1, alpha: contrast ? 0.16 : 0.09) : CGColor(gray: 0, alpha: contrast ? 0.09 : 0.045)
     }
 }
 

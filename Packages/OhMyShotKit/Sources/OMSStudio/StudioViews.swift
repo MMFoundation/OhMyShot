@@ -662,10 +662,10 @@ struct StudioInspector: View {
     /// The capsule swatch edge (black 0.18, white 0.38 in Dark; 0.40 and 0.60 under Increase Contrast),
     /// which holds around the palest and the darkest backgrounds alike.
     static let swatchEdge = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.38) : NSColor(white: 0, alpha: 0.18)
+        appearance.isDark ? NSColor(white: 1, alpha: 0.38) : NSColor(white: 0, alpha: 0.18)
     })
     static let swatchEdgeStrong = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.6) : NSColor(white: 0, alpha: 0.4)
+        appearance.isDark ? NSColor(white: 1, alpha: 0.6) : NSColor(white: 0, alpha: 0.4)
     })
 }
 

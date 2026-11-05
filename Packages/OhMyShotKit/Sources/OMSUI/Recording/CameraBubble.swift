@@ -367,7 +367,7 @@ private final class BubbleView: NSView {
         self.style = style
         self.fills = fills
         // Before the camera's first frame, the capsule surface: never a dark disc in a recording.
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = NSApp.effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         clip.backgroundColor = Theme.Material.cardFill(dark: dark)
         // The contrast hairline: the edge shows only under Increase Contrast.

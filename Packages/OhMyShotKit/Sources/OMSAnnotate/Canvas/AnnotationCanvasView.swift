@@ -1833,7 +1833,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         // white ink, light under dark ink), so the label's color still shows and the text gains contrast
         // rather than losing it; elsewhere the system selection color at the strength text selection
         // uses here.
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let labelWash = item.style.color.prefersDarkInk ? NSColor(white: 1, alpha: 0.35) : NSColor(white: 0, alpha: 0.22)
         let wash = block.look == .label ? labelWash : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
         view.selectedTextAttributes = [.backgroundColor: wash, .foregroundColor: ink]
@@ -1944,7 +1944,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             pictureLayer.borderWidth = contrast ? 1 : 0.5
             pictureLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.10)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor

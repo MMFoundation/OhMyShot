@@ -122,7 +122,7 @@ public final class TextSelectionHighlight {
     /// applied, which would otherwise fix it to the light value.
     private func applyStyle() {
         guard let shape, let appearance = panel?.effectiveAppearance else { return }
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = appearance.isDark
         let edge: CGFloat = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 2 : 1
         shape.lineWidth = edge
         shape.path = CGPath(rect: shape.bounds.insetBy(dx: edge / 2, dy: edge / 2), transform: nil)

@@ -473,7 +473,7 @@ private final class CardView: NSView {
         CATransaction.setDisableActions(true)
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.backgroundColor = dark ? NSColor.windowBackgroundColor.cgColor : CGColor(gray: 1, alpha: 1)
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35)) : NSColor.separatorColor.cgColor

@@ -235,7 +235,7 @@ final class RecordingBar: NSView {
             } else {
                 container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))

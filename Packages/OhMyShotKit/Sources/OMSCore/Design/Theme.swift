@@ -80,14 +80,25 @@ public enum Theme {
     }
 
     /// The fill a chip or a row takes under the pointer, and a chip that is on, as the alpha of white in Dark and of
-    /// black in Light; doubled under Increase Contrast where the control follows it.
+    /// black in Light (DESIGN.md's chip-hover and chip-selected): every bar, rail, capsule, and card button fills its
+    /// chips alike. About twice as strong under Increase Contrast where the control follows it.
     public enum ChipFill {
         public static func hover(dark: Bool, contrast: Bool = false) -> CGFloat {
-            (dark ? 0.09 : 0.045) * (contrast ? 2 : 1)
+            dark ? (contrast ? 0.16 : 0.09) : (contrast ? 0.09 : 0.045)
         }
 
         public static func selected(dark: Bool, contrast: Bool = false) -> CGFloat {
-            (dark ? 0.16 : 0.08) * (contrast ? 2 : 1)
+            dark ? (contrast ? 0.28 : 0.16) : (contrast ? 0.16 : 0.08)
+        }
+
+        /// The hover fill as a layer's color.
+        public static func hoverColor(dark: Bool, contrast: Bool) -> CGColor {
+            CGColor(gray: dark ? 1 : 0, alpha: hover(dark: dark, contrast: contrast))
+        }
+
+        /// The fill of a chip that is on, as a layer's color.
+        public static func selectedColor(dark: Bool, contrast: Bool) -> CGColor {
+            CGColor(gray: dark ? 1 : 0, alpha: selected(dark: dark, contrast: contrast))
         }
     }
 

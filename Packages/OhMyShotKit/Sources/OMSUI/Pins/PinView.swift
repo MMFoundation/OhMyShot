@@ -193,7 +193,7 @@ final class PinView: NSView, NSDraggingSource {
     func apply(_ appearance: PinAppearance) {
         look = appearance
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         contentLayer.cornerRadius = appearance.cornerRadius

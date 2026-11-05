@@ -128,7 +128,7 @@ public final class SelectionChromeView: NSView {
     /// The overlay's dimming and outline (45% and 0.7 under Increase Contrast), and the reading capsule's
     /// materials with the contrast hairline.
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         CATransaction.begin()
         CATransaction.setDisableActions(true)

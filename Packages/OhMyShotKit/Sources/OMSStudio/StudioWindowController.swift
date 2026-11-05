@@ -709,7 +709,7 @@ final class PlayerLayerView: NSView {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         edge.borderWidth = contrast ? 1 : 0.5
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             edge.borderColor = contrast
                 ? NSColor(white: dark ? 1 : 0, alpha: dark ? 0.5 : 0.35).cgColor
                 : NSColor.separatorColor.cgColor

@@ -563,7 +563,7 @@ extension DebugHooks {
         do {
             let picture = try await capturer.captureDisplay(display, includingOwnWindows: true)
             try FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
-            let tone = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? "dark" : "light"
+            let tone = NSApp.effectiveAppearance.isDark ? "dark" : "light"
             let file = Self.snapshotDirectory.appending(path: "selftimer-demo-\(display.id)-\(tone).png")
             try await ImageExporter.write(picture.image, to: file, format: .png)
             Log.app.notice("debug.selftimer-demo \(file.path(percentEncoded: false), privacy: .public)")

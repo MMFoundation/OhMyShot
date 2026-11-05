@@ -169,7 +169,7 @@ class CapsuleBar: NSView {
             } else {
                 container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
@@ -186,14 +186,10 @@ class CapsuleBar: NSView {
         }
     }
 
-    /// The fill of a chip that is on, and of one under the pointer: white over dark, black over light, doubled under
-    /// Increase Contrast. Every capsule bar's chips fill alike, and All-In-One's size fields as its chips do.
+    /// The fill of a chip that is on, and of one under the pointer: the design's chip fills, which every capsule bar's
+    /// chips take, and All-In-One's size fields as its chips do.
     static func chipFills(dark: Bool, increasedContrast: Bool) -> (selected: CGColor, hover: CGColor) {
-        let boost: CGFloat = increasedContrast ? 2 : 1
-        return (
-            dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost),
-            dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
-        )
+        (Theme.ChipFill.selectedColor(dark: dark, contrast: increasedContrast), Theme.ChipFill.hoverColor(dark: dark, contrast: increasedContrast))
     }
 
     #if DEBUG

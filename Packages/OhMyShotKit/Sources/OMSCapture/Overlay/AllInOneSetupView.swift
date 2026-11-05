@@ -586,7 +586,7 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             let (selected, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             CATransaction.begin()
             CATransaction.setDisableActions(true)

@@ -146,7 +146,7 @@ final class StyleCapsule: NSView {
 
     /// The reading capsule's materials, at control size.
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         layer?.backgroundColor = dark ? CGColor(gray: 0.17, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         layer?.borderWidth = contrast ? 1 : 0.5
@@ -700,7 +700,7 @@ final class StyleCapsule: NSView {
             context.clip()
             draw(context, disc)
             context.restoreGState()
-            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = NSAppearance.currentDrawing().isDark
             if blends(dark) { strokeInkEdge(context, around: disc, dark: dark) }
             return true
         }
@@ -821,7 +821,7 @@ final class StyleCapsule: NSView {
             context.fillEllipse(in: disc)
             // An edge only on an ink the capsule would swallow (white on the light capsule, black on the dark):
             // a hairline around every ink read as a thin gray outline.
-            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = NSAppearance.currentDrawing().isDark
             if blendsIntoCapsule(color, dark: dark) { strokeInkEdge(context, around: disc, dark: dark) }
             // The chosen ink's ring is in the label ink, not the accent, which can be a hue beside the ink it rings
             // (a pink accent around red); 2 pt of the capsule show between the ring and the disc.
@@ -1182,7 +1182,7 @@ final class CapsuleChip: HoverTagButton {
 
     func applyAppearance() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             if imagePosition == .noImage {
                 attributedTitle = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor])
             }
@@ -1190,8 +1190,8 @@ final class CapsuleChip: HoverTagButton {
             let selected = (isSelected || prominent) && !isSwatch
             let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
             let fill: CGColor = isSwatch ? .clear
-                : selected ? ChipFill.selected(dark: dark, contrast: contrast)
-                : isHovered ? ChipFill.hover(dark: dark, contrast: contrast)
+                : selected ? Theme.ChipFill.selectedColor(dark: dark, contrast: contrast)
+                : isHovered ? Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
                 : .clear
             layer?.backgroundColor = fill
             contentTintColor = selected && !prominent ? .controlAccentColor : .labelColor
