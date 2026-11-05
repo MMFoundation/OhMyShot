@@ -90,8 +90,8 @@ public struct TextLineReader: Sendable {
                 continue
             }
             var end = line.index(after: index)
-            if !isSquare(character) {
-                while end < line.endIndex, !line[end].isWhitespace, !isSquare(line[end]) { end = line.index(after: end) }
+            if !Script.isCJKOrFullWidthMark(character) {
+                while end < line.endIndex, !line[end].isWhitespace, !Script.isCJKOrFullWidthMark(line[end]) { end = line.index(after: end) }
             }
             words.append(index..<end)
             index = end
@@ -119,12 +119,6 @@ public struct TextLineReader: Sendable {
 
     private static func isOpening(_ character: Character) -> Bool {
         "（「『【〈《〔［｛([{".contains(character) || character == "\u{201C}" || character == "\u{2018}"
-    }
-
-    /// Characters set one to a square cell: Chinese, Japanese, and Korean, and the full-width marks among
-    /// them.
-    private static func isSquare(_ character: Character) -> Bool {
-        Script.isCJK(character) || character.unicodeScalars.contains { (0x3000...0x303F).contains($0.value) || (0xFF00...0xFFEF).contains($0.value) }
     }
 
     // MARK: Fitting to the ink
