@@ -135,14 +135,7 @@ private struct AppTextSetting: View {
             }
             if settings.readsAppText, let permissions, permissions.status(of: .accessibility) != .granted {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Label {
-                        Text("Needs Accessibility to ask apps for their text.", bundle: .module)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                    }
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    SettingsWarning(Text("Needs Accessibility to ask apps for their text.", bundle: .module))
                     Button(action: allow) {
                         permissions.hasAsked(.accessibility) ? Text("Open System Settings…", bundle: .module) : Text("Allow…", bundle: .module)
                     }

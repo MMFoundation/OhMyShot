@@ -68,8 +68,7 @@ struct SharingSettingsView: View {
                             }
                         }
                         .frame(minWidth: 280, maxWidth: 360)
-                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+                        .settingsWell()
                         HStack(spacing: 8) {
                             if records.records.count > Self.recentLimit {
                                 Text("\(records.records.count - Self.recentLimit) older", bundle: .module)
@@ -154,8 +153,7 @@ struct SharingSettingsView: View {
             }
         }
         .frame(minWidth: 280, maxWidth: 360)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+        .settingsWell()
     }
 
     private var addMenu: some View {
@@ -215,7 +213,7 @@ private struct RecordRow: View {
             Button { actions.copyLink(record) } label: { Text("Copy Link", bundle: .module) }
                 .controlSize(.small)
                 .disabled(record.isExpired())
-            Menu {
+            SettingsMoreMenu {
                 Button { actions.open(record) } label: { Text("Open in Browser", bundle: .module) }
                     .disabled(record.isExpired())
                 if actions.canDelete(record) {
@@ -224,14 +222,7 @@ private struct RecordRow: View {
                 }
                 Divider()
                 Button { actions.forget(record) } label: { Text("Forget", bundle: .module) }
-            } label: {
-                Image(systemName: "ellipsis")
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityLabel(Text("More", bundle: .module))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -286,19 +277,12 @@ private struct DestinationRow: View {
             Spacer(minLength: 8)
             Button(action: edit) { Text("Edit…", bundle: .module) }
                 .controlSize(.small)
-            Menu {
+            SettingsMoreMenu {
                 Button(action: makeDefault) { Text("Make Default", bundle: .module) }
                     .disabled(isDefault)
                 Divider()
                 Button(role: .destructive, action: remove) { Text("Remove…", bundle: .module) }
-            } label: {
-                Image(systemName: "ellipsis")
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityLabel(Text("More", bundle: .module))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -323,57 +307,6 @@ private struct DestinationRow: View {
         case .customHTTP(let settings):
             "\(destination.kindName) · \(URL(string: settings.requestURL)?.host() ?? settings.requestURL)"
         }
-    }
-}
-
-// MARK: - Editor
-
-/// A secure field for a secret, which says "Saved" instead of showing what the Keychain holds.
-struct SecretInput: View {
-    @Binding var text: String
-    let isStored: Bool
-    let label: Text
-    /// A secret the form can do without, such as the key of a service on this Mac.
-    var isOptional = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            SecureField(text: $text, prompt: isStored ? Text("Saved in Keychain", bundle: .module) : isOptional ? Text("Optional", bundle: .module) : Text("Required", bundle: .module)) { label }
-                .labelsHidden()
-            // The lock takes the help button's place, so this field ends where the others do.
-            ZStack {
-                if isStored {
-                    Image(systemName: "lock.fill")
-                        .foregroundStyle(.secondary)
-                        .help(Text("Saved in the Keychain. Type a new value to replace it.", bundle: .module))
-                        .accessibilityHidden(true)
-                }
-            }
-            .frame(width: 24, height: 1)
-        }
-    }
-}
-
-/// The small picture a test upload sends: a soft gradient with a rounded card on it, about a kilobyte.
-enum TestPicture {
-    static func png() throws -> Data {
-        let size = CGSize(width: 160, height: 100)
-        guard
-            let context = CGContext(
-                data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ),
-            let gradient = CGGradient(
-                colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: [CGColor(srgbRed: 0.55, green: 0.76, blue: 1, alpha: 1), CGColor(srgbRed: 0.83, green: 0.78, blue: 1, alpha: 1)] as CFArray,
-                locations: [0, 1]
-            )
-        else { throw CocoaError(.fileWriteUnknown) }
-        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: [])
-        context.setFillColor(CGColor(gray: 1, alpha: 0.9))
-        context.addPath(CGPath(roundedRect: CGRect(x: 36, y: 26, width: 88, height: 48), cornerWidth: 12, cornerHeight: 12, transform: nil))
-        context.fillPath()
-        guard let image = context.makeImage() else { throw CocoaError(.fileWriteUnknown) }
-        return try ImageExporter.encoded(image, as: .png)
     }
 }
 

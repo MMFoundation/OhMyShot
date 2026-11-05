@@ -39,7 +39,7 @@ struct UploadDestinationEditor: View {
     let destinations: UploadDestinationStore
     let close: () -> Void
     @State private var problem: String?
-    @State private var test = TestState.idle
+    @State private var test = SettingsTestState.idle
     @State private var testTask: Task<Void, Never>?
 
     #if DEBUG
@@ -57,13 +57,6 @@ struct UploadDestinationEditor: View {
         self.close = close
     }
     #endif
-
-    enum TestState: Equatable {
-        case idle
-        case running
-        case succeeded(String)
-        case failed(String)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -105,9 +98,7 @@ struct UploadDestinationEditor: View {
             Divider()
             HStack {
                 if let problem {
-                    Label { Text(problem) } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    SettingsWarning(Text(problem))
                         .lineLimit(2)
                 }
                 Spacer()
@@ -330,42 +321,11 @@ struct UploadDestinationEditor: View {
     // MARK: Test
 
     private var testRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Button(action: runTest) { Text("Test Upload", bundle: .module) }
-                    .disabled(test == .running)
-                    .help(Text("Uploads a small test image to this destination. It stays there.", bundle: .module))
-                InfoButton(Text("Uploads a small test image to this destination. It stays there.", bundle: .module))
-                if test == .running {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            switch test {
-            case .idle, .running:
-                EmptyView()
-            case .succeeded(let link):
-                Label {
-                    Text(link)
-                        .textSelection(.enabled)
-                        .lineLimit(3)
-                        .truncationMode(.middle)
-                } icon: {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                }
-                .font(.callout)
-            case .failed(let message):
-                Label {
-                    Text(message)
-                        .textSelection(.enabled)
-                        .lineLimit(4)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                }
-                .font(.callout)
-            }
-        }
-        .frame(maxWidth: 340, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+        SettingsTestRow(
+            state: test, title: Text("Test Upload", bundle: .module),
+            help: Text("Uploads a small test image to this destination. It stays there.", bundle: .module), succeedsWithLink: true,
+            run: runTest
+        )
     }
 
     private func runTest() {
@@ -377,11 +337,8 @@ struct UploadDestinationEditor: View {
         let uploader = Uploader(secrets: draft.secretStore(over: destinations.secrets))
         testTask?.cancel()
         testTask = Task {
-            let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot-test-\(UUID().uuidString).png")
-            defer { try? FileManager.default.removeItem(at: file) }
             do {
-                try TestPicture.png().write(to: file)
-                let result = try await uploader.upload(fileAt: file, to: built.destination, originalName: "OhMyShot test.png")
+                let result = try await uploader.testUpload(to: built.destination)
                 if !Task.isCancelled { test = .succeeded(result.link.absoluteString) }
             } catch is CancellationError {
                 test = .idle

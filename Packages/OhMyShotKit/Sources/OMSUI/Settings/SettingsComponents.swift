@@ -194,3 +194,162 @@ struct InfoButton: View {
             .accessibilityHint(text)
     }
 }
+
+/// A secure field for a secret, which says "Saved" instead of showing what the Keychain holds.
+struct SecretInput: View {
+    @Binding var text: String
+    let isStored: Bool
+    let label: Text
+    /// A secret the form can do without, such as the key of a service on this Mac.
+    var isOptional = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            SecureField(text: $text, prompt: isStored ? Text("Saved in Keychain", bundle: .module) : isOptional ? Text("Optional", bundle: .module) : Text("Required", bundle: .module)) { label }
+                .labelsHidden()
+            // The lock takes the help button's place, so this field ends where the others do.
+            ZStack {
+                if isStored {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(.secondary)
+                        .help(Text("Saved in the Keychain. Type a new value to replace it.", bundle: .module))
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(width: 24, height: 1)
+        }
+    }
+}
+
+/// Where a form's Test stands: Sharing's Test Upload in a destination's editor, and Cloud reading's Test.
+enum SettingsTestState: Equatable {
+    case idle
+    case running
+    /// What came back: the test upload's link, or a sentence saying how it went.
+    case succeeded(String)
+    case failed(String)
+}
+
+/// A form's Test: the button, a spinner while it runs, and under them what it found, a green check or the orange
+/// triangle with the failure's sentence, which can be selected for a bug report or a server's owner.
+struct SettingsTestRow: View {
+    let state: SettingsTestState
+    let title: Text
+    /// What the test does, as the button's tooltip and in a round help button beside it; nil for neither.
+    var help: Text?
+    /// Whether a success is a link, which can be selected and is cut in the middle when long; else a sentence.
+    var succeedsWithLink = false
+    let run: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if let help {
+                    button
+                        .help(help)
+                    InfoButton(help)
+                } else {
+                    button
+                }
+                if state == .running {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            switch state {
+            case .idle, .running:
+                EmptyView()
+            case .succeeded(let message):
+                Label {
+                    if succeedsWithLink {
+                        Text(message)
+                            .textSelection(.enabled)
+                            .lineLimit(3)
+                            .truncationMode(.middle)
+                    } else {
+                        Text(message).lineLimit(3)
+                    }
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                .font(.callout)
+            case .failed(let message):
+                Label {
+                    Text(message)
+                        .textSelection(.enabled)
+                        .lineLimit(4)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+                .font(.callout)
+            }
+        }
+        .frame(maxWidth: 340, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var button: some View {
+        Button(action: run) { title }
+            .disabled(state == .running)
+    }
+}
+
+/// A warning under a setting: the orange triangle, then what goes wrong or is missing, in the secondary callout ink.
+struct SettingsWarning: View {
+    let text: Text
+
+    init(_ text: Text) {
+        self.text = text
+    }
+
+    var body: some View {
+        Label {
+            text
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// The "…" button at the end of a row of a settings list, with the row's less used actions.
+struct SettingsMoreMenu<Items: View>: View {
+    @ViewBuilder let items: () -> Items
+
+    var body: some View {
+        Menu(content: items) {
+            Image(systemName: "ellipsis")
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .controlSize(.small)
+        .fixedSize()
+        .accessibilityLabel(Text("More", bundle: .module))
+    }
+}
+
+extension View {
+    /// The well a settings list or document sits in: a faint fill under rounded corners and a hairline edge.
+    /// `clipped`, the content is cut to the corners too, for one that scrolls under them.
+    func settingsWell(clipped: Bool = false) -> some View {
+        modifier(SettingsWell(clipped: clipped))
+    }
+}
+
+private struct SettingsWell: ViewModifier {
+    let clipped: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let filled = content.background(.quaternary.opacity(0.5), in: shape)
+        Group {
+            if clipped {
+                filled.clipShape(shape)
+            } else {
+                filled
+            }
+        }
+        .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
+    }
+}

@@ -36,18 +36,7 @@ struct AfterCaptureChoices: View {
                 }
             }
             if settings.afterCapture(for: kind).keepsNothing(hasDestination: hasDestination) {
-                Label {
-                    if settings.historyRetention == .never {
-                        keptNowhere
-                    } else {
-                        keptInHistoryOnly
-                    }
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                SettingsWarning(settings.historyRetention == .never ? keptNowhere : keptInHistoryOnly)
             }
         }
     }
