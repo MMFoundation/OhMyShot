@@ -427,13 +427,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Picture
 
-    func rotateLeft() { content.canvas.rotateLeft(nil) }
-    func rotateRight() { content.canvas.rotateRight(nil) }
-    func flipHorizontal() { content.canvas.flipHorizontal(nil) }
-    func flipVertical() { content.canvas.flipVertical(nil) }
-    func showImageSize() { content.canvas.showImageSize(nil) }
-    func toggleCanvasLock() { content.canvas.toggleCanvasLock(nil) }
-
     /// Asks for the size to scale the picture to, on a sheet on the window; scaling it, with its marks, is
     /// one undo step.
     private func presentImageSize() {
@@ -459,11 +452,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window?.endSheet(sheet)
         if resizing, model.canResize { content.canvas.resizePicture(to: model.sizing.size) }
     }
-
-    func zoomToFit() { content.canvas.zoomToFit() }
-    func zoomToActualSize() { content.canvas.zoomToActualSize() }
-    func zoomIn() { content.canvas.zoomIn() }
-    func zoomOut() { content.canvas.zoomOut() }
 
     /// The file to drag out, with the edits kept in it first.
     func fileForDragging() -> URL? {
@@ -565,6 +553,9 @@ struct EditorView: View {
             .toolbar { toolbar }
     }
 
+    /// What the Picture and zoom menus act on, as the canvas's own keys and menu items do.
+    private var canvas: AnnotationCanvasView { content.canvas }
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button {
@@ -584,14 +575,14 @@ struct EditorView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button { model.controller?.showImageSize() } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
+                Button { canvas.showImageSize(nil) } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
                 Divider()
-                Button { model.controller?.rotateLeft() } label: { Text("Rotate Left (⌘L)", bundle: .module) }
-                Button { model.controller?.rotateRight() } label: { Text("Rotate Right (⌘R)", bundle: .module) }
-                Button { model.controller?.flipHorizontal() } label: { Text("Flip Horizontal", bundle: .module) }
-                Button { model.controller?.flipVertical() } label: { Text("Flip Vertical", bundle: .module) }
+                Button { canvas.rotateLeft(nil) } label: { Text("Rotate Left (⌘L)", bundle: .module) }
+                Button { canvas.rotateRight(nil) } label: { Text("Rotate Right (⌘R)", bundle: .module) }
+                Button { canvas.flipHorizontal(nil) } label: { Text("Flip Horizontal", bundle: .module) }
+                Button { canvas.flipVertical(nil) } label: { Text("Flip Vertical", bundle: .module) }
                 Divider()
-                Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in model.controller?.toggleCanvasLock() })) {
+                Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in canvas.toggleCanvasLock(nil) })) {
                     Text("Lock Canvas", bundle: .module)
                 }
             } label: {
@@ -601,11 +592,11 @@ struct EditorView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button { model.controller?.zoomToFit() } label: { Text("Zoom to Fit (⌘0)", bundle: .module) }
-                Button { model.controller?.zoomToActualSize() } label: { Text("Actual Size", bundle: .module) }
+                Button { canvas.zoomToFit() } label: { Text("Zoom to Fit (⌘0)", bundle: .module) }
+                Button { canvas.zoomToActualSize() } label: { Text("Actual Size", bundle: .module) }
                 Divider()
-                Button { model.controller?.zoomIn() } label: { Text("Zoom In (⌘+)", bundle: .module) }
-                Button { model.controller?.zoomOut() } label: { Text("Zoom Out (⌘−)", bundle: .module) }
+                Button { canvas.zoomIn() } label: { Text("Zoom In (⌘+)", bundle: .module) }
+                Button { canvas.zoomOut() } label: { Text("Zoom Out (⌘−)", bundle: .module) }
             } label: {
                 Text(verbatim: model.zoomLabel).monospacedDigit()
             }
