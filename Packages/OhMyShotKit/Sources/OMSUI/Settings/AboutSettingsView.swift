@@ -35,7 +35,7 @@ struct AboutSettingsView: View {
                 .resizable()
                 .frame(width: 64, height: 64)
                 .accessibilityHidden(true)
-            Text(Self.info("CFBundleDisplayName") ?? "OhMyShot")
+            Text(AppIdentity.displayName)
                 .font(.title2.weight(.semibold))
             Text("Version \(Self.info("CFBundleShortVersionString") ?? "?") (\(Self.info("CFBundleVersion") ?? "?"))", bundle: .module)
                 .foregroundStyle(.secondary)

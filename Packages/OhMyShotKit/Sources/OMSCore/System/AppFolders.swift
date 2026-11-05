@@ -4,6 +4,11 @@ import Foundation
 /// two keep their own folders, settings, keychain items, and log, and never read each other's.
 public enum AppIdentity {
     public static let bundleIdentifier = Bundle.main.bundleIdentifier ?? "io.github.fzlzjerry.ohmyshot"
+
+    /// The name the app goes by in windows' titles and menus: a debug build's says so ("OhMyShot Dev").
+    public static var displayName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+    }
 }
 
 /// The app's own folders, named by its bundle identifier: in Application Support, what it keeps (the history, the

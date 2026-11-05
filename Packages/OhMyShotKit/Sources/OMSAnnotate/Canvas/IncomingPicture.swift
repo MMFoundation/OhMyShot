@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import OMSCore
 import UniformTypeIdentifiers
 
 /// A picture coming in to be combined: its name in the picture store, its size in pixels, and its
@@ -54,10 +55,8 @@ struct IncomingPicture {
     private static func resolution(of name: String) -> CGFloat? {
         guard
             let source = CGImageSourceCreateWithURL(PictureStore.shared.url(named: name) as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-            let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue, dpi > 72.5
+            let pixelsPerPoint = ImageLoader.pixelsPerPoint(of: source)
         else { return nil }
-        // PNG keeps resolution per meter, so 144 dpi reads back as 143.99: quarter steps.
-        return CGFloat((dpi / 72 * 4).rounded() / 4)
+        return CGFloat(pixelsPerPoint)
     }
 }

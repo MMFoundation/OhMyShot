@@ -196,7 +196,7 @@ struct UploadDestinationEditor: View {
                 info: Text("S3 signatures last at most 7 days. After that the link stops working and the file stays in the bucket.", bundle: .module),
                 fills: false
             ) {
-                Stepper(value: $draft.presignedDays, in: 1...7) {
+                Stepper(value: $draft.presignedDays, in: S3Settings.presignedDayRange) {
                     Text("\(draft.presignedDays) days", bundle: .module)
                         .monospacedDigit()
                 }

@@ -91,7 +91,7 @@ struct DebugHooks {
     }
 
     /// Where `snapshot` writes window captures.
-    static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
+    static let snapshotDirectory = AppFolders.caches.appending(path: "debug-snapshots", directoryHint: .isDirectory)
 
     /// Runs the hook `url` names, in the file of the feature it belongs to.
     func handle(_ url: URL) {

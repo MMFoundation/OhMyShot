@@ -35,7 +35,7 @@ nonisolated enum DebugCloudDemo {
     /// A store holding Claude at demo.invalid, its key in memory; `panel` and `captureText` say where it reads by itself.
     @MainActor
     static func store(panel: Bool, captureText: Bool) -> CloudModelStore {
-        let suite = "\(Log.subsystem).debug.cloud"
+        let suite = "\(AppIdentity.bundleIdentifier).debug.cloud"
         UserDefaults().removePersistentDomain(forName: suite)
         let defaults = UserDefaults(suiteName: suite) ?? .standard
         let store = CloudModelStore(defaults: defaults, secrets: InMemorySecretStore())

@@ -46,7 +46,7 @@ final class CompositionRoot {
     }()
     /// The cloud model the OCR panel's Read with, and Capture Text while Settings says so, send a picture to (L4,
     /// Docs/ocr.md › Cloud models). Its key is read from the Keychain only when a picture is sent or Settings shows it.
-    private lazy var cloudModels = CloudModelStore(secrets: KeychainSecretStore(service: "OhMyShot Cloud Models (\(Log.subsystem))"))
+    private lazy var cloudModels = CloudModelStore(secrets: KeychainSecretStore(service: "OhMyShot Cloud Models (\(AppIdentity.bundleIdentifier))"))
     #if DEBUG
     /// Scripted checks' models, in memory, in place of the person's while set.
     var demoCloudModels: CloudModelStore?

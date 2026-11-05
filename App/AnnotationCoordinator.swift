@@ -182,7 +182,7 @@ final class AnnotationCoordinator {
     @concurrent
     private static func loadProject(_ file: URL) async throws -> (project: AnnotationProject, picture: URL) {
         let project = try AnnotationProject.read(from: file)
-        let folder = URL.cachesDirectory.appending(path: Log.subsystem, directoryHint: .isDirectory).appending(path: "Projects", directoryHint: .isDirectory)
+        let folder = AppFolders.caches.appending(path: "Projects", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let picture = folder.appending(path: file.deletingPathExtension().lastPathComponent + ".png")
         guard let image = await AnnotationRenderer.render(project.document, base: project.capture) else { throw CocoaError(.fileReadCorruptFile) }

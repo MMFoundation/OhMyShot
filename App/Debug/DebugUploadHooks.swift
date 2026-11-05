@@ -10,7 +10,7 @@ import OSLog
 /// touched: every hook here points link copying at the private pasteboard first.
 extension DebugHooks {
     /// Where links are copied while these hooks are in use.
-    private static let pasteboardName = NSPasteboard.Name("\(Log.subsystem).upload-lab")
+    private static let pasteboardName = NSPasteboard.Name("\(AppIdentity.bundleIdentifier).upload-lab")
     /// Names of the destinations the lab adds start with this, so removing them removes nothing else.
     private static let labPrefix = "Lab "
 

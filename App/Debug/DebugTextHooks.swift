@@ -248,7 +248,7 @@ extension DebugHooks {
             }
             // A private pasteboard, so the clipboard is never touched. "finder" adds an icon as TIFF
             // beside the file, as Finder does when a file is copied.
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("\(Log.subsystem).debug"))
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("\(AppIdentity.bundleIdentifier).debug"))
             pasteboard.clearContents()
             if via == "finder" {
                 pasteboard.writeObjects([file as NSURL])

@@ -315,7 +315,7 @@ public final class StatusItemController {
     }
 
     private var appName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+        AppIdentity.displayName
     }
 }
 
