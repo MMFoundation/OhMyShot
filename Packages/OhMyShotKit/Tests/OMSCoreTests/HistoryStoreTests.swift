@@ -44,6 +44,30 @@ struct HistoryStoreTests {
         #expect(store.items().map(\.id) == [item.id])
     }
 
+    /// A photo kept on its side, to be turned upright as it is shown (EXIF orientation 6), has its shown size in the
+    /// record: when it is copied in, and again when it is put back as it was after being marked up.
+    @Test func aPictureTurnedUprightKeepsItsShownSizeWhenPutBack() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let folder = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = folder.appending(path: "Photo.jpg")
+        let context = try #require(CGContext(
+            data: nil, width: 4, height: 2, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ))
+        let destination = try #require(CGImageDestinationCreateWithURL(source as CFURL, UTType.jpeg.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), [kCGImagePropertyOrientation: 6] as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+
+        let item = try await store.add(copyOf: source)
+        #expect(item.pixelWidth == 2 && item.pixelHeight == 4)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 2, pixelHeight: 4, annotations: Data("{}".utf8))
+        let restored = try store.restoreOriginal(of: marked)
+        #expect(restored.pixelWidth == 2 && restored.pixelHeight == 4)
+    }
+
     @Test func aFileThatIsNoPictureIsNotCopied() async throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
