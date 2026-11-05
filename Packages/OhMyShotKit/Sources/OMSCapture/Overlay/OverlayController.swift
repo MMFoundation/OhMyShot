@@ -85,15 +85,48 @@ public final class OverlayController {
         case window
     }
 
+    /// What one session is begun with besides its purpose: given to `begin`, gone again when the session ends.
+    public struct SessionOptions: Sendable {
+        /// All-In-One: a screenshot session whose area is framed to adjust, with a bar of every way to take it, rather
+        /// than captured as the mouse goes up; its bar and letter keys also offer text, scrolling, and recording. A
+        /// screenshot's alone: with any other purpose `begin` lets it go.
+        public var allInOne: AllInOneOptions?
+        /// A scrolling capture starts as soon as its area is chosen, without the scrolling bar (the URL API's
+        /// `start=true`).
+        public var startsScrollingAtOnce: Bool
+        /// The area chosen is captured again once the overlay has gone (the Self-Timer's), so what the screen was
+        /// frozen as is only what choosing is done on, and carries no pointer.
+        public var recapturesLive: Bool
+
+        public init(allInOne: AllInOneOptions? = nil, startsScrollingAtOnce: Bool = false, recapturesLive: Bool = false) {
+            self.allInOne = allInOne
+            self.startsScrollingAtOnce = startsScrollingAtOnce
+            self.recapturesLive = recapturesLive
+        }
+    }
+
+    /// What All-In-One's bar offers besides what it always does.
+    public struct AllInOneOptions: Sendable, Equatable {
+        /// Upload: only while a destination is set up.
+        public var offersUpload: Bool
+        /// A Copy chip: not while Settings copy every capture, which Capture then does.
+        public var showsCopy: Bool
+
+        public init(offersUpload: Bool = false, showsCopy: Bool = true) {
+            self.offersUpload = offersUpload
+            self.showsCopy = showsCopy
+        }
+    }
+
     /// Hold the screen still while selecting, so hover states and menus can be captured.
     public var freezesScreen = false
     /// Whether screenshots show the pointer. A frozen screen is captured with it, where it was when the shortcut was
     /// pressed, so the area is cut from a screen that has it; a live one is captured later, by whoever began.
     public var showsPointer = false
-    /// The area chosen is captured again once the overlay has gone (the Self-Timer's), so what the screen was frozen
-    /// as is only what choosing is done on, and carries no pointer. Set before `begin`; every session ends with it
-    /// off again.
-    public var recapturesLive = false
+    /// The session's options, as `begin` took them: All-In-One's only with a screenshot.
+    private var options = SessionOptions()
+    /// An All-In-One session, which only a screenshot's is.
+    private var isAllInOne: Bool { options.allInOne != nil }
     /// The shape Shift keeps while an area is dragged out; nil for a square. Set from Settings.
     public var keptShape: AspectRatio?
     /// The area last captured, recalled with L before a drag begins.
@@ -104,17 +137,6 @@ public final class OverlayController {
     /// Snaps a selection's edges to the blocks of text on a frozen screen when its `isOn` says so as a session
     /// begins; set once by whoever has a text detector.
     public var textBlocks: TextBlockFinder?
-    /// A scrolling capture starts as soon as its area is chosen, without the scrolling bar (the URL API's
-    /// `start=true`). Set before `begin`; every session ends with it off again.
-    public var startsScrollingAtOnce = false
-    /// All-In-One: a screenshot session whose area is framed to adjust, with a bar of every way to take it, rather
-    /// than captured as the mouse goes up; its bar and letter keys also offer text, scrolling, and recording. Set
-    /// before `begin`; every session ends with it off again.
-    public var isAllInOne = false
-    /// Whether All-In-One's bar offers Upload: only while a destination is set up.
-    public var allInOneOffersUpload = false
-    /// Whether All-In-One's bar has a Copy chip: not while Settings copy every capture, which Capture then does.
-    public var allInOneShowsCopy = true
     /// A recording is about to be set up outside Record Screen (from All-In-One): whoever records sets
     /// `recordingChoices` and `onRecordingSetupChange` for it.
     public var onWillSetUpRecording: (() -> Void)?
@@ -152,7 +174,7 @@ public final class OverlayController {
     /// Whether this session shows the screen as it was when it began; in-place annotation, picking a
     /// color, and measuring always do: they read the frozen frame's pixels.
     private var holdsStill: Bool {
-        (freezesScreen && purpose != .record && purpose != .scroll) || purpose == .annotate || purpose == .color || purpose == .measure
+        purpose.holdsStill(freezesScreen: freezesScreen)
     }
 
     private struct Entry {
@@ -225,10 +247,14 @@ public final class OverlayController {
         }
     }
 
-    /// - Parameter area: an area chosen already, in global points (the URL API's): a recording or a scrolling
-    ///   capture frames it with its bar at once; a screenshot or text shows it chosen, and Return takes it, or a drag
-    ///   chooses another.
-    public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, choosing area: CGRect? = nil, completion: @escaping (Outcome) -> Void) {
+    /// - Parameters:
+    ///   - options: what this session alone is begun with; All-In-One's only with a screenshot, let go otherwise.
+    ///   - area: an area chosen already, in global points (the URL API's): a recording or a scrolling capture frames it
+    ///     with its bar at once; a screenshot or text shows it chosen, and Return takes it, or a drag chooses another.
+    public func begin(
+        mode: Mode = .area, purpose: Purpose = .screenshot, options: SessionOptions = SessionOptions(), choosing area: CGRect? = nil,
+        completion: @escaping (Outcome) -> Void
+    ) {
         guard !isActive else { return }
         cursorVisibility.end()
         let beginning = LatencyProbe("overlay.begin")
@@ -238,6 +264,9 @@ public final class OverlayController {
         session += 1
         firstFrameArrived = false
         self.purpose = purpose
+        // Said once here, so nothing after asks the purpose again: All-In-One's modes are a screenshot's.
+        self.options = options
+        if !purpose.mayBeAllInOne { self.options.allInOne = nil }
         pendingAnnotation = nil
         selection = SelectionModel(bounds: .zero, pixelsPerPoint: 1)
         dragDisplay = nil
@@ -263,12 +292,12 @@ public final class OverlayController {
         let holdsStill = holdsStill
         // Only a frozen screen holds still for its text to be found; the live one may change under a snapped edge.
         cancelTextDetections()
-        snapsToText = holdsStill && (purpose == .screenshot || purpose == .text || purpose == .annotate) && textBlocks?.isOn() == true
+        snapsToText = holdsStill && purpose.snapsToText && textBlocks?.isOn() == true
         for (id, entry) in entries {
             entry.panel.level = OverlayPanel.selectionLevel
             entry.view.reset(
                 pointer: pointer, mode: viewMode, windows: windows,
-                showsToolbar: id == pointerDisplay?.id && (purpose == .screenshot || purpose == .annotate || purpose == .record),
+                showsToolbar: id == pointerDisplay?.id && purpose.showsModeBar,
                 showsPointer: !holdsStill,
                 purpose: purpose,
                 colorFormat: colorFormat,
@@ -284,7 +313,7 @@ public final class OverlayController {
         hasInput = false
         // Shown before the overlay takes input, which tells VoiceOver it is there; framed with its bar once the
         // overlay has the keyboard (`takeInput`), which a frozen session gets a moment later.
-        let framesAhead = purpose == .record || purpose == .scroll || (isAllInOne && purpose == .screenshot)
+        let framesAhead = purpose.framesWithBar || isAllInOne
         chosenAhead = mode == .area && framesAhead ? area.flatMap(choose) : nil
         let session = self.session
         // Text without freezing shows no frame, but the pointer display's still arrives first: it tells
@@ -574,7 +603,7 @@ public final class OverlayController {
 
     /// Captures each display in turn, the pointer's first; `onFirstFrame` runs once that one is shown.
     private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe, onFirstFrame: () -> Void) async {
-        let showsCursor = Self.framesShowPointer(showsPointer, purpose: purpose, holdsStill: holdsStill, allInOne: isAllInOne, recaptured: recapturesLive)
+        let showsCursor = Self.framesShowPointer(showsPointer, purpose: purpose, holdsStill: holdsStill, allInOne: isAllInOne, recaptured: options.recapturesLive)
         for (index, display) in displays.enumerated() {
             do {
                 let frame: CapturedFrame
@@ -617,7 +646,7 @@ public final class OverlayController {
     /// measuring read the frames' pixels, and text is read from them, so the pointer would only be in the way: that is
     /// why All-In-One's, which may take its area's text, carry none either.
     static func framesShowPointer(_ setting: Bool, purpose: Purpose, holdsStill: Bool, allInOne: Bool = false, recaptured: Bool = false) -> Bool {
-        setting && holdsStill && !allInOne && !recaptured && (purpose == .screenshot || purpose == .annotate)
+        setting && holdsStill && !allInOne && !recaptured && purpose.takesPicture
     }
 
     /// Finds the blocks of text in a display's frozen frame, off the main actor and at low priority, when this
@@ -689,7 +718,7 @@ public final class OverlayController {
         guard let entry = entries[display.id] else { return }
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
-        if startsScrollingAtOnce { return end(.scroll(area, display: display, autoScrolls: false)) }
+        if options.startsScrollingAtOnce { return end(.scroll(area, display: display, autoScrolls: false)) }
         cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
@@ -726,7 +755,7 @@ public final class OverlayController {
         entry.panel.level = OverlayPanel.annotationLevel
         entry.panel.makeKey()
         let setup = AllInOneSetupView(
-            display: display, area: area, offersUpload: allInOneOffersUpload && !sizing, showsCopy: allInOneShowsCopy,
+            display: display, area: area, offersUpload: (options.allInOne?.offersUpload ?? false) && !sizing, showsCopy: options.allInOne?.showsCopy ?? true,
             kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
         )
         setup.frame = entry.view.bounds
@@ -790,11 +819,7 @@ public final class OverlayController {
     private func end(_ outcome: Outcome) {
         guard isActive else { return }
         isActive = false
-        startsScrollingAtOnce = false
-        recapturesLive = false
-        isAllInOne = false
-        allInOneOffersUpload = false
-        allInOneShowsCopy = true
+        options = SessionOptions()
         allInOneMode = nil
         chosenAhead = nil
         pendingAnnotation = nil
@@ -838,7 +863,7 @@ extension OverlayController {
     /// A fresh selection for a drag that begins on `display`: free to cross onto every display, at the
     /// sharpest one's pixels, except in place, where it stays on its own display.
     private func startSelection(on display: DisplayInfo) {
-        let displays = purpose == .annotate || purpose == .record || purpose == .scroll || isAllInOne ? [display] : topology.layout.displays
+        let displays = purpose.selectsOnOneDisplay || isAllInOne ? [display] : topology.layout.displays
         selection = SelectionModel(
             bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
             pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
@@ -905,7 +930,7 @@ extension OverlayController {
     /// or captured once the overlay has gone. `display` is where the drag began; the outcome names the
     /// display holding most of the area.
     private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags) {
-        if isAllInOne, purpose == .screenshot {
+        if isAllInOne {
             switch allInOneMode {
             case .record?: setUpRecording(on: display, target: rect == display.frame ? .display : .area(rect))
             case let mode?: endAllInOne(mode, rect, on: display)
@@ -913,17 +938,15 @@ extension OverlayController {
             }
             return
         }
-        if purpose == .annotate {
-            startAnnotating(on: display.id, area: rect)
-            return
-        }
-        if purpose == .record {
-            startRecordingSetup(on: display, target: rect == display.frame ? .display : .area(rect))
-            return
-        }
-        if purpose == .scroll {
-            startScrollingSetup(on: display, area: rect)
-            return
+        switch purpose {
+        case .annotate:
+            return startAnnotating(on: display.id, area: rect)
+        case .record:
+            return startRecordingSetup(on: display, target: rect == display.frame ? .display : .area(rect))
+        case .scroll:
+            return startScrollingSetup(on: display, area: rect)
+        case .screenshot, .text, .color, .measure:
+            break
         }
         let involved = topology.layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
         let main = involved.max { Self.area(of: $0.frame.intersection(rect)) < Self.area(of: $1.frame.intersection(rect)) } ?? display
@@ -1116,7 +1139,7 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayViewDidRequestSizing(_ view: OverlayView) {
-        guard isActive, hasInput, !isAllInOne, purpose == .screenshot || purpose == .annotate, !isAnnotating else { return }
+        guard isActive, hasInput, purpose.opensSizeControl(allInOne: isAllInOne), !isAnnotating else { return }
         let at = pointer ?? NSEvent.mouseLocation
         let display: DisplayInfo
         var dragged: CGRect?
@@ -1140,7 +1163,7 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayViewDidRequestLastArea(_ view: OverlayView) {
-        guard isActive, hasInput, dragPoint == nil, purpose == .screenshot || purpose == .annotate, !isAnnotating,
+        guard isActive, hasInput, dragPoint == nil, purpose.takesPicture, !isAnnotating,
               let rect = lastArea, let display = startDisplay(of: rect) else {
             NSSound.beep()
             return
@@ -1187,14 +1210,14 @@ extension OverlayController: OverlayViewDelegate {
 
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
         // All-In-One's Screen (or F) takes the whole display at once; a mode chosen before takes it too.
-        if isAllInOne, purpose == .screenshot, allInOneMode == nil {
+        if isAllInOne, allInOneMode == nil {
             return endAllInOne(.screenshot(nil), rect, on: view.display)
         }
         select(rect, startingOn: view.display, modifiers: modifiers)
     }
 
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) {
-        guard isAllInOne, purpose == .screenshot, dragPoint == nil else { return }
+        guard isAllInOne, dragPoint == nil else { return }
         // Choosing the purpose in hand again, or a plain capture (Area, A), lets it go.
         let next: AllInOneChoice? = if case .screenshot = choice { nil } else if choice == allInOneMode { nil } else { choice }
         guard next != allInOneMode else { return }
@@ -1216,29 +1239,26 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
-        if isAllInOne, purpose == .screenshot, let mode = allInOneMode {
+        if isAllInOne, let mode = allInOneMode {
             switch mode {
             case .record: setUpRecording(on: view.display, target: .window(target))
             case .scroll, .text, .screenshot: endAllInOne(mode, target.frame.intersection(view.display.frame), on: view.display)
             }
             return
         }
-        if purpose == .record {
+        switch purpose {
+        case .record:
             startRecordingSetup(on: view.display, target: .window(target))
-            return
-        }
-        if purpose == .scroll {
+        case .scroll:
             // A window's frame where it is on screen: its title bar and toolbar stay put, as a header does.
             startScrollingSetup(on: view.display, area: target.frame)
-            return
-        }
-        if purpose == .annotate {
+        case .annotate:
             // A window is annotated where it is on the frozen screen.
             let area = target.frame.intersection(view.display.frame)
             if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: view.display.id, area: area) }
-            return
+        case .screenshot, .text, .color, .measure:
+            end(.window(target, modifiers: modifiers))
         }
-        end(.window(target, modifiers: modifiers))
     }
 
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
@@ -1248,7 +1268,7 @@ extension OverlayController: OverlayViewDelegate {
             return
         }
         let unionFrame = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
-        if isAllInOne, purpose == .screenshot, let mode = allInOneMode {
+        if isAllInOne, let mode = allInOneMode {
             endAllInOne(mode, unionFrame.intersection(view.display.frame), on: view.display)
             return
         }

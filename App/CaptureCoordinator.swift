@@ -125,12 +125,10 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        overlay.isAllInOne = true
-        overlay.allInOneOffersUpload = canUpload?() ?? false
-        overlay.allInOneShowsCopy = !settings.copyAfterCapture
+        let options = OverlayController.SessionOptions(allInOne: .init(offersUpload: canUpload?() ?? false, showsCopy: !settings.copyAfterCapture))
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
         configureCaptureOverlay()
-        overlay.begin(mode: .area, choosing: start) { [weak self] outcome in
+        overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
             guard let self else { return }
             switch outcome {
             case .allInOne(let choice, let rect, let display, let frozen):
@@ -278,10 +276,9 @@ final class CaptureCoordinator {
         }
         guard !overlay.isActive else { return followUp.finish(nil) }
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
-        overlay.recapturesLive = true
         configureCaptureOverlay()
-        overlay.begin(mode: .area) { [weak self] outcome in
+        // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
+        overlay.begin(mode: .area, options: .init(recapturesLive: true)) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             let seconds = delay ?? settings.selfTimerDelay
             switch outcome {

@@ -104,11 +104,10 @@ final class ScrollingCaptureCoordinator {
             Task { await start(area, on: display, autoScrolls: autoScrolls, appName: app, copiesToClipboard: copies) }
             return
         }
-        overlay.startsScrollingAtOnce = starts
         // An area left framed when Auto-scroll asked for Accessibility is framed again.
         let choosing = area ?? keptArea
         keptArea = nil
-        overlay.begin(mode: .area, purpose: .scroll, choosing: choosing) { [weak self] outcome in
+        overlay.begin(mode: .area, purpose: .scroll, options: .init(startsScrollingAtOnce: starts), choosing: choosing) { [weak self] outcome in
             guard let self, case .scroll(let area, let display, let auto) = outcome else { return }
             if auto || autoScrolls, !AutoScroller.isAllowed {
                 // Asked now, before anything is captured: macOS's question would be in the picture. The area is kept
