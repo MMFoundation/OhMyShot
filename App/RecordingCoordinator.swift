@@ -211,7 +211,8 @@ final class RecordingCoordinator {
         Task { [weak self] in
             guard let self else { return }
             var plan = plan
-            if plan.choices.recordsMicrophone, !(await microphoneAllowed()) {
+            // Reading the microphone's access starts the system's capture machinery: only when the recording wants it.
+            if plan.choices.recordsMicrophone, !(await permissions.requestIfNeeded(.microphone)) {
                 Log.recording.notice("Recording without the microphone: access is off")
                 microphoneDenied = true
                 VoiceOver.announce(String(localized: "Microphone access is off in System Settings. Recording without it."))
@@ -253,21 +254,6 @@ final class RecordingCoordinator {
         VoiceOver.announce(String(localized: "Recording cancelled."))
     }
 
-    /// Whether the microphone may be recorded, asking the first time. Reading its status starts the
-    /// system's capture machinery, so it is read only when a recording wants the microphone.
-    private func microphoneAllowed() async -> Bool {
-        permissions.refresh([.microphone])
-        switch permissions.status(of: .microphone) {
-        case .granted:
-            return true
-        case .denied:
-            return false
-        case .notGranted:
-            await permissions.request(.microphone)
-            return permissions.status(of: .microphone) == .granted
-        }
-    }
-
     private func start(_ plan: Plan) async {
         guard pending != nil else { return }
         pending = nil
@@ -286,10 +272,9 @@ final class RecordingCoordinator {
             let studio = plan.choices.output == .studio
             let shown = Set([keys?.windowID, rings?.windowID, studio ? nil : camera.windowID].compactMap(\.self))
             let source = try await capturer.recordingSource(for: plan.target, on: plan.display, including: shown)
-            let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
             let format = RecordingFormat.choose(
                 width: source.pixelWidth, height: source.pixelHeight,
-                framesPerSecond: lowPower ? 30 : settings.recordingFrameRate, prefersHEVC: settings.recordingPrefersHEVC
+                framesPerSecond: settings.recordingFramesPerSecond, prefersHEVC: settings.recordingPrefersHEVC
             )
             let created = try drafts.create(.init(
                 startedAt: .now, appName: plan.appName, output: plan.choices.output,
@@ -466,13 +451,7 @@ final class RecordingCoordinator {
 
     /// The microphone a recording takes: the one chosen while it is attached, else the system's default.
     private func microphone(for choices: RecordingChoices) -> RecordingAudio.Microphone? {
-        guard choices.recordsMicrophone else { return nil }
-        guard !choices.microphoneID.isEmpty else { return .systemDefault }
-        guard Microphones.available().devices.contains(where: { $0.id == choices.microphoneID }) else {
-            Log.recording.notice("The chosen microphone is not attached; recording the default one")
-            return .systemDefault
-        }
-        return .device(choices.microphoneID)
+        choices.recordsMicrophone ? .chosen(choices.microphoneID) : nil
     }
 
     // MARK: While recording
@@ -1292,5 +1271,12 @@ final class RecordingCoordinator {
         #else
         false
         #endif
+    }
+}
+
+extension SettingsStore {
+    /// The frames a second a recording and the replay take: Settings' choice, but 30 in Low Power Mode.
+    var recordingFramesPerSecond: Int {
+        ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 : recordingFrameRate
     }
 }

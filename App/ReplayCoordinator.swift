@@ -84,9 +84,8 @@ final class ReplayCoordinator {
             let microphone = await microphone()
             let source = try await capturer.recordingSource(for: .display, on: display)
             let size = ReplayBuffer.size(fitting: source.pixelWidth, source.pixelHeight)
-            let framesPerSecond = ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 : settings.recordingFrameRate
             let buffer = ReplayBuffer(.init(
-                filter: source.filter, width: size.width, height: size.height, framesPerSecond: framesPerSecond,
+                filter: source.filter, width: size.width, height: size.height, framesPerSecond: settings.recordingFramesPerSecond,
                 showsCursor: settings.recordingShowsCursor, microphone: microphone
             ))
             buffer.onStopped = { [weak self] ending in self?.stopped(display, ending) }
@@ -109,19 +108,8 @@ final class ReplayCoordinator {
     /// The microphone buffered with the system's sound, asked for the first time; nil when access is off.
     /// Asked before buffering begins, so the question is never part of what is kept.
     private func microphone() async -> RecordingAudio.Microphone? {
-        permissions.refresh([.microphone])
-        switch permissions.status(of: .microphone) {
-        case .granted:
-            break
-        case .denied:
-            return nil
-        case .notGranted:
-            await permissions.request(.microphone)
-            guard permissions.status(of: .microphone) == .granted else { return nil }
-        }
-        let id = settings.recordingMicrophoneID
-        guard !id.isEmpty, Microphones.available().devices.contains(where: { $0.id == id }) else { return .systemDefault }
-        return .device(id)
+        guard await permissions.requestIfNeeded(.microphone) else { return nil }
+        return .chosen(settings.recordingMicrophoneID)
     }
 
     /// A display's buffer stopped on its own: the display went away or Screen Recording was turned off
