@@ -41,6 +41,35 @@ struct StudioDocumentStateTests {
         try await document.flushSave()
     }
 
+    @Test func cutsOverEachOtherOrPastTheEndAreOpenedAsCutLeavesThem() {
+        // As a project.json written by hand might hold them: out of order, over each other, touching, and past the
+        // recording's 4 s or wholly beyond them.
+        let document = document(project: StudioProject(cuts: [3.5...6, 1.5...2.5, 1...2, 2.5...2.75, 7...9, -1...0.25]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        #expect(document.project.cuts == [0...0.25, 1...2.75, 3.5...4])
+        #expect(document.saveState == .pending)
+        // Kept: 0.25–1 at the movie's 0–0.75, and 2.75–3.5 at 0.75–1.5. The stretch two cuts share is left out of
+        // the playhead's time once, as the movie leaves it out.
+        #expect(document.movieTime(3) == 1)
+        #expect(document.recordingTime(1) == 3)
+        #expect(document.movieTime(document.duration) == 1.5)
+        // A time inside a cut is where it was left out, which plays from the cut's end.
+        #expect(document.movieTime(2) == 0.75 && document.recordingTime(0.75) == 2.75)
+        // Opened again, it is the same.
+        #expect(document.project.opened(for: document.telemetry, duration: document.duration) == document.project)
+    }
+
+    @Test func aCutJoinsTheCutsItMeetsAndIsChosen() {
+        let document = document(project: StudioProject(cuts: [0.5...1, 2...2.5, 3...3.5]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        document.cut(1...2.2)
+        #expect(document.project.cuts == [0.5...2.5, 3...3.5])
+        #expect(document.selection == .cut(0.5))
+        document.cut(3.5...9)
+        #expect(document.project.cuts == [0.5...2.5, 3...4])
+        #expect(document.selection == .cut(3))
+    }
+
     @Test func burstEditsWriteOnlyTheLatestSnapshotAndFlushIsIdempotent() async throws {
         let document = document()
         let writes = ProjectWrites()

@@ -121,7 +121,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     ///     draws the project's plain color, or white.
     ///   - largestSide: the longest side the movie may have; the preview films it smaller than the export.
     ///   - ringColor: the clicks' rings, in sRGB: the user's accent, as the rings shown while recording.
-    ///   - preparedTrack: a track already built for these motion settings; shared by preview and export.
+    ///   - preparedTrack: a track already built from this telemetry for these motion settings; shared by preview and
+    ///     export. Its clicks are the ones whose effects are drawn.
     public init(
         telemetry: StudioTelemetry, project: StudioProject, duration: Double, recordingSize: CGSize, background: CGImage?,
         largestSide: Double = StudioRenderer.largestSide, ringColor: RingColor = .systemBlue, preparedTrack: StudioTrack? = nil
@@ -158,7 +159,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         }
         arrow = project.cursor.style == .arrow ? Self.arrowLook() : nil
         halo = Self.haloImage()
-        clicks = telemetry.clicks.sorted { $0.time < $1.time }
+        // The track's, sorted by time once for both.
+        clicks = track.clickAnchors
         captions = project.showsKeys ? Self.captions(for: telemetry.keys, mode: project.keystrokeMode) : []
         captionRuns = Self.captionRuns(for: captions)
         let effectColor = project.cursor.clickColor.rgb.map { RingColor(red: $0.red, green: $0.green, blue: $0.blue) } ?? ringColor

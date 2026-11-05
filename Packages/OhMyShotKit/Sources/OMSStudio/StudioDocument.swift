@@ -346,7 +346,7 @@ public final class StudioDocument {
     /// About how many bytes the movie will be as the project is now: its canvas at the export's size, the
     /// recording's cuts left out. Nil when the recording's size isn't known.
     public var estimatedMovieByteCount: Int? {
-        let kept = StudioComposition.keptSegments(duration: duration, cuts: project.cuts).reduce(0) { $0 + $1.duration }
+        let kept = keptSegments.reduce(0) { $0 + $1.duration }
         return StudioExporter.estimatedByteCount(
             sourceByteCount: sourceByteCount, sourceSize: recordingSize, sourceDuration: duration,
             canvas: movieLayout().canvas, keptDuration: kept, quality: project.quality
@@ -528,18 +528,11 @@ public final class StudioDocument {
     public func cut(_ range: ClosedRange<Double>) {
         let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
         guard upper - lower >= 0.05 else { return }
-        let clamped = lower...upper
-        var merged = clamped
-        var kept: [ClosedRange<Double>] = []
-        for cut in project.cuts {
-            if cut.overlaps(merged) || cut.upperBound == merged.lowerBound || cut.lowerBound == merged.upperBound {
-                merged = min(cut.lowerBound, merged.lowerBound)...max(cut.upperBound, merged.upperBound)
-            } else {
-                kept.append(cut)
-            }
-        }
+        let cuts = StudioProject.normalizedCuts(project.cuts + [lower...upper], duration: duration)
+        // The cut it became, with those it met: the cuts are apart, so only that one holds its start.
+        guard let merged = cuts.first(where: { $0.contains(lower) }) else { return }
         change(named: String(localized: "Cut", bundle: .module)) {
-            project.cuts = (kept + [merged]).sorted { $0.lowerBound < $1.lowerBound }
+            project.cuts = cuts
         }
         selectedCut = merged.lowerBound
         selectedZoom = nil
@@ -587,25 +580,21 @@ public final class StudioDocument {
 
     // MARK: Time
 
+    /// The parts of the recording the movie keeps, as its composition lays them end to end: the playhead's
+    /// time and the movie's are read through the same parts the compositor draws each frame from, so the
+    /// playhead is never anywhere but on the frame shown.
+    private var keptSegments: [StudioComposition.Segment] {
+        StudioComposition.keptSegments(duration: duration, cuts: project.cuts)
+    }
+
     /// The movie's time for the recording's `time`: the end of a cut for a time inside one.
     public func movieTime(_ time: Double) -> Double {
-        var removed = 0.0
-        for cut in project.cuts.sorted(by: { $0.lowerBound < $1.lowerBound }) {
-            if time <= cut.lowerBound { break }
-            if time < cut.upperBound { return cut.lowerBound - removed }
-            removed += cut.upperBound - cut.lowerBound
-        }
-        return time - removed
+        StudioComposition.movieTime(forSource: time, in: keptSegments)
     }
 
     /// The recording's time for the movie's `time`.
     public func recordingTime(_ time: Double) -> Double {
-        var result = time
-        for cut in project.cuts.sorted(by: { $0.lowerBound < $1.lowerBound }) {
-            if result < cut.lowerBound { break }
-            result += cut.upperBound - cut.lowerBound
-        }
-        return min(result, duration)
+        StudioComposition.sourceTime(time, in: keptSegments)
     }
 
     // MARK: Keeping
