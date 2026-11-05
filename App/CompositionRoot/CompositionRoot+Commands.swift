@@ -98,28 +98,39 @@ extension CompositionRoot {
         }
     }
 
-    /// Runs a URL API command from an approved caller, as CleanShot X runs it under the same name and parameters.
-    func perform(_ command: AutomationCommand) {
+    /// Runs a URL API command from an approved caller, as CleanShot X runs it under the same name and parameters, and a
+    /// shortcut's. `done` is told the record of a capture command's capture once it is kept, or nil when none is: it was
+    /// cancelled or failed, or never began (no Screen Recording, an area on no display, an upload with nowhere to go). Any
+    /// other command keeps no capture, and tells it nil at once.
+    func perform(_ command: AutomationCommand, done: ((HistoryItem?) -> Void)? = nil) {
+        // Told once: by the capture's follow-up when one takes it on, else as this returns.
+        var followUpTakesDone = false
+        defer { if !followUpTakesDone { done?(nil) } }
+        func followUp(doing action: CaptureAction?) -> CaptureFollowUp? {
+            guard let followUp = self.followUp(for: action, done: done) else { return nil }
+            followUpTakesDone = true
+            return followUp
+        }
         if command.readsScreen, permissions.status(of: .screenRecording) != .granted { return showOnboarding() }
         switch command {
         case .allInOne(let region):
             guard let area = area(of: region) else { return }
             captures.allInOne(choosing: area)
         case .captureArea(let region, let action):
-            guard let area = area(of: region), let followUp = followUp(for: action) else { return }
+            guard let area = area(of: region), let followUp = followUp(doing: action) else { return }
             if let area { captures.captureArea(at: area, followUp: followUp) } else { captures.captureArea(followUp: followUp) }
         case .capturePreviousArea(let action):
-            guard let followUp = followUp(for: action) else { return }
+            guard let followUp = followUp(doing: action) else { return }
             captures.capturePreviousArea(followUp: followUp)
         case .captureFullscreen(let action):
-            guard let followUp = followUp(for: action) else { return }
+            guard let followUp = followUp(doing: action) else { return }
             captures.cancelSelfTimer()
             captures.captureFullscreen(followUp: followUp)
         case .captureWindow(let action):
-            guard let followUp = followUp(for: action) else { return }
+            guard let followUp = followUp(doing: action) else { return }
             captures.captureWindow(followUp: followUp)
         case .selfTimer(let action):
-            guard let followUp = followUp(for: action) else { return }
+            guard let followUp = followUp(doing: action) else { return }
             captures.selfTimer(followUp: followUp)
         case .scrollingCapture(let region, let start, let autoScrolls):
             guard let area = area(of: region) else { return }
@@ -185,13 +196,12 @@ extension CompositionRoot {
         }
     }
 
-    /// The URL API's `action` (or an upload shortcut's) as a capture's follow-up; nil when it cannot be done: an
-    /// upload with no destination, which is said by the pointer. A URL command never asks for a file name, being
-    /// nobody's to answer; an upload shortcut, pressed at the keyboard, does.
+    /// The URL API's `action` (or an upload shortcut's) as a capture's follow-up, telling `done` the capture's record; nil
+    /// when it cannot be done: an upload with no destination, which is said by the pointer. A URL command never asks for
+    /// a file name, being nobody's to answer; an upload shortcut, pressed at the keyboard, does.
     func followUp(for action: CaptureAction?, asksForName: Bool = false, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
         if action == .upload, uploads.destinations.defaultDestination == nil {
             uploads.tellNoDestination()
-            done?(nil)
             return nil
         }
         return CaptureFollowUp(action: action, asksForName: asksForName, done: done)

@@ -164,8 +164,8 @@ extension CompositionRoot {
             pressShortcut: { [weak self] in self?.handle($0) },
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage },
-            shortcutFormula: { [weak self] data in try await self?.formulaForShortcut(inImage: data) },
-            shortcutText: { [weak self] data in try await self?.textForShortcut(inImage: data, keepsLineBreaks: true) },
+            shortcutFormula: { [weak self] data in try await self?.shortcuts.formula(inImage: data) },
+            shortcutText: { [weak self] data in try await self?.shortcuts.text(inImage: data, keepsLineBreaks: true) },
             setCloudDemo: { [weak self] store in
                 self?.settingsWindow?.close()
                 self?.demoCloudModels = store

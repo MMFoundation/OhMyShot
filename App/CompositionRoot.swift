@@ -138,6 +138,17 @@ final class CompositionRoot {
         uploads: { [weak self] in self?.uploads.uploadingIDs ?? [] },
         historyChanged: { [weak self] in self?.historyWindow?.reload() }
     )
+    /// What the Shortcuts actions run.
+    private(set) lazy var shortcuts = ShortcutActions(
+        permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: captures.files, packs: readerPacks,
+        pins: pins, displays: displays,
+        showOnboarding: { [weak self] in self?.showOnboarding() },
+        run: { [weak self] command, done in
+            guard let self else { done?(nil); return }
+            perform(command, done: done)
+        },
+        openInEditor: { [weak self] loaded, name in await self?.annotate(loaded, name: name) }
+    )
 
     init() {
         #if DEBUG
@@ -491,163 +502,6 @@ final class CompositionRoot {
                 self?.updates?.setChecksAutomatically(on)
             }
         })
-    }
-
-    // MARK: - Shortcuts
-
-    /// What a shortcut's capture action takes.
-    enum ShortcutCapture {
-        case area
-        case window
-        case fullscreen
-        case previousArea
-        case selfTimer
-    }
-
-    enum ShortcutError: Error {
-        case needsScreenRecording
-        case noUploadDestination
-        case unreadableImage
-        case needsFormulaPack
-    }
-
-    /// A shortcut's capture, run as its keyboard shortcut runs it with `action` after it: the capture's record once it
-    /// is kept, or nil when it was cancelled or failed.
-    func captureForShortcut(_ capture: ShortcutCapture, action: CaptureAction?) async throws -> HistoryItem? {
-        guard permissions.status(of: .screenRecording) == .granted else {
-            showOnboarding()
-            throw ShortcutError.needsScreenRecording
-        }
-        if action == .upload, uploads.destinations.defaultDestination == nil { throw ShortcutError.noUploadDestination }
-        return await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            // A shortcut's capture is waited on by a shortcut: nobody is there to name the file.
-            let followUp = CaptureFollowUp(action: action, asksForName: false) { answer.give($0) }
-            switch capture {
-            case .area: captures.captureArea(followUp: followUp)
-            case .window: captures.captureWindow(followUp: followUp)
-            case .fullscreen:
-                captures.cancelSelfTimer()
-                captures.captureFullscreen(followUp: followUp)
-            case .previousArea: captures.capturePreviousArea(followUp: followUp)
-            case .selfTimer: captures.selfTimer(followUp: followUp)
-            }
-        }
-    }
-
-    /// A kept capture's picture, to hand to a shortcut: in the format Settings choose.
-    func fileForShortcut(_ entry: HistoryItem) async throws -> (data: Data, name: String, type: UTType) {
-        try await captures.files.shortcutFile(for: entry)
-    }
-
-    /// A shortcut's Capture Text: the text copied, or nil when none was.
-    func captureTextForShortcut(keepsLineBreaks: Bool) async throws -> String? {
-        guard permissions.status(of: .screenRecording) == .granted else {
-            showOnboarding()
-            throw ShortcutError.needsScreenRecording
-        }
-        captures.cancelSelfTimer()
-        return await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            textCapture.captureText(joinLines: !keepsLineBreaks, allowsCloud: false) { answer.give($0) }
-        }
-    }
-
-    /// The text in a picture a shortcut hands over, read as Capture Text reads it; nothing is copied or shown.
-    func textForShortcut(inImage data: Data, keepsLineBreaks: Bool) async throws -> String? {
-        // A picture, without decoding it here.
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
-            throw ShortcutError.unreadableImage
-        }
-        // Read in the text reader, so the app is no larger after it (Docs/perf.md, M5 — power gate).
-        guard let helper = readerPacks.helper else {
-            guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutError.unreadableImage }
-            return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
-        }
-        let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")
-        try data.write(to: file)
-        defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            let text = try await TextReaderTool.text(
-                ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: readerPacks.formula, vlm: readerPacks.vlm, seconds: TextCaptureCoordinator.panelTableWait,
-                helper: helper
-            )
-            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
-        } catch let failure as TextReaderTool.Failure {
-            // As Capture Text's own reading did: no text, rather than an error.
-            Log.capture.error("Recognizing a shortcut's picture failed: \(String(describing: failure), privacy: .public)")
-            return nil
-        }
-    }
-
-    /// A shortcut's Capture Formula: the LaTeX copied, or nil when no formula was.
-    func captureFormulaForShortcut() async throws -> String? {
-        guard permissions.status(of: .screenRecording) == .granted else {
-            showOnboarding()
-            throw ShortcutError.needsScreenRecording
-        }
-        guard readerPacks.formula != nil else { throw ShortcutError.needsFormulaPack }
-        captures.cancelSelfTimer()
-        return await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            textCapture.captureFormula { answer.give($0) }
-        }
-    }
-
-    /// The LaTeX of the formula in a picture a shortcut hands over, read as Capture Formula reads it; nothing is
-    /// copied or shown. Nil when the pack read no whole formula.
-    func formulaForShortcut(inImage data: Data) async throws -> String? {
-        guard let helper = readerPacks.helper, let pack = readerPacks.formula else { throw ShortcutError.needsFormulaPack }
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
-            throw ShortcutError.unreadableImage
-        }
-        let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")
-        try data.write(to: file)
-        defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            let formula = try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
-            Log.capture.notice("A shortcut's formula reading ended with \(formula.ending, privacy: .public), \(formula.latex.count, privacy: .public) characters")
-            return formula.isFormula ? formula.latex : nil
-        } catch let failure as TextReaderTool.Failure {
-            Log.capture.error("Reading a shortcut's formula failed: \(String(describing: failure), privacy: .public)")
-            return nil
-        }
-    }
-
-    /// Pins a picture a shortcut hands over.
-    func pinForShortcut(_ data: Data) throws {
-        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
-        guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { throw ShortcutError.unreadableImage }
-        pins.pin(loaded.image, scale: loaded.scale, origin: .clipboard)
-    }
-
-    /// Opens a picture a shortcut hands over in the editor, added to the history first.
-    func annotateForShortcut(_ data: Data, name: String) async throws {
-        guard let loaded = ImageLoader.load(data: data) else { throw ShortcutError.unreadableImage }
-        await annotate(loaded, name: name)
-    }
-
-    /// Runs a URL API command for a shortcut, which needs no caller's approval: the user made the shortcut.
-    func performForShortcut(_ command: AutomationCommand) throws {
-        if command.readsScreen, permissions.status(of: .screenRecording) != .granted {
-            showOnboarding()
-            throw ShortcutError.needsScreenRecording
-        }
-        perform(command)
-    }
-
-    /// Hands a continuation its value once, however many times a follow-up says it is done.
-    private final class Answer<Value: Sendable> {
-        private var continuation: CheckedContinuation<Value, Never>?
-
-        init(_ continuation: CheckedContinuation<Value, Never>) {
-            self.continuation = continuation
-        }
-
-        func give(_ value: Value) {
-            continuation?.resume(returning: value)
-            continuation = nil
-        }
     }
 
     // MARK: - Wiring
