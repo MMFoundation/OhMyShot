@@ -553,14 +553,9 @@ final class TextResultCard: NSView {
     private func applyAppearance() {
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        background.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
-        background.borderWidth = increaseContrast ? 1 : 0.5
-        background.borderColor = switch (dark, increaseContrast) {
-        case (true, true): CGColor(gray: 1, alpha: 0.5)
-        case (true, false): CGColor(gray: 1, alpha: 0.12)
-        case (false, true): CGColor(gray: 0, alpha: 0.35)
-        case (false, false): CGColor(gray: 0, alpha: 0.08)
-        }
+        background.backgroundColor = Theme.Material.cardFill(dark: dark)
+        background.borderWidth = Theme.Material.edgeWidth(contrast: increaseContrast)
+        background.borderColor = Theme.Material.edge(dark: dark, contrast: increaseContrast)
         show(state, note: noteText)
     }
 

@@ -55,6 +55,42 @@ public enum Theme {
         }
     }
 
+    /// The surfaces of what floats over the screen: a card (the text result card, a color's card, a text pin, the
+    /// camera bubble before its first frame) and the smaller capsule (the reading capsule, hover tags, a card's badges,
+    /// the keys shown while recording). White, a dark gray in Dark, nearly opaque, with a hairline edge that is 1 pt
+    /// and firmer under Increase Contrast.
+    public enum Material {
+        public static func cardFill(dark: Bool) -> CGColor {
+            dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
+        }
+
+        /// A touch more see-through than a card.
+        public static func capsuleFill(dark: Bool) -> CGColor {
+            dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96)
+        }
+
+        /// The hairline of a card or a capsule.
+        public static func edge(dark: Bool, contrast: Bool) -> CGColor {
+            dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        }
+
+        public static func edgeWidth(contrast: Bool) -> CGFloat {
+            contrast ? 1 : 0.5
+        }
+    }
+
+    /// The fill a chip or a row takes under the pointer, and a chip that is on, as the alpha of white in Dark and of
+    /// black in Light; doubled under Increase Contrast where the control follows it.
+    public enum ChipFill {
+        public static func hover(dark: Bool, contrast: Bool = false) -> CGFloat {
+            (dark ? 0.09 : 0.045) * (contrast ? 2 : 1)
+        }
+
+        public static func selected(dark: Bool, contrast: Bool = false) -> CGFloat {
+            (dark ? 0.16 : 0.08) * (contrast ? 2 : 1)
+        }
+    }
+
     /// Short, eased, and skipped entirely with Reduce Motion; nothing trails the pointer.
     public enum Motion {
         /// Cards sliding in, out, and into their new places.

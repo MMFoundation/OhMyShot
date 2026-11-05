@@ -265,9 +265,9 @@ final class CompositionRoot {
             case .recording(let time, let paused):
                 self.statusItem?.showRecording(elapsed: time, paused: paused) { [weak self] in self?.recordings.stop() }
             case .makingGIF(let progress):
-                self.statusItem?.showProgress(progress)
+                self.statusItem?.showProgress(.makingGIF(progress))
             case .exportingStudio(let progress):
-                self.statusItem?.showProgress(progress, symbolName: "wand.and.sparkles")
+                self.statusItem?.showProgress(.exportingStudio(progress))
             case .idle:
                 self.statusItem?.endRecording()
             }

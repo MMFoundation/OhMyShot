@@ -558,14 +558,9 @@ final class ColorCard: NSView {
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        background.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
-        background.borderWidth = increaseContrast ? 1 : 0.5
-        background.borderColor = switch (dark, increaseContrast) {
-        case (true, true): CGColor(gray: 1, alpha: 0.5)
-        case (true, false): CGColor(gray: 1, alpha: 0.12)
-        case (false, true): CGColor(gray: 0, alpha: 0.35)
-        case (false, false): CGColor(gray: 0, alpha: 0.08)
-        }
+        background.backgroundColor = Theme.Material.cardFill(dark: dark)
+        background.borderWidth = Theme.Material.edgeWidth(contrast: increaseContrast)
+        background.borderColor = Theme.Material.edge(dark: dark, contrast: increaseContrast)
         // The capsule swatch edge, so a white or a near-black color still reads as a swatch.
         let edge = dark ? CGColor(gray: 1, alpha: increaseContrast ? 0.6 : 0.38) : CGColor(gray: 0, alpha: increaseContrast ? 0.4 : 0.18)
         for well in [swatch, otherSwatch] {
