@@ -205,7 +205,8 @@ enum AreaFrame {
         return placed.integral
     }
 
-    /// Global points (y up) to the overlay's points from `display`'s top-left corner (y down), and back.
+    /// Global points (y up) to the overlay's points from `display`'s top-left corner (y down), and back. ScreenCaptureKit
+    /// measures a part of a display the same way, so what it is asked to capture is this too.
     static func local(_ rect: CGRect, on display: DisplayInfo) -> CGRect {
         CGRect(x: rect.minX - display.frame.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }
