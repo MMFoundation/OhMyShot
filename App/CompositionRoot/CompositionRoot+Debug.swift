@@ -36,34 +36,22 @@ extension CompositionRoot {
     func makeAutomationController() -> AutomationController {
         #if DEBUG
         let hooks = makeDebugHooks()
-        let modelPackHooks = DebugModelPackHooks(
-            center: { [unowned self] in readerPacks.center },
-            makeSettings: { [unowned self] in
-                let controller = makeSettingsWindow()
-                controller.onClose = nil
-                return controller
-            },
-            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
-        )
+        // A Settings window of the hooks' own, which nothing else shows or lets go of, and how they capture one.
+        let makeSettings = { [unowned self] () -> SettingsWindowController in
+            let controller = makeSettingsWindow()
+            controller.onClose = nil
+            return controller
+        }
+        let capture = { (window: NSWindow, name: String) in await hooks.captureHiddenWindow(window, name: name) }
+        let modelPackHooks = DebugModelPackHooks(center: { [unowned self] in readerPacks.center }, makeSettings: makeSettings, capture: capture)
         let updateHooks = DebugUpdateHooks(
             start: { [unowned self] feed in startDebugUpdates(feed: feed) },
             current: { [unowned self] in debugUpdates },
             stop: { [unowned self] in stopDebugUpdates() },
-            makeSettings: { [unowned self] in
-                let controller = makeSettingsWindow()
-                controller.onClose = nil
-                return controller
-            },
-            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
+            makeSettings: makeSettings,
+            capture: capture
         )
-        let aboutHooks = DebugAboutHooks(
-            makeSettings: { [unowned self] in
-                let controller = makeSettingsWindow()
-                controller.onClose = nil
-                return controller
-            },
-            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
-        )
+        let aboutHooks = DebugAboutHooks(makeSettings: makeSettings, capture: capture)
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
