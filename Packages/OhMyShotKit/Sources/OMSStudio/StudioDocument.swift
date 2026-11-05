@@ -280,13 +280,15 @@ public final class StudioDocument {
         background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
+        // Worked out once, for the background painted at the movie's size and for the renderer. `telemetry` is the
+        // drawn one, with a camera exactly where there is a camera's movie, as the layout has to agree.
         let layout = StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: cameraMovie != nil, largestSide: largestSide)
         let picture: CGImage?
         if case .gradient(let name) = project.background { picture = background(name, layout.canvas) } else { picture = nil }
         try Task.checkCancellation()
         let renderer = StudioRenderer(
             telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: picture,
-            largestSide: largestSide, ringColor: ringColor, preparedTrack: track
+            layout: layout, ringColor: ringColor, preparedTrack: track
         )
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
