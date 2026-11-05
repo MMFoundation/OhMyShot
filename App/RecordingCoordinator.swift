@@ -96,9 +96,22 @@ final class RecordingCoordinator {
     private var cameraFills: [(time: Double, fills: Bool)] = []
     private var cameraBubble = StudioProject.Camera()
 
-    private var session: Session?
-    /// Counting down to a recording.
-    private var pending: Plan?
+    /// Where Record Screen is: nothing under way, a countdown, a recording starting, or one recording.
+    private enum Phase {
+        case idle
+        /// Asking for the microphone, then counting down: Record Screen again cancels it.
+        case countingDown(Plan)
+        /// The countdown is over and the recorder starting. `stops` once Stop came meanwhile (Record Screen again, or the
+        /// app quitting): it stops as soon as it has started.
+        case starting(Plan, stops: Bool)
+        case recording(Session)
+    }
+
+    private var phase = Phase.idle
+    /// The recording under way, once it has started.
+    private var session: Session? {
+        if case .recording(let session) = phase { session } else { nil }
+    }
     /// The microphone was asked for and left out, access to it being off: the control bar says so.
     private var microphoneDenied = false
     /// What could not be done, by the pointer: the recording that couldn't start.
@@ -112,7 +125,7 @@ final class RecordingCoordinator {
     /// Which of them the meter found stopped when it last looked.
     private var microphoneStalled = false
     private var systemAudioStalled = false
-    /// Recordings being finished; the app waits for them before quitting.
+    /// Recordings starting or being finished; the app waits for them before quitting.
     private var finishing = 0
     private var finishingDone: [(Bool) -> Void] = []
     private var finishingMayQuit = true
@@ -135,15 +148,24 @@ final class RecordingCoordinator {
         overlay.onWillSetUpRecording = { [weak self] in self?.configureOverlayForRecording() }
     }
 
-    var isRecording: Bool { session != nil }
-    var isCountingDown: Bool { pending != nil }
+    /// Whether a recording is under way or starting: Record Screen stops it.
+    var isRecording: Bool {
+        switch phase {
+        case .starting, .recording: true
+        case .idle, .countingDown: false
+        }
+    }
+
+    var isCountingDown: Bool {
+        if case .countingDown = phase { true } else { false }
+    }
 
     #if DEBUG
     /// The recorder running now, for scripted checks.
     var debugRecorder: ScreenRecorder? { session?.recorder }
     /// Keeps recordings off the clipboard, for scripted checks.
     var debugLeavesClipboard = false
-    /// Whether a recording is still being finished, made into a GIF, or kept.
+    /// Whether a recording is still starting, being finished, made into a GIF, or kept.
     var debugIsKeeping: Bool { finishing > 0 || makingGIFs > 0 }
     private var debugStatusKind: String?
     #endif
@@ -154,8 +176,11 @@ final class RecordingCoordinator {
     /// - Parameter area: chosen already, in global points (the URL API's `record-screen` with an area): framed with
     ///   the recording bar at once.
     func recordScreen(area: CGRect? = nil) {
-        if session != nil { return stop() }
-        if pending != nil { return cancelCountdown() }
+        switch phase {
+        case .starting, .recording: return stop()
+        case .countingDown: return cancelCountdown()
+        case .idle: break
+        }
         guard !overlay.isActive else { return }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.freezesScreen = false
@@ -200,13 +225,13 @@ final class RecordingCoordinator {
 
     /// Records `target` on `display` without the overlay: for scripted checks, and for Restart.
     func record(_ target: RecordingTarget, on display: DisplayInfo, choices: RecordingChoices, appName: String?) {
-        guard session == nil, pending == nil else { return }
+        guard case .idle = phase else { return }
         prepare(Plan(target: target, display: display, choices: choices, appName: appName))
     }
 
     /// Asks for the microphone if it is wanted, then counts down (or not) and starts.
     private func prepare(_ plan: Plan) {
-        pending = plan
+        phase = .countingDown(plan)
         microphoneDenied = false
         Task { [weak self] in
             guard let self else { return }
@@ -228,8 +253,8 @@ final class RecordingCoordinator {
                 choices.showsKeystrokes = false
                 plan = Plan(target: plan.target, display: plan.display, choices: choices, appName: plan.appName)
             }
-            guard pending != nil else { return }
-            pending = plan
+            guard case .countingDown = phase else { return }
+            phase = .countingDown(plan)
             // Restarting brings the camera back; choosing on the bar showed it already.
             showCamera(for: plan)
             let seconds = settings.recordingCountdown
@@ -246,7 +271,7 @@ final class RecordingCoordinator {
     }
 
     private func cancelCountdown() {
-        pending = nil
+        phase = .idle
         countdown.cancel()
         outline.hide()
         camera.hide()
@@ -255,8 +280,11 @@ final class RecordingCoordinator {
     }
 
     private func start(_ plan: Plan) async {
-        guard pending != nil else { return }
-        pending = nil
+        guard case .countingDown = phase else { return }
+        phase = .starting(plan, stops: false)
+        // Quitting meanwhile waits for it to start, and then for it to be kept.
+        finishing += 1
+        defer { finished() }
         let probe = LatencyProbe("recording.start")
         var draft: RecordingDrafts.Draft?
         do {
@@ -317,10 +345,13 @@ final class RecordingCoordinator {
                 throw error
             }
             probe.end()
-            session = Session(
+            let stops = if case .starting(_, stops: true) = phase { true } else { false }
+            phase = .recording(Session(
                 plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now, telemetry: telemetry, camera: cameraRecorder,
                 cameraWanted: cameraWanted
-            )
+            ))
+            // Stop came while it started: kept as a recording stopped now is.
+            if stops { return stop() }
             showChrome(for: plan, source: source)
             camera.setRecording(true)
             if let keys {
@@ -334,6 +365,7 @@ final class RecordingCoordinator {
                 ?? String(localized: "Recording. Click the time in the menu bar to stop."))
         } catch {
             Log.recording.error("Recording could not start: \(String(describing: error), privacy: .public)")
+            phase = .idle
             if let draft { drafts.remove(draft) }
             outline.hide()
             keystrokes?.hide()
@@ -475,7 +507,7 @@ final class RecordingCoordinator {
     /// Throws the recording so far away and records the same thing again, after the countdown.
     func restart() {
         guard let session else { return }
-        self.session = nil
+        phase = .idle
         endChrome()
         discard(session)
         prepare(session.plan)
@@ -484,7 +516,7 @@ final class RecordingCoordinator {
     /// Stops and throws the recording away.
     func delete() {
         guard let session else { return }
-        self.session = nil
+        phase = .idle
         endChrome()
         discard(session)
         VoiceOver.announce(String(localized: "Recording deleted."))
@@ -499,10 +531,11 @@ final class RecordingCoordinator {
         }
     }
 
-    /// Stops, then finishes and keeps the recording.
+    /// Stops, then finishes and keeps the recording; one still starting, as soon as it has started.
     func stop() {
+        if case .starting(let plan, _) = phase { phase = .starting(plan, stops: true) }
         guard let session else { return }
-        self.session = nil
+        phase = .idle
         let makesGIF = session.plan.choices.output == .gif
         if makesGIF { makingGIFs += 1 }
         endChrome()
@@ -724,8 +757,11 @@ final class RecordingCoordinator {
     /// Stops a recording before the app quits, and keeps the edits in open recording windows; `done` runs
     /// once every recording is kept. Returns false when there was nothing to wait for.
     func finishBeforeQuitting(_ done: @escaping (Bool) -> Void) -> Bool {
-        if pending != nil { cancelCountdown() }
-        if session != nil { stop() }
+        switch phase {
+        case .countingDown: cancelCountdown()
+        case .starting, .recording: stop()
+        case .idle: break
+        }
         // Edits in an open recording window are kept as its closing keeps them.
         for window in windows.values where window.hasUnkeptEdits {
             finishing += 1
@@ -890,7 +926,7 @@ final class RecordingCoordinator {
 
     /// How far along a Studio export is while its window is gone, in the menu bar; nil when it is done.
     private func showStudioExport(_ fraction: Double?) {
-        guard session == nil, pending == nil else { return }
+        guard case .idle = phase else { return }
         guard let fraction else { return showStatusAfterRecording() }
         report(.exportingStudio(progress: fraction))
     }
@@ -1138,7 +1174,7 @@ final class RecordingCoordinator {
     /// The menu bar once nothing is recording: how far along a GIF is, or the icon. A recording counting
     /// down or running has the menu bar to itself.
     private func showStatusAfterRecording() {
-        guard session == nil, pending == nil else { return }
+        guard case .idle = phase else { return }
         report(makingGIFs > 0 ? .makingGIF(progress: gifProgress) : .idle)
     }
 
