@@ -95,8 +95,7 @@ public final class HistoryStore: Sendable {
 
     /// The standard location: Application Support, under this build's bundle identifier.
     public static func standard() -> HistoryStore {
-        let base = URL.applicationSupportDirectory.appending(path: Log.subsystem, directoryHint: .isDirectory)
-        return HistoryStore(directory: base.appending(path: "History", directoryHint: .isDirectory))
+        HistoryStore(directory: AppFolders.support.appending(path: "History", directoryHint: .isDirectory))
     }
 
     public func fileURL(for item: HistoryItem) -> URL {
@@ -452,13 +451,13 @@ public final class HistoryStore: Sendable {
 
     /// Writes `item`'s record beside its file.
     private func writeRecord(_ item: HistoryItem) throws {
-        try JSONEncoder.history.encode(item).write(to: sidecarURL(forFileName: item.fileName), options: .atomic)
+        try JSONEncoder.records.encode(item).write(to: sidecarURL(forFileName: item.fileName), options: .atomic)
     }
 
     /// The record kept in the sidecar at `url`; nil when there is none, or it can't be read.
     private func record(at url: URL) -> HistoryItem? {
         guard let data = FileManager.default.contents(atPath: url.path(percentEncoded: false)) else { return nil }
-        return try? JSONDecoder.history.decode(HistoryItem.self, from: data)
+        return try? JSONDecoder.records.decode(HistoryItem.self, from: data)
     }
 
     /// Whether a history file is a movie, by its extension.
@@ -469,22 +468,5 @@ public final class HistoryStore: Sendable {
     /// Whether a history file is a recording, kept as a movie or a GIF, by its extension.
     public static func isRecording(_ url: URL) -> Bool {
         isMovie(url) || url.pathExtension.lowercased() == "gif"
-    }
-}
-
-private extension JSONEncoder {
-    static var history: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }
-}
-
-private extension JSONDecoder {
-    static var history: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
     }
 }
