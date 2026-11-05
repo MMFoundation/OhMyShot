@@ -1133,26 +1133,14 @@ struct HistoryCard: View {
             if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
                 Button { EmailSharing.send(fileToHandOver) } label: { Text("Send by Email", bundle: .module) }
             }
-            if model.actions.sharing.isUploading(item) {
-                Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
-            } else {
-                switch model.actions.sharing.menu() {
-                case .hidden:
-                    EmptyView()
-                case .upload:
-                    Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload", bundle: .module) }
-                case .uploadWithChoice(let targets):
-                    Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload to \(targets.first(where: \.isDefault)?.name ?? targets[0].name)", bundle: .module) }
+            ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
+                if case .uploadTo(let targets) = entry {
                     ForEach(targets) { target in
-                        Button { model.actions.sharing.upload(item, target.id) } label: { Text("Upload to \(target.name)", bundle: .module) }
+                        Button { model.actions.sharing.upload(item, target.id) } label: { Text(SharingEntry.uploadTitle(to: target)) }
                     }
+                } else {
+                    Button { run(entry) } label: { Text(entry.actionTitle) }
                 }
-            }
-            if model.actions.sharing.hasLink(item) {
-                Button { model.actions.sharing.copyLink(item) } label: { Text("Copy Link", bundle: .module) }
-            }
-            if model.actions.sharing.canDeleteFromStorage(item) {
-                Button { model.actions.sharing.deleteFromStorage(item) } label: { Text("Delete from Storage", bundle: .module) }
             }
         }
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
@@ -1160,6 +1148,28 @@ struct HistoryCard: View {
 
     private var isGIF: Bool {
         item.fileName.lowercased().hasSuffix(".gif")
+    }
+
+    /// The upload entries History offers for the capture now, for its menu and VoiceOver alike. A failed upload is the
+    /// card's to show and retry: here a capture is being uploaded or not.
+    private var sharingEntries: [SharingEntry] {
+        let sharing = model.actions.sharing
+        return sharing.menu().entries(
+            state: sharing.isUploading(item) ? .uploading : .idle, hasLink: sharing.hasLink(item), canDelete: sharing.canDeleteFromStorage(item)
+        )
+    }
+
+    /// Does what an upload entry of the menu or VoiceOver says.
+    private func run(_ entry: SharingEntry) {
+        let sharing = model.actions.sharing
+        switch entry {
+        case .cancelUpload: sharing.cancel(item)
+        case .upload: sharing.upload(item, nil)
+        case .copyLink: sharing.copyLink(item)
+        case .deleteFromStorage: sharing.deleteFromStorage(item)
+        // History offers no Retry or Copy Error, and each destination of Upload To is its own button.
+        case .retryUpload, .copyError, .uploadTo: break
+        }
     }
 
     /// The capture's file for another app, shared or dragged out: a copy in the format Settings choose, made when it is
@@ -1305,16 +1315,8 @@ struct HistoryCard: View {
         if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
             Button { EmailSharing.send(fileToHandOver) } label: { Text("Send by Email", bundle: .module) }
         }
-        if model.actions.sharing.isUploading(item) {
-            Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
-        } else {
-            switch model.actions.sharing.menu() {
-            case .hidden:
-                EmptyView()
-            case .upload:
-                Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload", bundle: .module) }
-            case .uploadWithChoice(let targets):
-                Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload to \(targets.first(where: \.isDefault)?.name ?? targets[0].name)", bundle: .module) }
+        ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
+            if case .uploadTo(let targets) = entry {
                 Menu {
                     ForEach(targets) { target in
                         Button { model.actions.sharing.upload(item, target.id) } label: {
@@ -1322,15 +1324,11 @@ struct HistoryCard: View {
                         }
                     }
                 } label: {
-                    Text("Upload To", bundle: .module)
+                    Text(entry.menuTitle)
                 }
+            } else {
+                Button { run(entry) } label: { Text(entry.menuTitle) }
             }
-        }
-        if model.actions.sharing.hasLink(item) {
-            Button { model.actions.sharing.copyLink(item) } label: { Text("Copy Link", bundle: .module) }
-        }
-        if model.actions.sharing.canDeleteFromStorage(item) {
-            Button { model.actions.sharing.deleteFromStorage(item) } label: { Text("Delete from Storage…", bundle: .module) }
         }
         Divider()
         Button(role: .destructive) { model.moveToTrash(item) } label: { Text("Move to Trash", bundle: .module) }

@@ -687,29 +687,14 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         if EmailSharing.canSend(item.fileURL) {
             actions.append(action(String(localized: "Send by Email", bundle: .module)) { [weak self] in self?.emailClicked() })
         }
-        switch upload {
-        case .uploading?:
-            actions.append(action(String(localized: "Cancel Upload", bundle: .module)) { [weak self] in self?.onCommand?(.cancelUpload) })
-        case .failed?:
-            if !uploadMenu().isHidden {
-                actions.append(action(String(localized: "Retry Upload", bundle: .module)) { [weak self] in self?.onCommand?(.retryUpload) })
-            }
-            actions.append(action(String(localized: "Copy Error", bundle: .module)) { [weak self] in self?.copyErrorClicked() })
-        default:
-            switch uploadMenu() {
-            case .hidden: break
-            case .upload: actions.append(action(String(localized: "Upload", bundle: .module)) { [weak self] in self?.onCommand?(.upload) })
-            case .uploadWithChoice(let targets):
-                let name = targets.first(where: \.isDefault)?.name ?? targets[0].name
-                actions.append(action(String(localized: "Upload to \(name)", bundle: .module)) { [weak self] in self?.onCommand?(.upload) })
+        for entry in sharingEntries() {
+            if case .uploadTo(let targets) = entry {
                 for target in targets {
-                    actions.append(action(String(localized: "Upload to \(target.name)", bundle: .module)) { [weak self] in self?.onCommand?(.uploadTo(target.id)) })
+                    actions.append(action(SharingEntry.uploadTitle(to: target)) { [weak self] in self?.onCommand?(.uploadTo(target.id)) })
                 }
+            } else {
+                actions.append(action(entry.actionTitle) { [weak self] in self?.run(entry) })
             }
-        }
-        if hasLink() { actions.append(action(String(localized: "Copy Link", bundle: .module)) { [weak self] in self?.onCommand?(.copyLink) }) }
-        if canDeleteFromStorage() {
-            actions.append(action(String(localized: "Delete from Storage", bundle: .module)) { [weak self] in self?.onCommand?(.deleteFromStorage) })
         }
         actions.append(action(String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onCommand?(.moveToTrash) })
         actions.append(action(String(localized: "Close", bundle: .module)) { [weak self] in self?.onCommand?(.close) })
@@ -977,12 +962,14 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         menu.delegate = self
         // Items are enabled by what the card allows, not by whether a target answers.
         menu.autoenablesItems = false
-        func add(_ title: String, _ symbol: String, _ action: Selector, _ command: CardCommand? = nil) {
+        @discardableResult
+        func add(_ title: String, _ symbol: String, _ action: Selector, _ command: CardCommand? = nil) -> NSMenuItem {
             let menuItem = NSMenuItem(title: title, action: action, keyEquivalent: "")
             menuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
             menuItem.target = self
             if let command { Self.showKey(of: command, on: menuItem) }
             menu.addItem(menuItem)
+            return menuItem
         }
         add(String(localized: "Copy", bundle: .module), "doc.on.doc", #selector(copyClicked), .copy)
         add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked), .save)
@@ -1008,8 +995,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         }
         add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
         menu.addItem(.separator())
-        addSharingItems(to: menu, add: { add($0, $1, $2) })
-        if let upload = menu.items.first(where: { $0.action == #selector(uploadClicked) }) { Self.showKey(of: .upload, on: upload) }
+        addSharingItems(to: menu, add: add)
         add(String(localized: "Move to Trash", bundle: .module), "trash", #selector(trashClicked), .moveToTrash)
         add(String(localized: "Close", bundle: .module), "xmark", #selector(closeClicked), .close)
         // What the whole stack can do, once there is more than one card.
@@ -1078,52 +1064,56 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
 
     /// Share, always, and Send by Email while a message can be started; then the upload entries, which exist
     /// only for a person who set up a destination.
-    private func addSharingItems(to menu: NSMenu, add: (String, String, Selector) -> Void) {
+    private func addSharingItems(to menu: NSMenu, add: (String, String, Selector, CardCommand?) -> NSMenuItem) {
         // Not the system's own Share item, which draws an icon the rest of this menu does not have.
-        add(String(localized: "Share…", bundle: .module), "square.and.arrow.up", #selector(shareClicked))
+        _ = add(String(localized: "Share…", bundle: .module), "square.and.arrow.up", #selector(shareClicked), nil)
         if EmailSharing.canSend(item.fileURL) {
-            add(String(localized: "Send by Email", bundle: .module), "envelope", #selector(emailClicked))
+            _ = add(String(localized: "Send by Email", bundle: .module), "envelope", #selector(emailClicked), nil)
         }
-        switch upload {
-        case .uploading?:
-            add(String(localized: "Cancel Upload", bundle: .module), "xmark.circle", #selector(cancelUploadClicked))
-        case .failed?:
-            // Retrying is uploading again: not offered once the last destination has been removed.
-            if !uploadMenu().isHidden {
-                add(String(localized: "Retry Upload", bundle: .module), "arrow.clockwise", #selector(retryUploadClicked))
+        for entry in sharingEntries() {
+            guard case .uploadTo(let targets) = entry else {
+                // The plain Upload shows the key it has.
+                let key: CardCommand? = if case .upload = entry { .upload } else { nil }
+                add(entry.menuTitle, entry.symbolName, #selector(sharingEntryClicked(_:)), key).representedObject = entry
+                continue
             }
-            add(String(localized: "Copy Error", bundle: .module), "doc.on.clipboard", #selector(copyErrorClicked))
-        default:
-            switch uploadMenu() {
-            case .hidden:
-                break
-            case .upload:
-                add(String(localized: "Upload", bundle: .module), "icloud.and.arrow.up", #selector(uploadClicked))
-            case .uploadWithChoice(let targets):
-                // With several destinations the plain Upload says which one it goes to.
-                let name = targets.first(where: \.isDefault)?.name ?? targets[0].name
-                add(String(localized: "Upload to \(name)", bundle: .module), "icloud.and.arrow.up", #selector(uploadClicked))
-                let choice = NSMenuItem(title: String(localized: "Upload To", bundle: .module), action: nil, keyEquivalent: "")
-                choice.image = NSImage(systemSymbolName: "icloud.and.arrow.up", accessibilityDescription: nil)
-                let submenu = NSMenu()
-                for target in targets {
-                    let entry = NSMenuItem(title: target.name, action: #selector(uploadToClicked(_:)), keyEquivalent: "")
-                    entry.target = self
-                    entry.representedObject = target.id
-                    entry.state = target.isDefault ? .on : .off
-                    submenu.addItem(entry)
-                }
-                choice.submenu = submenu
-                menu.addItem(choice)
+            let choice = NSMenuItem(title: entry.menuTitle, action: nil, keyEquivalent: "")
+            choice.image = NSImage(systemSymbolName: entry.symbolName, accessibilityDescription: nil)
+            let submenu = NSMenu()
+            for target in targets {
+                let entry = NSMenuItem(title: target.name, action: #selector(uploadToClicked(_:)), keyEquivalent: "")
+                entry.target = self
+                entry.representedObject = target.id
+                entry.state = target.isDefault ? .on : .off
+                submenu.addItem(entry)
             }
-        }
-        if hasLink() {
-            add(String(localized: "Copy Link", bundle: .module), "link", #selector(copyLinkClicked))
-        }
-        if canDeleteFromStorage() {
-            add(String(localized: "Delete from Storage…", bundle: .module), "icloud.slash", #selector(deleteFromStorageClicked))
+            choice.submenu = submenu
+            menu.addItem(choice)
         }
         menu.addItem(.separator())
+    }
+
+    /// The upload entries the card offers now, for its menu and VoiceOver alike.
+    private func sharingEntries() -> [SharingEntry] {
+        let state: UploadState = switch upload {
+        case .uploading?: .uploading
+        case .failed?: .failed
+        case .finished?, nil: .idle
+        }
+        return uploadMenu().entries(state: state, hasLink: hasLink(), canDelete: canDeleteFromStorage())
+    }
+
+    /// Does what an upload entry of the menu or VoiceOver says; Upload To is a destination's own entry.
+    private func run(_ entry: SharingEntry) {
+        switch entry {
+        case .cancelUpload: onCommand?(.cancelUpload)
+        case .retryUpload: onCommand?(.retryUpload)
+        case .copyError: copyError()
+        case .upload: onCommand?(.upload)
+        case .uploadTo: break
+        case .copyLink: onCommand?(.copyLink)
+        case .deleteFromStorage: onCommand?(.deleteFromStorage)
+        }
     }
 
     @objc private func uploadClicked() { onCommand?(.upload) }
@@ -1131,12 +1121,12 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         guard let destination = sender.representedObject as? UUID else { return }
         onCommand?(.uploadTo(destination))
     }
-    @objc private func cancelUploadClicked() { onCommand?(.cancelUpload) }
-    @objc private func retryUploadClicked() { onCommand?(.retryUpload) }
-    @objc private func copyLinkClicked() { onCommand?(.copyLink) }
-    @objc private func deleteFromStorageClicked() { onCommand?(.deleteFromStorage) }
+    @objc private func sharingEntryClicked(_ sender: NSMenuItem) {
+        guard let entry = sender.representedObject as? SharingEntry else { return }
+        run(entry)
+    }
     /// Puts the failure's sentence on the clipboard, for a bug report or a server's owner.
-    @objc private func copyErrorClicked() {
+    private func copyError() {
         guard case .failed(let message)? = upload else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message, forType: .string)
