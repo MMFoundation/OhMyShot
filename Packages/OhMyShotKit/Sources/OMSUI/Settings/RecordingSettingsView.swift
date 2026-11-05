@@ -132,39 +132,11 @@ struct RecordingSettingsView: View {
                     ? Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots. Upload sends it to your default destination.", bundle: .module)
                     : Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots.", bundle: .module)),
             ]) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 14) {
-                        Toggle(isOn: $settings.copyAfterRecording) {
-                            Text("Copy", bundle: .module)
-                        }
-                        Toggle(isOn: $settings.showRecordingQuickAccess) {
-                            Text("Quick Access", bundle: .module)
-                        }
-                        Toggle(isOn: $settings.saveAfterRecording) {
-                            Text("Save", bundle: .module)
-                        }
-                        // Uploading is offered only to a person who has somewhere to upload to.
-                        if hasDestination {
-                            Toggle(isOn: $settings.uploadAfterRecording) {
-                                Text("Upload", bundle: .module)
-                            }
-                        }
-                    }
-                    if !settings.copyAfterRecording, !settings.showRecordingQuickAccess, !settings.saveAfterRecording, !(hasDestination && settings.uploadAfterRecording) {
-                        Label {
-                            if settings.historyRetention == .never {
-                                Text("Recordings won’t be kept anywhere.", bundle: .module)
-                            } else {
-                                Text("Recordings go only to History.", bundle: .module)
-                            }
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    }
-                }
+                AfterCaptureChoices(
+                    settings: settings, kind: .recording, hasDestination: hasDestination,
+                    keptNowhere: Text("Recordings won’t be kept anywhere.", bundle: .module),
+                    keptInHistoryOnly: Text("Recordings go only to History.", bundle: .module)
+                )
             }
         }
     }

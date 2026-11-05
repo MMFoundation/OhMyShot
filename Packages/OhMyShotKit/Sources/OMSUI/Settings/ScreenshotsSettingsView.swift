@@ -20,39 +20,11 @@ struct ScreenshotsSettingsView: View {
                     : Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module)),
                 HelpTopic(String(localized: "Background", bundle: .module), Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module)),
             ]) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 14) {
-                        Toggle(isOn: $settings.copyAfterCapture) {
-                            Text("Copy", bundle: .module)
-                        }
-                        Toggle(isOn: $settings.showQuickAccess) {
-                            Text("Quick Access", bundle: .module)
-                        }
-                        Toggle(isOn: $settings.saveAfterCapture) {
-                            Text("Save", bundle: .module)
-                        }
-                        // Uploading is offered only to a person who has somewhere to upload to.
-                        if hasDestination {
-                            Toggle(isOn: $settings.uploadAfterCapture) {
-                                Text("Upload", bundle: .module)
-                            }
-                        }
-                    }
-                    if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture, !(hasDestination && settings.uploadAfterCapture) {
-                        Label {
-                            if settings.historyRetention == .never {
-                                Text("Captures won’t be kept anywhere.", bundle: .module)
-                            } else {
-                                Text("Captures go only to History.", bundle: .module)
-                            }
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    }
-                }
+                AfterCaptureChoices(
+                    settings: settings, kind: .screenshot, hasDestination: hasDestination,
+                    keptNowhere: Text("Captures won’t be kept anywhere.", bundle: .module),
+                    keptInHistoryOnly: Text("Captures go only to History.", bundle: .module)
+                )
             }
             SettingsRow(String(localized: "Save to", bundle: .module)) {
                 HStack(spacing: 8) {
