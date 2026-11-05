@@ -544,7 +544,7 @@ public final class AnnotationSession {
         switch tool {
         case .redact: redactionReading.status
         case .highlighter: textLineReading.status
-        default: .resting
+        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .crop, .background: .resting
         }
     }
 
@@ -559,7 +559,7 @@ public final class AnnotationSession {
         switch tool {
         case .redact: findRedactionsIfNeeded()
         case .highlighter: findTextLinesIfNeeded()
-        default: break
+        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .crop, .background: break
         }
     }
 

@@ -1179,7 +1179,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 if tool == .redact { session.acceptRedactionSuggestion(at: start) }
                 return
             }
-            session.endLiveChange(actionName: Self.addName(for: tool))
+            session.endLiveChange(actionName: tool.addName)
             session.select([id])
         case .drawing:
             session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
@@ -1369,19 +1369,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         selectionLayer.dropFrame = nil
     }
 
-    private static func addName(for tool: AnnotationTool) -> String {
-        switch tool {
-        case .arrow: String(localized: "Add Arrow", bundle: .module)
-        case .line: String(localized: "Add Line", bundle: .module)
-        case .rectangle: String(localized: "Add Rectangle", bundle: .module)
-        case .ellipse: String(localized: "Add Ellipse", bundle: .module)
-        case .highlightBox: String(localized: "Add Highlight Box", bundle: .module)
-        case .redact: String(localized: "Add Redaction", bundle: .module)
-        case .spotlight: String(localized: "Add Spotlight", bundle: .module)
-        default: String(localized: "Add Mark", bundle: .module)
-        }
-    }
-
     // MARK: Cursor
 
     public override func updateTrackingAreas() {
@@ -1437,9 +1424,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             case .select: .arrow
             case .text: .iBeam
             // Over text the highlighter snaps to it, which the text cursor says, until ⌘ frees it.
-            case .highlighter where !NSEvent.modifierFlags.contains(.command) && TextSnapping.line(at: documentPoint(location), in: session.textLines) != nil:
-                .iBeam
-            default: .crosshair
+            case .highlighter:
+                !NSEvent.modifierFlags.contains(.command) && TextSnapping.line(at: documentPoint(location), in: session.textLines) != nil
+                    ? .iBeam : .crosshair
+            // The crop and the background have theirs above.
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .counter, .redact, .spotlight, .crop, .background: .crosshair
             }
         }
         cursor.set()

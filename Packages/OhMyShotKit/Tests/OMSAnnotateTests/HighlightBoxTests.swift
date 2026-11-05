@@ -31,7 +31,7 @@ struct HighlightBoxTests {
         #expect(ToolRail.groups[1].contains(.highlightBox))
         #expect(InPlaceToolbar.toolGroups.contains { $0.contains(.highlighter) && $0.contains(.highlightBox) })
         #expect(AnnotationCanvasView.inPlaceTools.contains(.highlightBox))
-        #expect(NSImage(systemSymbolName: ToolRail.symbol(for: .highlightBox), accessibilityDescription: nil) != nil)
+        #expect(NSImage(systemSymbolName: AnnotationTool.highlightBox.symbol, accessibilityDescription: nil) != nil)
     }
 
     @Test func itBehavesAsAHighlightAndAShape() throws {

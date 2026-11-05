@@ -229,7 +229,7 @@ final class StyleCapsule: NSView {
     private func rebuild() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         chips.removeAll()
-        setAccessibilityLabel(String(localized: "\(ToolRail.name(of: kind)) Style", bundle: .module))
+        setAccessibilityLabel(String(localized: "\(kind.name) Style", bundle: .module))
 
         // The crop's text chips are capsules concentric with this one, 4 pt in at both ends.
         if kind == .crop {
@@ -299,7 +299,7 @@ final class StyleCapsule: NSView {
         switch kind {
         case .spotlight, .crop, .select, .background: false
         case .redact: settings.redaction == .solid
-        default: true
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox, .text, .counter: true
         }
     }
 
@@ -308,7 +308,7 @@ final class StyleCapsule: NSView {
         case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter: true
         // Selected marks show the select kind only when they belong to no tool: combined images.
         case .select: hasSelection
-        default: false
+        case .highlighter, .highlightBox, .redact, .spotlight, .crop, .background: false
         }
     }
 
@@ -459,7 +459,7 @@ final class StyleCapsule: NSView {
             }
         case .redact, .spotlight, .highlightBox, .crop, .select, .background:
             return []
-        default:
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .counter:
             let widths: [CGFloat] = switch kind {
             case .highlighter: [10, 18, 28]
             case .counter: [2, 4, 7]
@@ -551,7 +551,7 @@ final class StyleCapsule: NSView {
                     self?.change(String(localized: "Spotlight Shape", bundle: .module)) { $0.oval = oval }
                 }
             }
-        default:
+        case .select, .pen, .highlighter, .highlightBox, .crop, .background:
             return []
         }
     }
