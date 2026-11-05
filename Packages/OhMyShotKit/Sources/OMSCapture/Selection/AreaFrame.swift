@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The frame around an area chosen on the overlay while it is set up for what comes next (a recording, a
 /// scrolling capture): its handles, how a drag on one resizes it, the cursors over them, where the bar under

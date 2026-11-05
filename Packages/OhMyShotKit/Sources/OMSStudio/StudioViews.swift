@@ -1,6 +1,7 @@
 import AppKit
 import AVKit
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 /// The Studio window's content: the preview and its transport above the timeline, the inspector to the right.

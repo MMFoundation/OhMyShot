@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import SwiftUI
 import UniformTypeIdentifiers
 

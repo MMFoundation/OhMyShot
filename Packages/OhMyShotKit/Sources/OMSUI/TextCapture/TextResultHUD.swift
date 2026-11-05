@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// One result's lifetime. Pure timestamps keep hover/reuse/expiry behavior testable without waiting.
 struct TextResultLifetime {

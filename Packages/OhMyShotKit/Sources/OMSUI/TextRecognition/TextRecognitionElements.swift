@@ -1,4 +1,5 @@
 import OMSCore
+import OMSDesign
 import OMSOCR
 import SwiftUI
 

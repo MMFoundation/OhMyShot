@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// The small bar beside what is being recorded: the time so far, Pause or Resume, Restart, Delete, and

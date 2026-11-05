@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import AVKit
+import OMSDesign
 import Observation
 import OMSCore
 import SwiftUI

@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// A small capsule of chips over the screen, built as the All-In-One and recording bars are: glass because it
 /// is small, an opaque window-colored backing inside so the screen never shows through its symbols, a solid

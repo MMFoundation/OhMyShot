@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What a scrolling capture shows beside its area while it runs: a card with the picture as it grows (where the
 /// view is, what just came into view always in it) and its size, a hint when one helps, and a bar with Done,

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OMSCore
+import OMSDesign
 
 /// Quick Access: after each capture a card appears in the corner of the screen, ready to be copied,
 /// saved, dragged into another app, or dismissed. Nothing is saved anywhere until the user asks.

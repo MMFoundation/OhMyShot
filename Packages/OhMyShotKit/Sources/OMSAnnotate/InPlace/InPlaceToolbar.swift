@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The toolbar of in-place annotation: a small glass capsule beside the selection, in the manner of the
 /// All-In-One bar, holding the drawing tools, Undo and Redo, and what to do with the marked selection.

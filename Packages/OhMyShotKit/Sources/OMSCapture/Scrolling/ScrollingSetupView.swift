@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What the overlay shows once an area is chosen for a scrolling capture, before it starts: the area framed on
 /// the dimmed screen, as a recording's is, with its corners and edges to adjust it and the scrolling bar under

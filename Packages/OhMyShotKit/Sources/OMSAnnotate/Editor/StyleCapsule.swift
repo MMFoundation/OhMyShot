@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The style capsule: a white capsule holding the controls for one kind of mark (color, size, and the
 /// kind's own variants). It sits beside the selected mark, or at the foot of the tool rail for the next

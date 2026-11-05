@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// Buttons for the app's floating panels, drawn by hand. AppKit draws its own controls dimmed in windows
 /// that are not key, and the floating panels (Quick Access, the text result) never become key, so

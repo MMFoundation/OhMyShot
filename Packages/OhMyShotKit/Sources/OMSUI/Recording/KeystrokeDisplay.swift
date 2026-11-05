@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// The keys pressed while recording, shown near the bottom of what is recorded and recorded with it: a

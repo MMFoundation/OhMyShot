@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import OMSCore
+@testable import OMSDesign
 
 @MainActor
 struct HoverTagTests {

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 struct HistoryCard: View {

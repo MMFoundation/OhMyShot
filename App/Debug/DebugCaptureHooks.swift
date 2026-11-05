@@ -9,6 +9,7 @@ import ImageIO
 import OMSAnnotate
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OMSOCR
 import OMSRecording
 import OMSStudio

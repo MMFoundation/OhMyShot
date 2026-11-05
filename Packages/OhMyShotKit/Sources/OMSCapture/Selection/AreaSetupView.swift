@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What the overlay shows once something is chosen and set up for what comes next (a recording, a scrolling
 /// capture, All-In-One's ways to take an area): the choice framed on the dimmed screen, its corners and edges to

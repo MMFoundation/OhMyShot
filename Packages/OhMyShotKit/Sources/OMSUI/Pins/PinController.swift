@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// Pins: things kept above every app's windows, for reference while working — a capture, a picture from
 /// the clipboard or a file, or the clipboard's text or color. Each is its own small window: dragged to move, scrolled or pinched to

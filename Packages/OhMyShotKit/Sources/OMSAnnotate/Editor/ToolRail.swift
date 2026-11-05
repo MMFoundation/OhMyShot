@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The tool rail: a slim glass capsule of tool chips standing at the canvas's left edge. The tool in
 /// hand is marked as the All-In-One bar marks its mode: a light highlight and the symbol in the accent.

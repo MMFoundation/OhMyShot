@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The card an Option-click with the color picker opens: the color in every notation, each a click from
 /// the clipboard; its contrast against a second color picked from the screen (WCAG 2 and APCA); and Pin.

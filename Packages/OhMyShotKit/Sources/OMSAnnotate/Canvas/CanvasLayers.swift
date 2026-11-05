@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// Where the document sits in a layer: the document point at the layer's top left, and view points per

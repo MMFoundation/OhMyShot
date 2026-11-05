@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// One capture: the picture with rounded corners and a soft shadow; on hover, buttons to copy or save

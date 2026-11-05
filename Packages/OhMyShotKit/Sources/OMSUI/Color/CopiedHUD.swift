@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What was just copied, in a reading capsule by the point it came from, for a moment: a picked color with
 /// its swatch, or a measurement. It takes no clicks and no focus and goes by itself, as a pin's reading

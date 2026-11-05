@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// Annotation in place, over the capture overlay: the frozen screen stays where it is, the selection

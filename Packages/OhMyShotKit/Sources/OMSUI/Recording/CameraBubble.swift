@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// The camera's picture in a bubble over the screen, recorded with it: a circle or a rounded square in a

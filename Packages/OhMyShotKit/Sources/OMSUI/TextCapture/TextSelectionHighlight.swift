@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// Capture Text's only feedback by default: the selection, drawn like selected text, stays where it was
 /// while the text is read, then fades. A click-through panel that never takes focus, drawn exactly like

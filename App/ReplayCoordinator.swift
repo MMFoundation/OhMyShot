@@ -3,6 +3,7 @@ import AVFoundation
 import Foundation
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OMSRecording
 import OSLog
 import ScreenCaptureKit

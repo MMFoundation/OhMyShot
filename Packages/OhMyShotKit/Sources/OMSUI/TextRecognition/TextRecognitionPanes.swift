@@ -1,4 +1,5 @@
 import OMSCore
+import OMSDesign
 import OMSOCR
 import SwiftUI
 // The framework predates strict concurrency; its sessions are handed to the view that asked for them.

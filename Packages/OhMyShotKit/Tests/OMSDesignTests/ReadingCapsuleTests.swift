@@ -1,6 +1,6 @@
 import QuartzCore
 import Testing
-@testable import OMSCore
+@testable import OMSDesign
 
 @MainActor
 struct ReadingCapsuleTests {

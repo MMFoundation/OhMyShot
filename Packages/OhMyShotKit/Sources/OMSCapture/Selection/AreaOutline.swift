@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// An area outlined where it lies, as Self-Timer's countdown and a recording show it: one click-through

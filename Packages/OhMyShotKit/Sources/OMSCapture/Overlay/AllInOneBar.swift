@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The All-In-One bar: a small glass capsule at the bottom of the overlay for switching between capturing
 /// an area, a window, or the whole screen. Its buttons are capsules concentric with the bar.

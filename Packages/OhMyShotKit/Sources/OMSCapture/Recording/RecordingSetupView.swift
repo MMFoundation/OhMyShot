@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What the overlay shows once something to record is chosen, before recording starts: the choice framed
 /// on the dimmed screen, as in-place annotation frames its selection, with the recording bar under it.

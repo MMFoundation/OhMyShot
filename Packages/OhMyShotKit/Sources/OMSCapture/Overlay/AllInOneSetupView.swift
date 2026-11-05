@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What All-In-One does with an area: capture it (with a follow-up such as copying or pinning, or as Settings say),
 /// read its text, capture it scrolling, or record it.

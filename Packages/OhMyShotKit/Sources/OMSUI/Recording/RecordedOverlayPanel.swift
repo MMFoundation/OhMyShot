@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The clear, click-through window that what is drawn into a recording lies in: the clicks' rings and the keys
 /// pressed. It stays on screen for as long as the recording runs, so the recording's content filter takes it in from

@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OMSUI
 import OSLog
 

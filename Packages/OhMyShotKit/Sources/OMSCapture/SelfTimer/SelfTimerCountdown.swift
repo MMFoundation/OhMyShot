@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// Self-Timer's countdown: the area about to be captured outlined where it lies, and a small disc

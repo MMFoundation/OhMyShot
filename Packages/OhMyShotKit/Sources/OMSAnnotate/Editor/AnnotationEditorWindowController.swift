@@ -1,4 +1,5 @@
 import AppKit
+import OMSDesign
 import Observation
 import OMSCore
 import SwiftUI

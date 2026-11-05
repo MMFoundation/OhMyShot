@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 /// The timeline: a ruler of seconds, the clip with its pictures and its cuts, the zooms above it, the camera's

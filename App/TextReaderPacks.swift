@@ -1,5 +1,6 @@
 import Foundation
 import OMSCore
+import OMSDesign
 import OMSOCR
 import OSLog
 

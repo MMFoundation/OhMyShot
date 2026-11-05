@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// Translate Area's result: the area as it was captured, with the translation drawn over its text, in a
 /// panel exactly over the area, so the screen seems to change language where it was dragged over. It

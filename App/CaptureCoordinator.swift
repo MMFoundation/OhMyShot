@@ -3,6 +3,7 @@ import Foundation
 import OMSAnnotate
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OSLog
 import UniformTypeIdentifiers
 

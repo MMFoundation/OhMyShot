@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import OMSCore
+import OMSDesign
 
 /// The recording bar: after choosing what to record, a small glass capsule under it holding what the
 /// recording is kept as (a movie or a GIF), what it takes along (the Mac's sound, the microphone, clicks),
