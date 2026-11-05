@@ -158,6 +158,9 @@ struct TextReaderToolTests {
         #expect(answer.formulas == [.init(kind: .display, box: CGRect(x: 1, y: 2, width: 3, height: 4), latex: "x")])
         #expect(answer.tables?.map(\.kind) == [.chart])
         #expect(try JSONDecoder().decode(TextReaderWire.Job.self, from: Data(#"{"id":"a","pressure":"critical"}"#.utf8)).pressure == .critical)
+        // A pressure the reader has no name for is none, and the job is still read and answered.
+        let unnamed = try JSONDecoder().decode(TextReaderWire.Job.self, from: Data(#"{"id":"a","path":"/p.png","pressure":"dire"}"#.utf8))
+        #expect(unnamed.pressure == nil && unnamed.path == "/p.png")
     }
 
     @Test func aJobIsTheFirstModeItsFieldsName() {

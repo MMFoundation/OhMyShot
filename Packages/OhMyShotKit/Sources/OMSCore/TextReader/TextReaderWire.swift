@@ -181,3 +181,26 @@ public enum TextReaderWire {
         case stopped
     }
 }
+
+extension TextReaderWire.Job {
+    /// As synthesized, but a pressure the reader has no name for is no pressure at all: the reader asks the kernel and
+    /// still answers, where failing the whole line would leave the app waiting for an answer that never comes.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            path: try container.decodeIfPresent(String.self, forKey: .path),
+            joinsWrappedLines: try container.decodeIfPresent(Bool.self, forKey: .joinsWrappedLines),
+            pack: try container.decodeIfPresent(String.self, forKey: .pack),
+            lines: try container.decodeIfPresent(Bool.self, forKey: .lines),
+            warm: try container.decodeIfPresent(Bool.self, forKey: .warm),
+            formula: try container.decodeIfPresent(String.self, forKey: .formula),
+            formulas: try container.decodeIfPresent(String.self, forKey: .formulas),
+            tidy: try container.decodeIfPresent(Bool.self, forKey: .tidy),
+            vlm: try container.decodeIfPresent(String.self, forKey: .vlm),
+            task: try container.decodeIfPresent(String.self, forKey: .task),
+            seconds: try container.decodeIfPresent(Double.self, forKey: .seconds),
+            pressure: try? container.decodeIfPresent(MemoryPressure.self, forKey: .pressure)
+        )
+    }
+}
