@@ -1,14 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Which keys a recording shows.
-public enum KeystrokeMode: String, CaseIterable, Codable, Sendable {
-    /// Every key: typing runs on as it is typed, shortcuts and special keys by name.
-    case all
-    /// Shortcuts only (keys held with Command, Control, or Option) and function keys.
-    case shortcuts
-}
-
 /// What the keystroke display shows: a shortcut as it is pressed ("⌘⇧4"), or typing as it runs ("hello↩").
 public struct KeystrokeCaption: Equatable, Sendable {
     public let mode: KeystrokeMode
