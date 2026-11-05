@@ -17,13 +17,14 @@ nonisolated public struct AnnotationProject: Sendable {
     static let version = 2
 
     /// The oldest format that holds `document`, so a project nothing new is in is still read by an earlier
-    /// version, and one it would misread is refused there rather than opened wrong and written over.
+    /// version, and one it would misread is refused there rather than opened wrong and written over. Every
+    /// kind of mark is named here, so a new one is placed in a format when it is added.
     static func version(for document: AnnotationDocument) -> Int {
         let usesNewer = document.transform != nil || document.items.contains { item in
             switch item.shape {
             case .highlightBox: true
             case .image(let image): image.orientation != nil
-            default: false
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight, .text, .counter, .redaction, .spotlight: false
             }
         }
         return usesNewer ? 2 : 1

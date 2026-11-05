@@ -19,12 +19,9 @@ final class InPlaceToolbar: NSView {
     var onTool: ((AnnotationTool) -> Void)?
     var onAction: ((Action) -> Void)?
 
-    /// Pointing and drawing, words and numbers, hiding and showing; as the editor's rail groups them.
-    static let toolGroups: [[AnnotationTool]] = [
-        [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox],
-        [.text, .counter],
-        [.redact, .spotlight],
-    ]
+    /// The rail's tools that in-place annotation offers, grouped and ordered as the editor's rail has them:
+    /// pointing, drawing, words and numbers, hiding and showing. The picture's own group drops out.
+    static let toolGroups: [[AnnotationTool]] = ToolRail.groups.map { $0.filter(\.isOfferedInPlace) }.filter { !$0.isEmpty }
 
     static let height: CGFloat = 42
     private static let inset: CGFloat = 6
@@ -62,7 +59,6 @@ final class InPlaceToolbar: NSView {
         stack.spacing = 2
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
-        stack.addArrangedSubview(makeToolChip(.select))
         for group in Self.toolGroups {
             if !stack.arrangedSubviews.isEmpty { addDivider() }
             for tool in group { stack.addArrangedSubview(makeToolChip(tool)) }
@@ -204,8 +200,8 @@ final class InPlaceToolbar: NSView {
     }
 
     private func makeToolChip(_ tool: AnnotationTool) -> RailChip {
-        let name = ToolRail.name(of: tool)
-        let chip = makeChip(symbol: ToolRail.symbol(for: tool), name: name, help: ToolRail.help(for: tool))
+        let name = tool.name
+        let chip = makeChip(symbol: tool.symbol, name: name, help: tool.help)
         chip.setButtonType(.onOff)
         toolChips[tool] = chip
         return chip
