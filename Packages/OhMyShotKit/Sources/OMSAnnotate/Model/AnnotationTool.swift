@@ -46,6 +46,13 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
         self == .crop || self == .background
     }
 
+    /// Whether in-place annotation offers the tool, on its toolbar and by its key: every drawing tool and
+    /// Select, never the picture modes (cropping is the selection itself there, and a background would
+    /// grow past it).
+    public var isOfferedInPlace: Bool {
+        !isPictureMode
+    }
+
     /// Tools that draw a mark by dragging from one corner or end to the other.
     public var dragsShape: Bool {
         switch self {

@@ -29,7 +29,7 @@ struct HighlightBoxTests {
         #expect(AnnotationTool.highlightBox.key == "m")
         // On the rail and in place, next to the highlighter.
         #expect(ToolRail.groups[1].contains(.highlightBox))
-        #expect(InPlaceToolbar.toolGroups[0].contains(.highlightBox))
+        #expect(InPlaceToolbar.toolGroups.contains { $0.contains(.highlighter) && $0.contains(.highlightBox) })
         #expect(AnnotationCanvasView.inPlaceTools.contains(.highlightBox))
         #expect(NSImage(systemSymbolName: ToolRail.symbol(for: .highlightBox), accessibilityDescription: nil) != nil)
     }

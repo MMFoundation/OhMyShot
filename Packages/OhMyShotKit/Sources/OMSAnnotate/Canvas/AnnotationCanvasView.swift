@@ -530,9 +530,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         needsLayout = true
     }
 
-    /// The tools in-place annotation offers: every drawing tool and Select, never the picture modes
-    /// (cropping is the selection itself there, and a background would grow past it).
-    public static let inPlaceTools: [AnnotationTool] = AnnotationTool.allCases.filter { !$0.isPictureMode }
+    /// The tools in-place annotation offers, in their order: those `isOfferedInPlace` admits.
+    public static let inPlaceTools: [AnnotationTool] = AnnotationTool.allCases.filter(\.isOfferedInPlace)
 
     /// The mark under a point in this view, if any.
     public func mark(at viewPoint: CGPoint) -> Annotation.ID? {
@@ -1017,13 +1016,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
         session.select([])
-        let settings = session.settings(for: tool)
-        switch tool {
-        case .select, .crop, .background:
-            break
-        case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight:
+        if tool.dragsShape {
+            // Dragged out from the press, corner to corner or end to end.
             session.beginLiveChange()
             drag = .creating(id: UUID(), tool: tool, start: point, beyondClick: false)
+            return
+        }
+        let settings = session.settings(for: tool)
+        switch tool {
         case .pen:
             session.beginLiveChange()
             let item = Annotation(shape: .pen(Stroke(points: [point])), style: settings.style)
@@ -1059,6 +1059,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             // Not selected: counters go down one click after another, and the capsule stays with the
             // tool, so a change of numbering applies to the next counters rather than the last one.
             session.commit(document, selecting: [], actionName: String(localized: "Add Counter", bundle: .module))
+        default:
+            // Select, the crop, and the background draw nothing; the shapes were dragged out above.
+            break
         }
     }
 
@@ -1559,7 +1562,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             guard
                 let tool = AnnotationTool.allCases.first(where: { $0.key == character }),
-                !isInPlace || !tool.isPictureMode
+                !isInPlace || tool.isOfferedInPlace
             else { return false }
             cancelColorPicker()
             session.tool = tool
