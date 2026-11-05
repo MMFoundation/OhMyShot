@@ -692,11 +692,8 @@ final class RecordingCoordinator {
             PasteboardWriter.write(fileURL: url)
             copiedToClipboard?(entry.id)
         }
-        let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) ?? Self.blankThumbnail
-        var item = QuickAccessItem(
-            id: entry.id, kind: .recording, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
-            pixelHeight: entry.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: entry.duration
-        )
+        let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) ?? Self.blankThumbnail
+        var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
         if after.saves { item.savedURL = files.saveRecording(fileAt: url) }
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
@@ -891,8 +888,7 @@ final class RecordingCoordinator {
         )
         Log.recording.notice("Kept a Studio movie: \(movie.duration, format: .fixed(precision: 2), privacy: .public) s, \(movie.pixelWidth, privacy: .public)x\(movie.pixelHeight, privacy: .public), \(movie.byteCount, privacy: .public) bytes")
         if first {
-            let layout = displays.layout
-            let displayID = studioDisplays[id] ?? layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
+            let displayID = studioDisplays[id] ?? displays.layout.pointerDisplay?.id ?? 0
             Task { await present(updated, displayID: displayID) }
         } else {
             onChanged?(updated)
@@ -988,8 +984,7 @@ final class RecordingCoordinator {
         )
         do {
             let gif = try await GIFMaker.make(from: history.fileURL(for: entry), to: destination, options: options)
-            let layout = displays.layout
-            let displayID = layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
+            let displayID = displays.layout.pointerDisplay?.id ?? 0
             let file = KeptFile(url: gif.url, pixelWidth: gif.pixelWidth, pixelHeight: gif.pixelHeight, duration: gif.duration, byteCount: gif.byteCount)
             let made = try await deliver(file, startedAt: entry.createdAt, appName: entry.appName, pixelsPerPoint: entry.pixelsPerPoint, displayID: displayID)
             Log.recording.notice("Made a GIF of a recording: \(gif.frameCount, privacy: .public) frames, \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public), \(gif.byteCount, privacy: .public) bytes as \(made.fileName, privacy: .public)")

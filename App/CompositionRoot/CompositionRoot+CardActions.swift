@@ -88,16 +88,10 @@ extension CompositionRoot {
         let previous = pictureUpdates
         pictureUpdates = Task {
             await previous?.value
-            if let card = quickAccess.item(entry.id), let thumbnail = await HistoryStore.cardThumbnail(of: data, maxPixels: 560) {
+            if let card = quickAccess.item(entry.id),
+               let thumbnail = await HistoryStore.cardThumbnail(of: data, maxPixels: QuickAccessItem.thumbnailPixels) {
                 quickAccess.update(QuickAccessItem(
-                    id: entry.id,
-                    kind: entry.kind,
-                    fileURL: history.fileURL(for: entry),
-                    thumbnail: thumbnail,
-                    pixelWidth: entry.pixelWidth,
-                    pixelHeight: entry.pixelHeight,
-                    displayID: card.displayID,
-                    createdAt: entry.createdAt,
+                    entry, fileURL: history.fileURL(for: entry), thumbnail: thumbnail, displayID: card.displayID,
                     savedURL: savedCopyIsStale ? nil : card.savedURL
                 ), keepsSaved: !savedCopyIsStale)
             }
@@ -123,15 +117,12 @@ extension CompositionRoot {
             reveal: { item in NSWorkspace.shared.activateFileViewerSelecting([item.savedURL ?? item.fileURL]) },
             recognizeText: { [weak self] item in
                 guard let self, item.kind == .screenshot else { return }
-                // Captures are saved without a resolution, so the scale is their display's, unless it was scaled
-                // to one pixel per point.
-                let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1
+                let scale = scale(of: item, orElse: 1)
                 Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale) }
             },
             pin: { [weak self] item in
                 guard let self, item.kind == .screenshot else { return }
-                let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
-                pin(fileAt: item.fileURL, origin: .capture(item.id), fallbackScale: scale)
+                pin(fileAt: item.fileURL, origin: .capture(item.id), fallbackScale: scale(of: item, orElse: 2))
             },
             moveToTrash: { [weak self] item in
                 guard let self else { return }
@@ -153,8 +144,7 @@ extension CompositionRoot {
         )
         actions.print = { [weak self] item in
             guard let self, item.kind == .screenshot else { return }
-            let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
-            printPicture(fileAt: item.fileURL, fallbackScale: scale)
+            printPicture(fileAt: item.fileURL, fallbackScale: scale(of: item, orElse: 2))
         }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }
@@ -212,14 +202,12 @@ extension CompositionRoot {
             },
             recognizeText: { [weak self] entry in
                 guard let self else { return }
-                // The display a capture came from is not recorded; most captures come from the sharpest.
-                let scale = entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
+                let scale = scale(of: entry, orElse: 1)
                 Task { await self.textCapture.openPanel(forFileAt: self.history.fileURL(for: entry), fallbackScale: scale) }
             },
             pin: { [weak self] entry in
                 guard let self else { return }
-                let scale = entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.displays.map(\.pixelsPerPoint).max() ?? 2
-                pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale)
+                pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale(of: entry, orElse: 2))
             },
             moveToTrash: { [weak self] entry in
                 self?.uploads.cancel(captureID: entry.id)
@@ -230,8 +218,7 @@ extension CompositionRoot {
         )
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
-            let scale = entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.displays.map(\.pixelsPerPoint).max() ?? 2
-            printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale, from: window)
+            printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
         }
         historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
         historyActions.sharing.upload = { [weak self] entry, destination in
@@ -272,12 +259,8 @@ extension CompositionRoot {
         guard let card = quickAccess.item(entry.id) else { return }
         Task {
             let url = history.fileURL(for: entry)
-            guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: 560) else { return }
-            quickAccess.update(QuickAccessItem(
-                id: entry.id, kind: entry.kind, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
-                pixelHeight: entry.pixelHeight, displayID: card.displayID, createdAt: entry.createdAt, duration: entry.duration,
-                savedURL: card.savedURL
-            ))
+            guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) else { return }
+            quickAccess.update(QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: card.displayID, savedURL: card.savedURL))
         }
     }
 
@@ -289,19 +272,21 @@ extension CompositionRoot {
 
     func quickAccessItem(for entry: HistoryItem) async -> QuickAccessItem? {
         let url = history.fileURL(for: entry)
-        guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: 560) else { return nil }
-        let layout = displays.layout
-        let displayID = layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
-        return QuickAccessItem(
-            id: entry.id,
-            kind: entry.kind,
-            fileURL: url,
-            thumbnail: thumbnail,
-            pixelWidth: entry.pixelWidth,
-            pixelHeight: entry.pixelHeight,
-            displayID: displayID,
-            createdAt: entry.createdAt,
-            duration: entry.duration
-        )
+        guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) else { return nil }
+        return QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displays.layout.pointerDisplay?.id ?? 0)
+    }
+
+    /// A card's capture's pixels per point, for a file that says nothing of its resolution: as the history records it, else
+    /// its display's (captures are saved without a resolution, so the scale is their display's, unless it was scaled to one
+    /// pixel per point); `fallback` once that display is gone.
+    func scale(of item: QuickAccessItem, orElse fallback: CGFloat) -> CGFloat {
+        history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? fallback
+    }
+
+    /// A history capture's pixels per point, for a file that says nothing of its resolution: as the history records it,
+    /// else the sharpest display's (the display a capture came from is not recorded; most captures come from the
+    /// sharpest); `fallback` with no display.
+    func scale(of entry: HistoryItem, orElse fallback: CGFloat) -> CGFloat {
+        entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.sharpestPixelsPerPoint ?? fallback
     }
 }

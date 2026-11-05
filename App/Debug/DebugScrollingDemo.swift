@@ -537,7 +537,7 @@ enum DebugScrollingDemo {
             let encodingPeak = peak.take()
             let thumbnailing = ContinuousClock.now
             var thumbnail: CGImage?
-            if png != nil { thumbnail = await HistoryStore.cardThumbnail(of: image, maxPixels: 560) }
+            if png != nil { thumbnail = await HistoryStore.cardThumbnail(of: image, maxPixels: QuickAccessItem.thumbnailPixels) }
             let thumbnailed = ContinuousClock.now - thumbnailing
             let thumbnailPeak = peak.take()
             let size = "\(image.width)x\(image.height)", bytes = png?.count ?? 0

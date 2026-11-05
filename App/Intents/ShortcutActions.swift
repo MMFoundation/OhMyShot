@@ -139,7 +139,7 @@ final class ShortcutActions {
 
     /// Pins a picture a shortcut hands over.
     func pin(_ data: Data) throws(ShortcutFailure) {
-        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        let scale = displays.layout.displayUnderPointer?.pixelsPerPoint ?? 2
         guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { throw .unreadableImage }
         pins.pin(loaded.image, scale: loaded.scale, origin: .clipboard)
     }

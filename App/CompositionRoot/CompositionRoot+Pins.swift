@@ -80,7 +80,7 @@ extension CompositionRoot {
     /// color's value), then text. Beeps when there is nothing to pin.
     func pinClipboard() {
         let pasteboard = NSPasteboard.general
-        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        let scale = displays.layout.displayUnderPointer?.pixelsPerPoint ?? 2
         switch PasteboardImage.read(pasteboard) {
         case .file(let url):
             return pin(fileAt: url, fallbackScale: scale)

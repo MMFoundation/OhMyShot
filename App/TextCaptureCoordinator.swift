@@ -908,7 +908,7 @@ final class TextCaptureCoordinator {
     func openPanel(from pasteboard: NSPasteboard, source: String) -> Bool {
         guard let content = PasteboardImage.read(pasteboard) else { return false }
         Task {
-            let fallbackScale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
+            let fallbackScale = displays.layout.sharpestPixelsPerPoint ?? 1
             guard let loaded = await Self.load(content, fallbackScale: fallbackScale) else {
                 Log.capture.error("Could not read the image on the pasteboard to recognize its text")
                 if case .file(let url) = content {

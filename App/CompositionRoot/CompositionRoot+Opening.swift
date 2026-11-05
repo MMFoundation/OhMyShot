@@ -40,7 +40,7 @@ extension CompositionRoot {
         }
         // A pin is shown at the size a picture with no resolution of its own had on screen; the editor takes it at one pixel
         // per point, as it does a file opened with Open With.
-        let pinScale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        let pinScale = displays.layout.displayUnderPointer?.pixelsPerPoint ?? 2
         Task {
             var opened = 0
             for url in pictures {
@@ -124,7 +124,7 @@ extension CompositionRoot {
     func annotate(_ entry: HistoryItem, displayID: CGDirectDisplayID?) {
         let layout = displays.layout
         // The display a history capture came from is not recorded; most come from the sharpest.
-        let scale = displayID.flatMap { layout.display(id: $0)?.pixelsPerPoint } ?? layout.displays.map(\.pixelsPerPoint).max() ?? 1
+        let scale = displayID.flatMap { layout.display(id: $0)?.pixelsPerPoint } ?? layout.sharpestPixelsPerPoint ?? 1
         annotations.annotate(entry, scale: scale)
     }
 }

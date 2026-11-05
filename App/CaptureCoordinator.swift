@@ -371,8 +371,7 @@ final class CaptureCoordinator {
 
     /// Captures the whole display under the pointer.
     func captureFullscreen(followUp: CaptureFollowUp = .none) {
-        let layout = displays.layout
-        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return followUp.finish(nil) }
+        guard let display = displays.layout.pointerDisplay else { return followUp.finish(nil) }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         Task {
@@ -673,13 +672,9 @@ final class CaptureCoordinator {
                 await files.copy(pending.picture, png: pending.png, name: (entry.fileName as NSString).deletingPathExtension, scale: pending.scale, historyFile: history.fileURL(for: entry))
             }
             var item = QuickAccessItem(
-                id: entry.id,
-                fileURL: history.fileURL(for: entry),
-                thumbnail: await HistoryStore.cardThumbnail(of: shown.image, maxPixels: 560) ?? shown.image,
-                pixelWidth: shown.image.width,
-                pixelHeight: shown.image.height,
-                displayID: frame.displayID,
-                createdAt: entry.createdAt
+                entry, fileURL: history.fileURL(for: entry),
+                thumbnail: await HistoryStore.cardThumbnail(of: shown.image, maxPixels: QuickAccessItem.thumbnailPixels) ?? shown.image,
+                displayID: frame.displayID
             )
             if settings.saveAfterCapture || saving {
                 // Asking for the name is for someone at the keyboard: All-In-One's Save is asked, a save the URL API or a
