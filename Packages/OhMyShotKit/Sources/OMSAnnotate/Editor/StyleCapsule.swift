@@ -27,9 +27,11 @@ final class StyleCapsule: NSView {
     /// Toggles sampling a color directly from the canvas picture (shortcut I).
     var onPickCanvasColor: (() -> Void)?
     /// Whether the canvas color eyedropper is currently active.
-    var isPickingCanvasColor = false
+    private var isPickingCanvasColor = false
     /// The colors a person has kept; the chips beside the inks, and the one that keeps another.
     var savedColors = SavedColors.shared
+    /// Colors kept or let go of in any capsule, once this one is bound to a canvas.
+    private var savedColorsObserver: NSObjectProtocol?
 
     static let height: CGFloat = 38
     private static let inset: CGFloat = 4
@@ -113,6 +115,7 @@ final class StyleCapsule: NSView {
 
     isolated deinit {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
         releaseColorPanel()
     }
 
@@ -172,6 +175,45 @@ final class StyleCapsule: NSView {
         self.sized = sized
         background = nil
         rebuild()
+    }
+
+    /// Wires the controls both hosts share to `session` and `canvas`: a style change restyles the selected
+    /// marks, or the tool's next mark, and the text being typed; Delete, Redact All, Try Again, and the
+    /// eyedropper act on them. `refresh` is the host's own way of showing the capsule again where it goes,
+    /// called when the eyedropper is picked up or put down, and when a color is kept or let go of in any
+    /// capsule, so colors kept in one editor show in every other.
+    func bind(to session: AnnotationSession, canvas: AnnotationCanvasView, refresh: @escaping @MainActor () -> Void) {
+        onChange = { [weak session, weak canvas] name, change in
+            session?.changeSettings(name, change)
+            canvas?.refreshEditingStyle()
+        }
+        onDelete = { [weak session] in session?.deleteSelection() }
+        onRedactAll = { [weak session] in session?.acceptAllRedactionSuggestions() }
+        onRetry = { [weak session] in session?.retryReadingForTool() }
+        onPickCanvasColor = { [weak canvas] in canvas?.toggleColorPicker() }
+        canvas.onColorPickerChange = { refresh() }
+        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
+        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { refresh() }
+        }
+    }
+
+    /// Shows the controls for what `session` has in hand now: the selected marks' kind and style, or the
+    /// tool's; the open suggestions Redact All counts; where the reading for the tool stands; and whether
+    /// `canvas`'s eyedropper is in hand, which its chip is built showing.
+    func refresh(from session: AnnotationSession, canvas: AnnotationCanvasView) {
+        isPickingCanvasColor = canvas.isPickingColor
+        show(
+            kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
+            suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
+            reading: session.readingStatusForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
+        )
+    }
+
+    /// Whether Redact All's count is out of date for `session`: the capsule is shown again for it, not for
+    /// every frame of a drag.
+    func countsStaleSuggestions(of session: AnnotationSession) -> Bool {
+        session.tool == .redact && session.openRedactionSuggestions.count != suggestions
     }
 
     /// Shows the background's fills, its adjustments, and its presets. Rebuilt only when what the chips

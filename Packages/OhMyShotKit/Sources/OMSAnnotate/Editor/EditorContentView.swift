@@ -12,14 +12,11 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     var onViewportChange: (() -> Void)?
     private let rail = ToolRail()
     private let capsule = StyleCapsule()
-    /// The open suggestions Redact All counted when the capsule was last shown.
-    private var shownSuggestions = 0
     /// What the capsule was last placed for, so a new selection fades it in while a zoom just moves it.
     private var capsuleAnchor: [Annotation.ID]?
     /// The background's adjustments, while their popover is open.
     private var adjustments: BackdropAdjustments?
     private weak var adjustPopover: NSPopover?
-    private var savedColorsObserver: NSObjectProtocol?
 
     /// The picture last chosen for a background, offered again.
     /// The last picture chosen for a background, offered again beside the colors.
@@ -41,18 +38,9 @@ final class EditorContentView: NSView, NSPopoverDelegate {
 
         rail.select(session.tool)
         rail.onSelect = { [weak self] tool in self?.choose(tool) }
-        capsule.onChange = { [weak self] name, change in
-            guard let self else { return }
-            session.changeSettings(name, change)
-            canvas.refreshEditingStyle()
-        }
-        capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
-        capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
-        capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
+        capsule.bind(to: session, canvas: canvas) { [weak self] in self?.refreshCapsule() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
         capsule.onCropRatio = { [weak self] ratio in self?.canvas.chooseCropRatio(ratio) }
-        capsule.onPickCanvasColor = { [weak self] in self?.canvas.toggleColorPicker() }
-        canvas.onColorPickerChange = { [weak self] in self?.refreshCapsule() }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
             canvas.commitCrop()
@@ -67,20 +55,12 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             self?.onViewportChange?()
         }
         session.observe { [weak self] event in self?.sessionChanged(event) }
-        // Colors kept in one editor show in every other.
-        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshCapsule() }
-        }
         refreshCapsule()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
-    }
-
-    isolated deinit {
-        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
     }
 
     override var isFlipped: Bool { true }
@@ -107,7 +87,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         case .document:
             // The selected mark may have changed kind of settings (undo, a restyle elsewhere), or the
             // background its fill.
-            if !session.selection.isEmpty || session.tool == .background || suggestionCountChanged { refreshCapsule() }
+            if !session.selection.isEmpty || session.tool == .background || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
             adjustments?.refresh()
         case .history:
             break
@@ -122,13 +102,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         }
     }
 
-    /// Whether Redact All's count is out of date: the capsule is rebuilt for it, not for every drag frame.
-    private var suggestionCountChanged: Bool {
-        session.tool == .redact && session.openRedactionSuggestions.count != shownSuggestions
-    }
-
     private func refreshCapsule() {
-        shownSuggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
         if session.tool == .background {
             capsule.showBackground(StyleCapsule.BackgroundState(
                 backdrop: session.document.backdrop,
@@ -136,12 +110,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
                 blur: session.blurredCapture
             ))
         } else {
-            capsule.isPickingCanvasColor = canvas.isPickingColor
-            capsule.show(
-                kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
-                suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-                reading: session.readingStatusForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
-            )
+            capsule.refresh(from: session, canvas: canvas)
         }
         placeCapsule()
     }
