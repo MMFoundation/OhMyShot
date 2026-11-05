@@ -605,7 +605,10 @@ public final class StudioDocument {
 
     /// The recording's time for the movie's `time`.
     public func recordingTime(_ time: Double) -> Double {
-        StudioComposition.sourceTime(time, in: keptSegments)
+        let segments = keptSegments
+        // With all of it cut the movie is empty, and its one time is the recording's end, where the playhead stays.
+        guard !segments.isEmpty else { return duration }
+        return StudioComposition.sourceTime(time, in: segments)
     }
 
     // MARK: Keeping

@@ -59,6 +59,13 @@ struct StudioDocumentStateTests {
         #expect(document.project.opened(for: document.telemetry, duration: document.duration) == document.project)
     }
 
+    @Test func aRecordingCutWhollyLeavesThePlayheadAtItsEnd() {
+        let document = document(project: StudioProject(cuts: [0...4]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        #expect(document.movieTime(2) == 0)
+        #expect(document.recordingTime(0) == document.duration)
+    }
+
     @Test func aCutJoinsTheCutsItMeetsAndIsChosen() {
         let document = document(project: StudioProject(cuts: [0.5...1, 2...2.5, 3...3.5]))
         defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
