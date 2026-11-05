@@ -236,7 +236,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     /// Combines picture files into the capture at `point` (pixels), as a drop does.
     public func simulateDrop(_ urls: [URL], at point: CGPoint) {
-        content.canvas.place(AnnotationCanvasView.incomingPictures(from: urls), at: point)
+        content.canvas.place(IncomingPicture.keep(urls), at: point)
     }
 
     /// Shows the canvas as pictures dragged over it see it.

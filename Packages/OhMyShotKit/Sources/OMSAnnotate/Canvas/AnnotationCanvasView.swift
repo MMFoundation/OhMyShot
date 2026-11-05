@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import OMSCore
 import QuartzCore
 import UniformTypeIdentifiers
@@ -96,13 +95,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
     private let selectionLayer = SelectionLayer()
     private let cropLayer = CropLayer()
-    /// The redaction tool's suggestions: dashed accent outlines around text reading found better covered,
-    /// each covered by a click. Never part of the picture.
-    private let suggestionLayer = CAShapeLayer()
-    /// A white line under the dashes, so their gaps are white.
-    private let suggestionHalo = CAShapeLayer()
-    /// The suggestions as VoiceOver finds them, one button each.
-    private var suggestionElements: [(suggestion: RedactionSuggestion, element: SuggestionElement)] = []
+    /// The redaction tool's suggestions, outlined over the picture, each covered by a click.
+    private lazy var suggestions = SuggestionOverlay(on: self)
 
     private var displayOptions: NSObjectProtocol?
     private var userZoom: CGFloat?
@@ -137,7 +131,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public init(session: AnnotationSession) {
         self.session = session
-        captureHasOpaqueCorners = Self.hasOpaqueCorners(session.base)
+        captureHasOpaqueCorners = PixelProbe.hasOpaqueCorners(session.base)
         super.init(frame: .zero)
         wantsLayer = true
         host.layer = StillLayer()
@@ -170,13 +164,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         pictureLayer.isHidden = !captureHasOpaqueCorners
         host.layer?.addSublayer(pictureLayer)
         host.layer?.addSublayer(canvasLayer)
-        for layer in [suggestionHalo, suggestionLayer] {
-            layer.fillColor = nil
-            layer.isHidden = true
-            layer.actions = ["path": NSNull(), "hidden": NSNull(), "frame": NSNull(), "bounds": NSNull(), "position": NSNull()]
-            host.layer?.addSublayer(layer)
-        }
-        suggestionLayer.lineDashPattern = [4, 3]
+        suggestions.install(in: host.layer)
+        suggestions.onPress = { [weak self] suggestion in self?.session.acceptRedactionSuggestion(suggestion) ?? false }
         host.layer?.addSublayer(selectionLayer)
         host.layer?.addSublayer(cropLayer)
         cropLayer.isHidden = true
@@ -427,30 +416,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     ///   with Reduce Motion.
     private func updateSuggestions(fadingIn: Bool = false) {
         let open = session.tool == .redact && drag?.hidesSuggestions != true ? session.openRedactionSuggestions : []
-        let path = CGMutablePath()
-        for suggestion in open {
-            path.addRoundedRect(in: viewRect(session.coveringRect(of: suggestion)), cornerWidth: 3, cornerHeight: 3)
-        }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for layer in [suggestionHalo, suggestionLayer] {
-            layer.frame = host.bounds
-            layer.path = path
-            layer.isHidden = open.isEmpty
-            if fadingIn, !open.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = 0
-                fade.duration = 0.12
-                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                layer.add(fade, forKey: "fade")
-            }
-        }
-        CATransaction.commit()
-        removeAllToolTips()
-        for suggestion in open {
-            addToolTip(viewRect(session.coveringRect(of: suggestion)), owner: self, userData: nil)
-        }
-        updateSuggestionElements(open)
+        suggestions.show(open, in: host.bounds, fadingIn: fadingIn) { viewRect(session.coveringRect(of: $0)) }
     }
 
     public func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
@@ -458,28 +424,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return suggestion.label + "\n" + String(localized: "Click to redact", bundle: .module)
     }
 
-    /// One button per open suggestion for VoiceOver, kept while the suggestions stay the same so its focus
-    /// holds, and moved with the picture.
-    private func updateSuggestionElements(_ open: [RedactionSuggestion]) {
-        if suggestionElements.map(\.suggestion) != open {
-            suggestionElements = open.map { suggestion in
-                let element = SuggestionElement()
-                element.setAccessibilityRole(.button)
-                element.setAccessibilityLabel(String(localized: "\(suggestion.label), suggested redaction", bundle: .module))
-                element.setAccessibilityParent(self)
-                element.press = { [weak self] in self?.session.acceptRedactionSuggestion(suggestion) ?? false }
-                return (suggestion, element)
-            }
-            NSAccessibility.post(element: self, notification: .layoutChanged)
-        }
-        for (suggestion, element) in suggestionElements {
-            element.setAccessibilityFrameInParentSpace(viewRect(session.coveringRect(of: suggestion)))
-        }
-    }
-
     public override func accessibilityChildren() -> [Any]? {
         let children = super.accessibilityChildren() ?? []
-        return suggestionElements.isEmpty ? children : children + suggestionElements.map(\.element)
+        let buttons = suggestions.accessibilityElements
+        return buttons.isEmpty ? children : children + buttons
     }
 
     private var baseColorSpace: CGColorSpace {
@@ -905,14 +853,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Samples the capture's pixel color at `documentPoint` (in document pixels).
     public func sampleColor(at documentPoint: CGPoint) -> RGBA? {
-        let pic = session.picture
-        let x = Int(documentPoint.x.rounded(.down))
-        let y = Int(documentPoint.y.rounded(.down))
-        guard x >= 0, y >= 0, x < pic.width, y < pic.height,
-              let bitmap = Bitmap(pic, crop: CGRect(x: x, y: y, width: 1, height: 1))
-        else { return nil }
-        let pixel = bitmap.pixel(0, 0)
-        return RGBA(red: Double(pixel.red) / 255, green: Double(pixel.green) / 255, blue: Double(pixel.blue) / 255, alpha: 1)
+        PixelProbe.color(at: documentPoint, in: session.picture)
     }
 
     private func updateEyedropperPreview(at viewLocation: CGPoint) {
@@ -1094,7 +1035,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.beginLiveChange()
             // Started on text, it snaps to the text; a click there highlights the word.
             let snapping = TextSnapping(at: point, lines: session.textLines)
-            let shape = Self.highlight(along: [point], snapping: snapping, freely: event.modifierFlags.contains(.command))
+            let shape = Shape.highlight(along: [point], snapping: snapping, freely: event.modifierFlags.contains(.command))
             let item = Annotation(shape: shape, style: settings.style)
             var document = session.document
             document.items.append(item)
@@ -1156,9 +1097,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 if abs(delta.width) > abs(delta.height) { delta.height = 0 } else { delta.width = 0 }
             }
             if !event.modifierFlags.contains(.command), originals.count == 1 {
-                let snapped = snapMoving(originals[0], translatedBy: delta, axisLockedX: shift && delta.width == 0, axisLockedY: shift && delta.height == 0)
+                // A single mark snaps to other marks' edges and middles and to the canvas's middle within
+                // 4 points on screen.
+                let snapped = AlignmentSnapping.snap(
+                    originals[0], translatedBy: delta, in: session.document, threshold: 4 / max(zoom, 0.05),
+                    axisLockedX: shift && delta.width == 0, axisLockedY: shift && delta.height == 0
+                )
                 delta = snapped.delta
-                selectionLayer.alignmentGuides = snapped.guides
+                selectionLayer.alignmentGuides = snapped.guides.map { SelectionLayer.Guide(start: viewPoint($0.start), end: viewPoint($0.end)) }
             } else {
                 selectionLayer.alignmentGuides = []
             }
@@ -1239,7 +1185,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
                 return
             }
-            session.updateLive(Self.joiningHighlights(of: session.document, to: id, highlight))
+            session.updateLive(session.document.joiningHighlight(id, highlight))
             session.endLiveChange(actionName: String(localized: "Highlight", bundle: .module))
         case .moving(_, let originals):
             selectionLayer.alignmentGuides = []
@@ -1275,42 +1221,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         snapping?.extend(to: next)
         drag = .highlighting(id: id, points: points, snapping: snapping)
         var document = session.document
-        document.items[index].shape = Self.highlight(along: points, snapping: snapping, freely: event.modifierFlags.contains(.command))
+        document.items[index].shape = Shape.highlight(along: points, snapping: snapping, freely: event.modifierFlags.contains(.command))
         session.updateLive(document)
-    }
-
-    /// `document` with the new highlight `id` joined to the highlights of its color that it meets on a line:
-    /// highlighting over a highlight extends it, so a word highlighted twice (a double click) is no darker
-    /// and the overlap of two strokes along one line does not show. The joined highlight takes the place
-    /// of the uppermost of them, so nothing that lay over another mark drops under it; a highlight that
-    /// only covers what is highlighted already changes nothing.
-    private static func joiningHighlights(of document: AnnotationDocument, to id: Annotation.ID, _ highlight: TextHighlight) -> AnnotationDocument {
-        guard let color = document.item(id)?.style.color else { return document }
-        var document = document
-        var joined = highlight
-        var absorbed: [Int] = []
-        var found = true
-        while found {
-            found = false
-            for (index, item) in document.items.enumerated() where item.id != id && item.style.color == color && !absorbed.contains(index) {
-                guard case .textHighlight(let other) = item.shape, other.meets(joined) else { continue }
-                joined = other.merged(with: joined)
-                absorbed.append(index)
-                found = true
-            }
-        }
-        guard let keeper = absorbed.max() else { return document }
-        document.items[keeper].shape = .textHighlight(joined)
-        let removed = Set(absorbed.filter { $0 != keeper }.map { document.items[$0].id } + [id])
-        document.items.removeAll { removed.contains($0.id) }
-        return document
-    }
-
-    /// What a highlighter drag along `points` draws: bands over the text it ran along when it started on
-    /// text, a free stroke when it started off text or while ⌘ is held.
-    private static func highlight(along points: [CGPoint], snapping: TextSnapping?, freely: Bool) -> Shape {
-        if let snapping, !freely { return .textHighlight(TextHighlight(rects: snapping.rects)) }
-        return .highlighter(Stroke(points: points))
     }
 
     public override func flagsChanged(with event: NSEvent) {
@@ -1319,7 +1231,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if case .highlighting(let id, let points, let snapping) = drag, snapping != nil, let index = session.document.index(of: id) {
             // ⌘ frees the stroke from the text while it is held, mid-drag too.
             var document = session.document
-            document.items[index].shape = Self.highlight(along: points, snapping: snapping, freely: freely)
+            document.items[index].shape = Shape.highlight(along: points, snapping: snapping, freely: freely)
             session.updateLive(document)
         } else if drag == nil, let window {
             let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
@@ -1354,66 +1266,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     // MARK: Combining
 
-    /// A picture coming in to be combined: its name in the picture store, its size in pixels, and its
-    /// pixels per point.
-    struct IncomingPicture {
-        let name: String
-        let pixelSize: CGSize
-        let scale: CGFloat
-    }
-
-    /// Whether a pasteboard offers pictures, without reading them.
-    static func offersPictures(_ pasteboard: NSPasteboard) -> Bool {
-        pasteboard.canReadObject(forClasses: [NSURL.self], options: imageFileOptions)
-            || pasteboard.availableType(from: [.png, .tiff]) != nil
-    }
-
-    private static let imageFileOptions: [NSPasteboard.ReadingOptionKey: Any] = [
-        .urlReadingFileURLsOnly: true,
-        .urlReadingContentsConformToTypes: [UTType.image.identifier],
-    ]
-
-    /// The pictures a pasteboard offers, kept in the picture store: image files, or else image data.
-    static func incomingPictures(from pasteboard: NSPasteboard) -> [IncomingPicture] {
-        var names: [String] = []
-        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: imageFileOptions) as? [URL] ?? []
-        for url in urls {
-            if let name = try? PictureStore.shared.add(url) { names.append(name) }
-        }
-        if names.isEmpty, let data = pasteboard.data(forType: .png) {
-            if let name = try? PictureStore.shared.add(data, fileExtension: "png") { names.append(name) }
-        } else if names.isEmpty, let data = pasteboard.data(forType: .tiff),
-                  let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-            // Kept as PNG: pasteboard TIFF is uncompressed.
-            if let name = try? PictureStore.shared.add(image) { names.append(name) }
-        }
-        return describe(names)
-    }
-
-    /// Picture files, kept in the picture store.
-    static func incomingPictures(from urls: [URL]) -> [IncomingPicture] {
-        describe(urls.compactMap { try? PictureStore.shared.add($0) })
-    }
-
-    private static func describe(_ names: [String]) -> [IncomingPicture] {
-        names.compactMap { name in
-            guard let size = PictureStore.shared.pixelSize(named: name) else { return nil }
-            return IncomingPicture(name: name, pixelSize: size, scale: resolution(of: name) ?? 0)
-        }
-    }
-
-    /// Pixels per point a picture records, or nil when it records none (72 dpi).
-    private static func resolution(of name: String) -> CGFloat? {
-        guard
-            let source = CGImageSourceCreateWithURL(PictureStore.shared.url(named: name) as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-            let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue, dpi > 72.5
-        else { return nil }
-        // PNG keeps resolution per meter, so 144 dpi reads back as 143.99: quarter steps.
-        return CGFloat((dpi / 72 * 4).rounded() / 4)
-    }
-
     /// Combines pictures into the capture around `point` (pixels). A picture shows at the size it had
     /// on its own screen (one that records no resolution is taken at the capture's), never larger
     /// than the canvas.
@@ -1439,7 +1291,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// Pastes pictures from `pasteboard` into the middle of what is on screen; false when it has none.
     @discardableResult
     func pastePictures(from pasteboard: NSPasteboard) -> Bool {
-        let pictures = Self.incomingPictures(from: pasteboard)
+        let pictures = IncomingPicture.keep(from: pasteboard)
         guard !pictures.isEmpty else { return false }
         place(pictures, at: documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY)))
         return true
@@ -1466,14 +1318,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         panel.prompt = String(localized: "Add", bundle: .module)
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .OK else { return }
-            place(Self.incomingPictures(from: panel.urls), at: point)
+            place(IncomingPicture.keep(panel.urls), at: point)
         }
     }
 
     /// The menu for the empty canvas: combine a picture into the capture.
     private func pictureMenu(at point: CGPoint) -> NSMenu? {
         let menu = NSMenu()
-        if Self.offersPictures(.general) {
+        if IncomingPicture.isOffered(by: .general) {
             let paste = NSMenuItem(title: String(localized: "Paste", bundle: .module), action: #selector(paste(_:)), keyEquivalent: "")
             paste.target = self
             paste.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
@@ -1487,87 +1339,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return menu
     }
 
-    /// Snaps a single moving mark against other marks' edges/centers and the canvas center within `4 / zoom` pixels.
-    private func snapMoving(
-        _ original: Annotation, translatedBy rawDelta: CGSize, axisLockedX: Bool, axisLockedY: Bool
-    ) -> (delta: CGSize, guides: [SelectionLayer.Guide]) {
-        let document = session.document
-        let scale = document.scale
-        let movedBounds = original.translated(by: rawDelta).bounds(scale: scale)
-        guard !movedBounds.isNull, movedBounds.width > 0 || movedBounds.height > 0 else {
-            return (rawDelta, [])
-        }
-        let threshold = 4 / max(zoom, 0.05)
-        let canvas = document.canvas.standardized
-
-        var xTargets: [(x: CGFloat, minY: CGFloat, maxY: CGFloat)] = [
-            (canvas.midX, canvas.minY, canvas.maxY),
-        ]
-        var yTargets: [(y: CGFloat, minX: CGFloat, maxX: CGFloat)] = [
-            (canvas.midY, canvas.minX, canvas.maxX),
-        ]
-        for item in document.items where item.id != original.id {
-            let b = item.bounds(scale: scale)
-            guard !b.isNull else { continue }
-            xTargets.append((b.minX, b.minY, b.maxY))
-            xTargets.append((b.midX, b.minY, b.maxY))
-            xTargets.append((b.maxX, b.minY, b.maxY))
-            yTargets.append((b.minY, b.minX, b.maxX))
-            yTargets.append((b.midY, b.minX, b.maxX))
-            yTargets.append((b.maxY, b.minX, b.maxX))
-        }
-
-        var delta = rawDelta
-        var guides: [SelectionLayer.Guide] = []
-
-        if !axisLockedX {
-            let xEdges = [movedBounds.minX, movedBounds.midX, movedBounds.maxX]
-            var bestX: (offset: CGFloat, targetX: CGFloat, minY: CGFloat, maxY: CGFloat)?
-            for edge in xEdges {
-                for target in xTargets {
-                    let diff = target.x - edge
-                    guard abs(diff) <= threshold else { continue }
-                    if bestX == nil || abs(diff) < abs(bestX!.offset) {
-                        bestX = (diff, target.x, target.minY, target.maxY)
-                    }
-                }
-            }
-            if let bestX {
-                delta.width += bestX.offset
-                let snappedRect = movedBounds.offsetBy(dx: bestX.offset, dy: 0)
-                let start = viewPoint(CGPoint(x: bestX.targetX, y: min(snappedRect.minY, bestX.minY)))
-                let end = viewPoint(CGPoint(x: bestX.targetX, y: max(snappedRect.maxY, bestX.maxY)))
-                guides.append(SelectionLayer.Guide(start: start, end: end))
-            }
-        }
-
-        if !axisLockedY {
-            let yEdges = [movedBounds.minY, movedBounds.midY, movedBounds.maxY]
-            var bestY: (offset: CGFloat, targetY: CGFloat, minX: CGFloat, maxX: CGFloat)?
-            for edge in yEdges {
-                for target in yTargets {
-                    let diff = target.y - edge
-                    guard abs(diff) <= threshold else { continue }
-                    if bestY == nil || abs(diff) < abs(bestY!.offset) {
-                        bestY = (diff, target.y, target.minX, target.maxX)
-                    }
-                }
-            }
-            if let bestY {
-                delta.height += bestY.offset
-                let snappedRect = movedBounds.offsetBy(dx: delta.width - rawDelta.width, dy: bestY.offset)
-                let start = viewPoint(CGPoint(x: min(snappedRect.minX, bestY.minX), y: bestY.targetY))
-                let end = viewPoint(CGPoint(x: max(snappedRect.maxX, bestY.maxX), y: bestY.targetY))
-                guides.append(SelectionLayer.Guide(start: start, end: end))
-            }
-        }
-
-        return (delta, guides)
-    }
-
     public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
         // The editor's own capture, dragged out from its toolbar, is not combined into itself.
-        guard !(sender.draggingSource is DragOutView), Self.offersPictures(sender.draggingPasteboard) else { return [] }
+        guard !(sender.draggingSource is DragOutView), IncomingPicture.isOffered(by: sender.draggingPasteboard) else { return [] }
         selectionLayer.dropFrame = canvasFrame
         return .copy
     }
@@ -1582,7 +1356,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         selectionLayer.dropFrame = nil
-        let pictures = Self.incomingPictures(from: sender.draggingPasteboard)
+        let pictures = IncomingPicture.keep(from: sender.draggingPasteboard)
         guard !pictures.isEmpty else { return false }
         place(pictures, at: documentPoint(convert(sender.draggingLocation, from: nil)))
         return true
@@ -1984,7 +1758,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case #selector(selectAll(_:)):
             return !session.document.items.isEmpty
         case #selector(paste(_:)):
-            return !isInPlace && Self.offersPictures(.general)
+            return !isInPlace && IncomingPicture.isOffered(by: .general)
         case #selector(printCapture(_:)):
             return onPrint != nil
         case #selector(saveScreenshotAs(_:)):
@@ -2026,7 +1800,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func styleTextView(for item: Annotation) {
         guard let view = editing?.view, case .text(let block) = item.shape else { return }
         let scale = session.document.scale
-        let layout = TextLayout(block.string.isEmpty ? TextBlock(origin: block.origin, string: " ", fontSize: block.fontSize, look: block.look, width: block.width) : block, scale: scale)
+        let layout = Self.fieldLayout(of: block, scale: scale)
         let font = TextLayout.font(pointSize: block.fontSize * scale * zoom)
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = layout.lineHeight * zoom
@@ -2086,12 +1860,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func positionTextView() {
         guard let editing, let item = session.document.item(editing.id), case .text(let block) = item.shape else { return }
         let scale = session.document.scale
-        let layout = TextLayout(block.string.isEmpty ? TextBlock(origin: block.origin, string: " ", fontSize: block.fontSize, look: block.look, width: block.width) : block, scale: scale)
+        let layout = Self.fieldLayout(of: block, scale: scale)
         let origin = viewPoint(block.origin)
         // A little room after the last character for the caret, outside a label (whose padding has it).
         let caret = block.width == nil && block.look != .label ? max(block.fontSize * scale * zoom * 0.6, 4) : 0
         editing.view.frame = CGRect(x: origin.x, y: origin.y, width: layout.size.width * zoom + caret, height: layout.size.height * zoom)
         onViewportChange?()
+    }
+
+    /// The layout a text mark's field follows: an empty one is laid out as a space, so its field keeps a
+    /// line's height, its padding, and room for the caret before anything is typed.
+    private static func fieldLayout(of block: TextBlock, scale: CGFloat) -> TextLayout {
+        TextLayout(block.string.isEmpty ? TextBlock(origin: block.origin, string: " ", fontSize: block.fontSize, look: block.look, width: block.width) : block, scale: scale)
     }
 
     public func textDidChange(_ notification: Notification) {
@@ -2158,28 +1938,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         styleTextView(for: item)
     }
 
-    /// Whether the picture's four corners are opaque: false for a window captured with its shadow.
-    private static func hasOpaqueCorners(_ image: CGImage) -> Bool {
-        switch image.alphaInfo {
-        case .none, .noneSkipFirst, .noneSkipLast: return true
-        default: break
-        }
-        var pixel = [UInt8](repeating: 0, count: 4)
-        let corners = [CGPoint(x: 0, y: 0), CGPoint(x: image.width - 1, y: 0), CGPoint(x: 0, y: image.height - 1), CGPoint(x: image.width - 1, y: image.height - 1)]
-        return corners.allSatisfy { corner in
-            guard let crop = image.cropping(to: CGRect(origin: corner, size: CGSize(width: 1, height: 1))) else { return false }
-            return pixel.withUnsafeMutableBytes { raw -> Bool in
-                guard let context = CGContext(
-                    data: raw.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                ) else { return false }
-                context.clear(CGRect(x: 0, y: 0, width: 1, height: 1))
-                context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-                return raw[3] == 255
-            }
-        }
-    }
-
     // MARK: Appearance and accessibility
 
     public override func viewDidChangeEffectiveAppearance() {
@@ -2196,13 +1954,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             pictureLayer.borderWidth = contrast ? 1 : 0.5
             pictureLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.10)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
-            // No fill: the accent is never a fill behind text, and this is the text being judged.
-            suggestionLayer.strokeColor = NSColor.controlAccentColor.cgColor
-            suggestionLayer.lineWidth = contrast ? 2 : 1.5
-            // As wide as the dashes, so their gaps are white: the outline holds on any content, blue link
-            // text and dark pages included, without reaching onto the text it surrounds.
-            suggestionHalo.strokeColor = CGColor(gray: 1, alpha: contrast ? 1 : 0.85)
-            suggestionHalo.lineWidth = contrast ? 2 : 1.5
+            suggestions.applyAppearance(increasedContrast: contrast)
             backdropLayer.checker = Theme.Checkerboard.colors(dark: dark, increasedContrast: contrast)
         }
         selectionLayer.increasedContrast = contrast
@@ -2221,69 +1973,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 }
 
-/// A redaction suggestion as VoiceOver finds it: a button that covers the text.
-nonisolated final class SuggestionElement: NSAccessibilityElement {
-    /// Set and called on the main thread, where accessibility actions arrive.
-    nonisolated(unsafe) var press: (@MainActor () -> Bool)?
-
-    override func accessibilityPerformPress() -> Bool {
-        guard let press else { return false }
-        return MainActor.assumeIsolated { press() }
-    }
-}
-
 /// Hosts the canvas's layers with the view's own y-down coordinates: AppKit keeps a flipped view's
 /// layer geometry flipped, where a flag set by hand on a hosted layer can be reset.
 final class FlippedHostView: NSView {
     override var isFlipped: Bool { true }
-}
-
-/// The field a text mark is edited in: plain text, no automatic substitutions, transparent.
-final class MarkTextView: NSTextView {
-    var outlineColor: CGColor?
-    var outlineFontSize: CGFloat = 20
-    var outlineWrapWidth: CGFloat?
-
-    override init(frame frameRect: NSRect) {
-        let storage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
-        storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(size: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
-        layoutManager.addTextContainer(container)
-        super.init(frame: frameRect, textContainer: container)
-        isRichText = false
-        importsGraphics = false
-        allowsUndo = true
-        isAutomaticQuoteSubstitutionEnabled = false
-        isAutomaticDashSubstitutionEnabled = false
-        isAutomaticTextReplacementEnabled = false
-        isAutomaticSpellingCorrectionEnabled = false
-        isContinuousSpellCheckingEnabled = false
-        drawsBackground = false
-        focusRingType = .none
-    }
-
-    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
-        super.init(frame: frameRect, textContainer: container)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        if let outlineColor, !string.isEmpty, let context = NSGraphicsContext.current?.cgContext {
-            let block = TextBlock(origin: .zero, string: string, fontSize: outlineFontSize, look: .outlined, width: outlineWrapWidth)
-            let layout = TextLayout(block, scale: 1)
-            context.saveGState()
-            context.setStrokeColor(outlineColor)
-            context.setLineWidth(layout.outlineWidth)
-            context.setLineJoin(.round)
-            context.addPath(layout.glyphPath(at: .zero))
-            context.strokePath()
-            context.restoreGState()
-        }
-        super.draw(dirtyRect)
-    }
 }
