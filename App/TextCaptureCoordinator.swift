@@ -689,11 +689,11 @@ final class TextCaptureCoordinator {
             return
         }
         let probe = LatencyProbe("ocr.translate-area")
-        let choice = settings.translationTarget
+        let target = settings.translationLanguage
         do {
             let lines = try await pipeline.recognize(image).lines
             let units = TranslationUnits.group(lines)
-            let outcome = try await translator.translate(units, to: choice.isEmpty ? nil : Locale.Language(identifier: choice))
+            let outcome = try await translator.translate(units, to: target)
             guard !outcome.translations.isEmpty else {
                 let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
                 Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")

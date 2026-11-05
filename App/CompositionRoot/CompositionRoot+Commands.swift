@@ -180,7 +180,7 @@ extension CompositionRoot {
         case .restoreRecentlyClosed:
             quickAccess.restoreRecentlyClosed()
         case .openSettings(let tab):
-            showSettings(SettingsTab(urlTab: tab))
+            showSettings(tab)
         }
     }
 
@@ -254,30 +254,6 @@ extension CompositionRoot {
         } catch {
             Log.automation.error("Could not add \(url.lastPathComponent, privacy: .public) to Quick Access: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
-        }
-    }
-}
-
-private extension SettingsTab {
-    /// Maps CleanShot's `open-settings?tab=` names onto ours, and takes ours as they are.
-    init(urlTab: String?) {
-        let name = urlTab?.lowercased() ?? ""
-        if let tab = SettingsTab(rawValue: name) {
-            self = tab
-            return
-        }
-        switch name {
-        // Backgrounds are set where what happens after a screenshot is.
-        case "wallpaper": self = .screenshots
-        // The cards have a tab of their own.
-        case "quickaccess": self = .quickAccess
-        // Pins, Pick Color, and Measure; reading text has a pane of its own.
-        case "annotate": self = .tools
-        // CleanShot's Cloud tab is where uploads are set up.
-        case "cloud": self = .sharing
-        // The URL scheme is set up there.
-        case "advanced": self = .automation
-        default: self = .general
         }
     }
 }
