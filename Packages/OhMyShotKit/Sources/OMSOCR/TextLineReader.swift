@@ -159,15 +159,7 @@ public struct TextLineReader: Sendable {
     /// For each line, the lines of its paragraph (itself included): lines one above the other, of about one
     /// height, overlapping side to side, and closer than their height.
     static func paragraphs(of inks: [Ink?]) -> [[Int]] {
-        var parent = Array(inks.indices)
-        func root(_ index: Int) -> Int {
-            var index = index
-            while parent[index] != index {
-                parent[index] = parent[parent[index]]
-                index = parent[index]
-            }
-            return index
-        }
+        var sets = DisjointSets(count: inks.count)
         for i in inks.indices {
             guard let a = inks[i], let aLeft = a.words.first?.lowerBound, let aRight = a.words.last?.upperBound else { continue }
             for j in inks.indices where j > i {
@@ -178,12 +170,14 @@ public struct TextLineReader: Sendable {
                 let gap = max(b.top - a.bottom, a.top - b.bottom)
                 // Apart, one above the other (a line beside another on the same row is not its paragraph).
                 guard gap > -0.2 * min(aHeight, bHeight), gap < max(aHeight, bHeight) else { continue }
-                parent[root(j)] = root(i)
+                sets.join(i, j)
             }
         }
-        var members: [Int: [Int]] = [:]
-        for index in inks.indices { members[root(index), default: []].append(index) }
-        return inks.indices.map { members[root($0)]! }
+        var paragraphs = [[Int]](repeating: [], count: inks.count)
+        for group in sets.groups {
+            for index in group { paragraphs[index] = group }
+        }
+        return paragraphs
     }
 
     /// A picture's pixels as 8-bit gray, row 0 at the top, drawn once for every line's ink to be read from.
