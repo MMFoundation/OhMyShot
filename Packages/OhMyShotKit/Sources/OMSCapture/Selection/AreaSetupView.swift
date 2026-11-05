@@ -43,6 +43,9 @@ class AreaSetupView<Bar: NSView>: NSView {
 
     // MARK: What subclasses say
 
+    /// Says what to do next, once the frame is up and has the keyboard.
+    func begin() {}
+
     /// The area in global points while it can be moved and resized; nil while what is framed is as it is (a window,
     /// the whole display).
     var adjustableArea: CGRect? { nil }

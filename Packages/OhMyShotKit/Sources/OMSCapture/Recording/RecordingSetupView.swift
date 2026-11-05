@@ -38,7 +38,7 @@ final class RecordingSetupView: AreaSetupView<RecordingBar> {
     }
 
     /// Says what to do next, and what is chosen to begin with.
-    func begin() {
+    override func begin() {
         onChange?(target, choices)
         VoiceOver.announce(String(localized: "Press Return to start recording, or Escape to cancel.", bundle: .module), from: self)
     }

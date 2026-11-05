@@ -81,7 +81,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     }
 
     /// Says what to do next.
-    func begin() {
+    override func begin() {
         VoiceOver.announce(instructions, from: self)
     }
 

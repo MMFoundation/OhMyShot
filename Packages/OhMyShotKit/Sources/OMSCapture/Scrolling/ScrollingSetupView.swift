@@ -33,7 +33,7 @@ final class ScrollingSetupView: AreaSetupView<ScrollingBar> {
     private static let instructions = String(localized: "Press Return to start, then scroll what is under the area. Press Escape to cancel.", bundle: .module)
 
     /// Says what to do next.
-    func begin() {
+    override func begin() {
         VoiceOver.announce(Self.instructions, from: self)
     }
 
