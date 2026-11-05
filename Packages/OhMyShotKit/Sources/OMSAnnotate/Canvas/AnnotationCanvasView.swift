@@ -43,7 +43,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onImageSize: (() -> Void)?
 
     private enum Drag {
-        case creating(id: Annotation.ID, tool: AnnotationTool, start: CGPoint)
+        /// A shape dragged out from `start`; `beyondClick` once the pointer has gone 4 points or more from
+        /// it, so it draws rather than clicks.
+        case creating(id: Annotation.ID, tool: AnnotationTool, start: CGPoint, beyondClick: Bool)
         case drawing(id: Annotation.ID)
         /// A highlighter drag: its points, and how it lies over the text when it started on some.
         case highlighting(id: Annotation.ID, points: [CGPoint], snapping: TextSnapping?)
@@ -52,6 +54,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
         case panning(start: CGPoint, originalFocus: CGPoint)
         case marquee(start: CGPoint, initialSelection: [Annotation.ID], additive: Bool)
+
+        /// While a redaction is drawn by hand, the suggestions step aside; a click with the tool still
+        /// covers the one under it. Part of the drag, so whatever ends the drag brings them back.
+        var hidesSuggestions: Bool {
+            if case .creating(_, .redact, _, true) = self { true } else { false }
+        }
     }
 
     private final class TextEditing {
@@ -95,8 +103,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private let suggestionHalo = CAShapeLayer()
     /// The suggestions as VoiceOver finds them, one button each.
     private var suggestionElements: [(suggestion: RedactionSuggestion, element: SuggestionElement)] = []
-    /// While a redaction is drawn by hand, the suggestions step aside.
-    private var hidesSuggestions = false
 
     private var displayOptions: NSObjectProtocol?
     private var userZoom: CGFloat?
@@ -105,8 +111,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var canvasFrame: CGRect = .zero
     private var drag: Drag?
     private var editing: TextEditing?
-    /// The crop being chosen while the crop tool is in hand, in capture pixels.
-    private var cropRect: CGRect?
+    /// The crop being chosen while the crop tool is in hand, in capture pixels. The crop frame shows it,
+    /// and shows only while there is one.
+    private var cropRect: CGRect? {
+        didSet {
+            cropLayer.isHidden = cropRect == nil
+            if let cropRect { cropLayer.frameRect = viewRect(cropRect) }
+        }
+    }
     /// Whether Space is held down: pans a zoomed-in canvas, or in place moves the capture selection.
     public private(set) var isSpaceHeld = false
     /// Whether the canvas color eyedropper (shortcut I) is currently active.
@@ -414,7 +426,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// - Parameter fadingIn: the outlines arrive with a short fade (a reading that just finished), or at once
     ///   with Reduce Motion.
     private func updateSuggestions(fadingIn: Bool = false) {
-        let open = session.tool == .redact && !hidesSuggestions ? session.openRedactionSuggestions : []
+        let open = session.tool == .redact && drag?.hidesSuggestions != true ? session.openRedactionSuggestions : []
         let path = CGMutablePath()
         for suggestion in open {
             path.addRoundedRect(in: viewRect(session.coveringRect(of: suggestion)), cornerWidth: 3, cornerHeight: 3)
@@ -626,10 +638,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                     updateRedaction(layer)
                     updateGround(layer)
                 }
-                if session.tool == .crop {
-                    cropRect = session.document.canvas
-                    cropLayer.frameRect = viewRect(session.document.canvas)
-                }
+                if session.tool == .crop { cropRect = session.document.canvas }
             }
             if frames != laidOut || picture {
                 // What is shown changed (a crop, a background): laid out again at the zoom the person
@@ -807,14 +816,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             cropRect = session.document.canvas
             // Each crop starts free: the frame is the whole canvas, which a ratio may not fit.
             session.setCropRatio(.free)
-            cropLayer.isHidden = false
             // The whole capture shows while cropping.
             userZoom = nil
             focus = nil
             updateViewport()
         } else if let cropRect {
             self.cropRect = nil
-            cropLayer.isHidden = true
             applyCrop(cropRect)
             userZoom = nil
             focus = nil
@@ -849,9 +856,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public func chooseCropRatio(_ ratio: CropRatio) {
         session.setCropRatio(ratio)
         guard session.tool == .crop, cropRect != nil, let value = ratio.value(forPicture: session.document.imageBounds.size) else { return }
-        let fitted = CropRatio.fitted(value, in: session.document.imageBounds.union(session.document.canvas.standardized))
-        cropRect = fitted
-        cropLayer.frameRect = viewRect(fitted)
+        cropRect = CropRatio.fitted(value, in: session.document.imageBounds.union(session.document.canvas.standardized))
     }
 
     /// Puts the crop frame back to the whole canvas.
@@ -859,7 +864,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         guard session.tool == .crop else { return }
         session.setCropRatio(.free)
         cropRect = session.document.imageBounds
-        cropLayer.frameRect = viewRect(session.document.imageBounds)
         applyCrop(session.document.imageBounds)
     }
 
@@ -867,10 +871,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let rect = rect.standardized.integral
         guard rect.width >= 4, rect.height >= 4, rect != session.document.canvas else { return }
         session.crop(to: rect)
-        if session.tool == .crop {
-            cropRect = session.document.canvas
-            cropLayer.frameRect = viewRect(session.document.canvas)
-        }
+        if session.tool == .crop { cropRect = session.document.canvas }
     }
 
     /// Toggles the canvas color eyedropper (shortcut I).
@@ -1081,7 +1082,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             break
         case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight:
             session.beginLiveChange()
-            drag = .creating(id: UUID(), tool: tool, start: point)
+            drag = .creating(id: UUID(), tool: tool, start: point, beyondClick: false)
         case .pen:
             session.beginLiveChange()
             let item = Annotation(shape: .pen(Stroke(points: [point])), style: settings.style)
@@ -1131,10 +1132,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let shift = event.modifierFlags.contains(.shift)
         var document = session.document
         switch drag {
-        case .creating(let id, let tool, let start):
-            if tool == .redact, !hidesSuggestions, hypot(location.x - viewPoint(start).x, location.y - viewPoint(start).y) >= 4 {
-                hidesSuggestions = true
-                updateSuggestions()
+        case .creating(let id, let tool, let start, let beyondClick):
+            if !beyondClick, hypot(location.x - viewPoint(start).x, location.y - viewPoint(start).y) >= 4 {
+                self.drag = .creating(id: id, tool: tool, start: start, beyondClick: true)
+                if tool == .redact { updateSuggestions() }
             }
             guard let mark = tool.mark(from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id) else { return }
             if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
@@ -1177,9 +1178,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else {
                 rect = original.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
             }
-            rect = rect.standardized
-            cropRect = rect
-            cropLayer.frameRect = viewRect(rect)
+            cropRect = rect.standardized
         case .panning(let start, let originalFocus):
             guard userZoom != nil else { return }
             let dx = location.x - start.x
@@ -1216,14 +1215,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         self.drag = nil
         let location = convert(event.locationInWindow, from: nil)
         defer {
-            hidesSuggestions = false
+            // The drag has ended: suggestions a redaction drawn by hand set aside come back.
             updateSuggestions()
             updateCursor(at: location)
             // Controls hidden during the drag come back where the marks now are.
             onViewportChange?()
         }
         switch drag {
-        case .creating(let id, let tool, let start):
+        case .creating(let id, let tool, let start, _):
             let startView = viewPoint(start)
             guard hypot(location.x - startView.x, location.y - startView.y) >= 4, session.document.item(id) != nil else {
                 session.cancelLiveChange()
@@ -1255,7 +1254,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             if let cropRect, cropRect.width < 8 || cropRect.height < 8 {
                 // A click without a drag: keep the crop as it was.
                 self.cropRect = session.document.canvas
-                cropLayer.frameRect = viewRect(session.document.canvas)
             }
         case .panning:
             break
@@ -1740,13 +1738,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 selectionLayer.marqueeRect = nil
                 session.select(initialSelection)
             } else if session.isInLiveChange {
+                // Cleared before the document goes back, so the suggestions a redaction drawn by hand set
+                // aside show again as it goes.
                 drag = nil
                 selectionLayer.alignmentGuides = []
                 session.cancelLiveChange()
             } else if session.tool == .crop {
                 session.setCropRatio(.free)
                 cropRect = session.document.canvas
-                cropLayer.frameRect = viewRect(session.document.canvas)
             } else if session.tool == .background {
                 session.leavePictureMode()
             } else if !session.selection.isEmpty {
