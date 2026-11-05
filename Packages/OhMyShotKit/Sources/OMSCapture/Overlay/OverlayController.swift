@@ -1201,12 +1201,7 @@ extension OverlayController: OverlayViewDelegate {
         let next: AllInOneChoice? = if case .screenshot = choice { nil } else if choice == allInOneMode { nil } else { choice }
         guard next != allInOneMode else { return }
         allInOneMode = next
-        let mark: AllInOneBar.Choice? = switch next {
-        case .text?: .text
-        case .scroll?: .scroll
-        case .record?: .record
-        case .screenshot?, nil: nil
-        }
+        let mark = next.flatMap(AllInOneBar.Choice.init(purpose:))
         for entry in entries.values { entry.view.markPurpose(mark) }
         let announcement = switch next {
         case .text?: String(localized: "Text. Drag over text to copy it.", bundle: .module)

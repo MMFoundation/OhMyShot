@@ -230,16 +230,14 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         return true
     }
 
-    /// The letter keys' choices for the area (F, the whole display, aside).
+    /// The letter keys' choices for the area (F, the whole display, aside): E, P, and U capture it to annotate, pin, or
+    /// upload; text, scrolling, and recording keep the letters the bar before the area gives them.
     static func choice(for character: String?) -> AllInOneChoice? {
         switch character {
         case "e": .screenshot(.annotate)
         case "p": .screenshot(.pin)
         case "u": .screenshot(.upload)
-        case "o": .text
-        case "s": .scroll
-        case "r": .record
-        default: nil
+        default: character.flatMap(AllInOneBar.Choice.init(key:))?.purpose
         }
     }
 

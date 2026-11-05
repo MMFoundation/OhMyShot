@@ -639,7 +639,8 @@ final class OverlayView: NSView {
                 cycleWindow(backward: character == "[")
             } else if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
-            } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = Self.allInOneKeys[character ?? ""] {
+            } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = character.flatMap(AllInOneBar.Choice.init(key:)) {
+                // All-In-One's letters, before an area is chosen: A, W, and F, O, S, and R, as the bar has them.
                 toolbarChose(choice)
             } else if character == "l", !event.modifierFlags.contains(.command), mode == .area, !isDraggingSelection,
                       purpose.takesPicture {
@@ -674,11 +675,6 @@ final class OverlayView: NSView {
         if event.keyCode == 49 { delegate?.overlayViewDidReleaseSpace(self) }
     }
 
-    /// All-In-One's letter keys, before an area is chosen.
-    static let allInOneKeys: [String: AllInOneBar.Choice] = [
-        "a": .area, "w": .window, "f": .fullscreen, "o": .text, "s": .scroll, "r": .record,
-    ]
-
     /// Marks what All-In-One's next area is for on the bar; nil for a plain capture.
     func markPurpose(_ choice: AllInOneBar.Choice?) {
         toolbar.markPurpose(choice)
@@ -690,17 +686,16 @@ final class OverlayView: NSView {
     }
 
     private func toolbarChose(_ choice: AllInOneBar.Choice) {
+        // Text, scrolling, or recording: what the next area is for.
+        if let next = choice.purpose {
+            delegate?.overlayView(self, didChooseMode: next)
+            return
+        }
         switch choice {
         case .area where isAllInOne:
             // All-In-One's Area is a plain capture of an area: whatever the next area was for is let go.
             if mode != .area { delegate?.overlayView(self, didSwitchTo: .area) }
             delegate?.overlayView(self, didChooseMode: .screenshot(nil))
-        case .text:
-            delegate?.overlayView(self, didChooseMode: .text)
-        case .scroll:
-            delegate?.overlayView(self, didChooseMode: .scroll)
-        case .record:
-            delegate?.overlayView(self, didChooseMode: .record)
         case .area where mode != .area:
             delegate?.overlayView(self, didSwitchTo: .area)
         case .window where mode != .window:
