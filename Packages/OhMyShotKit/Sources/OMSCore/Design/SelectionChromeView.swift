@@ -136,9 +136,9 @@ public final class SelectionChromeView: NSView {
         let line = CGColor(gray: 0, alpha: contrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity)
         outline.strokeColor = line
         armsOutline.strokeColor = line
-        readingLayer.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96)
-        readingLayer.borderWidth = contrast ? 1 : 0.5
-        readingLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        readingLayer.backgroundColor = Theme.Material.capsuleFill(dark: dark)
+        readingLayer.borderWidth = Theme.Material.edgeWidth(contrast: contrast)
+        readingLayer.borderColor = Theme.Material.edge(dark: dark, contrast: contrast)
         readingText.foregroundColor = dark ? CGColor(gray: 1, alpha: 0.92) : CGColor(gray: 0, alpha: 0.85)
         CATransaction.commit()
     }

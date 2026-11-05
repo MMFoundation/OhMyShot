@@ -203,9 +203,9 @@ final class PinView: NSView, NSDraggingSource {
         contentLayer.borderWidth = border ? (contrast ? 1 : 0.5) : 0
         if case .text = content {
             // The Text Result Card's materials: the reading capsule's fill and hairline at card size.
-            let fill = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
+            let fill = Theme.Material.cardFill(dark: dark)
             contentLayer.backgroundColor = fill
-            contentLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+            contentLayer.borderColor = Theme.Material.edge(dark: dark, contrast: contrast)
             // On a short card Close and More stand over the ends of a line: the card under them hides
             // the letters they cover, which would show through the dark disc.
             let backdrop = fill.copy(alpha: 1).flatMap(NSColor.init(cgColor:))

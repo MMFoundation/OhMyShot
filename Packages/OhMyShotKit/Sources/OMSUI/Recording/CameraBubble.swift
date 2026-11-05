@@ -369,8 +369,9 @@ private final class BubbleView: NSView {
         // Before the camera's first frame, the capsule surface: never a dark disc in a recording.
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        clip.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
-        edge.strokeColor = dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35)
+        clip.backgroundColor = Theme.Material.cardFill(dark: dark)
+        // The contrast hairline: the edge shows only under Increase Contrast.
+        edge.strokeColor = Theme.Material.edge(dark: dark, contrast: true)
         edge.isHidden = !contrast
         if let connection = preview.connection, connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false

@@ -71,21 +71,8 @@ public final class KeystrokeDisplay {
     }
 
     func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.isReleasedWhenClosed = false
-        panel.animationBehavior = .none
-        // Above what is recorded and the Dock, which a recording of a whole display takes in at its foot;
-        // under menus.
-        panel.level = RecordingWindowLevel.chrome
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        let view = NSView()
-        view.wantsLayer = true
-        panel.contentView = view
-        guard let host = view.layer else { return panel }
+        let panel = RecordedOverlayPanel.make()
+        guard let host = panel.contentView?.layer else { return panel }
         capsule.opacity = 0
         capsule.shadowColor = .black
         capsule.shadowOpacity = 0.18
@@ -108,9 +95,9 @@ public final class KeystrokeDisplay {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        capsule.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96)
-        capsule.borderWidth = contrast ? 1 : 0.5
-        capsule.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        capsule.backgroundColor = Theme.Material.capsuleFill(dark: dark)
+        capsule.borderWidth = Theme.Material.edgeWidth(contrast: contrast)
+        capsule.borderColor = Theme.Material.edge(dark: dark, contrast: contrast)
         label.foregroundColor = dark ? CGColor(gray: 1, alpha: 0.92) : CGColor(gray: 0, alpha: 0.85)
         CATransaction.commit()
     }

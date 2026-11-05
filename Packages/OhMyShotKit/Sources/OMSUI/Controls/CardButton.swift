@@ -168,8 +168,8 @@ final class CardButton: NSControl {
         case .barIcon:
             // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), doubled
             // under Increase Contrast.
-            let hoverFill: CGFloat = dark ? 0.09 : 0.045
-            let fill = isSelected ? (dark ? 0.16 : 0.08) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
+            let hoverFill = Theme.ChipFill.hover(dark: dark)
+            let fill = isSelected ? Theme.ChipFill.selected(dark: dark) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
             NSColor(white: dark ? 1 : 0, alpha: fill * (increaseContrast ? 2 : 1)).setFill()
             ink = isSelected ? .controlAccentColor : .labelColor
         }

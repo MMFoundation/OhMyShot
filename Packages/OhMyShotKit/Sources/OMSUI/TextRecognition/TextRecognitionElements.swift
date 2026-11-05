@@ -43,7 +43,7 @@ struct TablePreview: View {
                                     .padding(.vertical, 7)
                                     // Every cell fills its column, so the rules line up from row to row.
                                     .frame(minWidth: 56, maxWidth: .infinity, maxHeight: .infinity, alignment: figures[column] ? .topTrailing : .topLeading)
-                                    .background(row == 0 ? (colorScheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.045)) : Color.clear)
+                                    .background(row == 0 ? (colorScheme == .dark ? Color.white : Color.black).opacity(Theme.ChipFill.hover(dark: colorScheme == .dark)) : Color.clear)
                                     .overlay(alignment: .trailing) {
                                         if column < width - 1 { separator.frame(width: hairline) }
                                     }
@@ -190,7 +190,7 @@ struct FoundRow: View {
         .frame(minHeight: 28)
         .background {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(hovering ? (colorScheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.045)) : Color.clear)
+                .fill(hovering ? (colorScheme == .dark ? Color.white : Color.black).opacity(Theme.ChipFill.hover(dark: colorScheme == .dark)) : Color.clear)
         }
         .onHover { inside in
             hovering = inside
