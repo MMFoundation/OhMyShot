@@ -43,9 +43,8 @@ final class StyleCapsule: NSView {
     private var hasSelection = false
     /// The redaction tool's open suggestions.
     private var suggestions = 0
-    private var finding = false
-    /// The last reading for the tool failed.
-    private var failed = false
+    /// Where the capture's reading for the tool stands: under way, or failed.
+    private var reading = ReadingStatus.resting
     /// Whether the size chips mean anything: not for highlights snapped to text.
     private var sized = true
     /// The shape the crop frame keeps, while the crop is in hand.
@@ -159,19 +158,17 @@ final class StyleCapsule: NSView {
     /// Shows the controls for `kind` with `settings`; `hasSelection` adds Delete.
     /// - Parameters:
     ///   - suggestions: redaction suggestions not yet covered, for Redact All.
-    ///   - finding: the capture is being read for the tool: for redaction suggestions, or the lines of text
-    ///     the highlighter snaps to.
-    ///   - failed: the last reading for the tool failed, offered again with Try Again.
+    ///   - reading: where the capture's reading for the tool stands (for redaction suggestions, or the lines
+    ///     of text the highlighter snaps to): under way, or failed and offered again with Try Again.
     ///   - sized: false leaves out the sizes, for highlights snapped to text.
     ///   - cropRatio: the shape the crop frame keeps, shown while the crop is in hand.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, failed: Bool = false, sized: Bool = true, cropRatio: CropRatio = .free) {
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, reading: ReadingStatus = .resting, sized: Bool = true, cropRatio: CropRatio = .free) {
         self.cropRatio = cropRatio
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
         self.suggestions = suggestions
-        self.finding = finding
-        self.failed = failed
+        self.reading = reading
         self.sized = sized
         background = nil
         rebuild()
@@ -240,9 +237,9 @@ final class StyleCapsule: NSView {
             sections.append([symbolChip("trash", name: String(localized: "Delete", bundle: .module), selected: false) { [weak self] in self?.onDelete?() }])
         }
         // Kept beside Delete too: a redaction drawn by hand is selected, and the rest still wait.
-        if kind == .redact || kind == .highlighter, finding {
+        if kind == .redact || kind == .highlighter, reading == .finding {
             sections.append([CapsuleStatus(String(localized: "Finding text…", bundle: .module))])
-        } else if kind == .redact || kind == .highlighter, failed {
+        } else if kind == .redact || kind == .highlighter, reading == .failed {
             sections.append([
                 CapsuleStatus(String(localized: "Couldn’t read text", bundle: .module), busy: false),
                 textChip(String(localized: "Try Again", bundle: .module)) { [weak self] in self?.onRetry?() },

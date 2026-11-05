@@ -140,7 +140,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             capsule.show(
                 kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
                 suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-                finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
+                reading: session.readingStatusForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
             )
         }
         placeCapsule()
