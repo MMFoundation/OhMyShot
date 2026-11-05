@@ -19,6 +19,16 @@ struct HistoryStoreTests {
         #expect(FileManager.default.contents(atPath: store.fileURL(for: older).path(percentEncoded: false)) == Data([1]))
     }
 
+    /// A name with a slash in it (a shortcut's file may carry one) never takes another capture's file.
+    @Test func aNameWithASlashKeepsItsOwnFile() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let first = try store.add(data: Data([1]), name: "b", fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let second = try store.add(data: Data([2]), name: "a/b", fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        #expect(first.fileName == "b.png" && second.fileName == "a-b.png")
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: first).path(percentEncoded: false)) == Data([1]))
+    }
+
     /// The URL API's `add-quick-access-overlay` copies the user's file: it stays where it was.
     @Test func aCopiedPictureKeepsItsNameAndSizeAndTheFileStays() async throws {
         let store = makeStore()

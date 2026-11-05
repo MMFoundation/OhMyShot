@@ -301,9 +301,12 @@ public final class HistoryStore: Sendable {
         }
     }
 
-    /// `name.fileExtension`, or `name (2).fileExtension` and so on when that is taken.
+    /// `name.fileExtension`, or `name (2).fileExtension` and so on when that is taken. A slash in the name (a file a
+    /// shortcut hands over may carry one) is a dash, as in any file name the app makes: the name checked is the name
+    /// written, in the history's own folder, never another capture's file in it.
     private func availableFileName(_ name: String, fileExtension: String) -> String {
-        ImageExporter.availableURL(in: directory, name: name, fileExtension: fileExtension).lastPathComponent
+        let name = name.replacingOccurrences(of: "/", with: "-")
+        return ImageExporter.availableURL(in: directory, name: name, fileExtension: fileExtension).lastPathComponent
     }
 
     /// Stores encoded image data under `name` (made unique) and returns its record. The file keeps a
