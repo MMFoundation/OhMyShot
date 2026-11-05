@@ -428,4 +428,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
 
     /// The shortest stretch of the timeline for the camera's layout, in seconds.
     public static let shortestSegment = 0.5
+    /// The shortest zoom, in seconds: one dragged or typed shorter keeps this long, and an automatic one shorter is
+    /// not placed.
+    public static let shortestZoom = 0.3
 }

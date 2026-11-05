@@ -48,39 +48,27 @@ public final class StudioDocument {
         undoManagerProvider?()
     }
 
-    /// The zoom chosen on the timeline, by its identifier. One thing is chosen at a time, a zoom, a cut, or a
-    /// stretch of the camera's layout: choosing one lets go of the others, so Delete takes away what is shown as chosen.
+    /// What is chosen on the timeline. One thing is chosen at a time, a zoom, a cut, a stretch of the camera's
+    /// layout, or a stretch to cut: choosing one lets go of the others, so Delete takes away what is shown as
+    /// chosen. The properties below only read it: written through them, letting go of a zoom (nil) right after
+    /// choosing a cut did nothing, which read as though it did.
     public var selection: StudioSelection = .none
 
+    /// The zoom chosen on the timeline, by its identifier.
     public var selectedZoom: UUID? {
-        get { if case .zoom(let id) = selection { id } else { nil } }
-        set {
-            if let newValue { selection = .zoom(newValue) }
-            else if case .zoom = selection { selection = .none }
-        }
+        if case .zoom(let id) = selection { id } else { nil }
     }
     /// The cut chosen on the timeline, by its start.
     public var selectedCut: Double? {
-        get { if case .cut(let start) = selection { start } else { nil } }
-        set {
-            if let newValue { selection = .cut(newValue) }
-            else if case .cut = selection { selection = .none }
-        }
+        if case .cut(let start) = selection { start } else { nil }
     }
     /// The stretch of the camera's layout chosen on the timeline, by its identifier.
     public var selectedSegment: UUID? {
-        get { if case .cameraSegment(let id) = selection { id } else { nil } }
-        set {
-            if let newValue { selection = .cameraSegment(newValue) }
-            else if case .cameraSegment = selection { selection = .none }
-        }
+        if case .cameraSegment(let id) = selection { id } else { nil }
     }
+    /// The stretch of the recording chosen to cut.
     public var selectedRange: ClosedRange<Double>? {
-        get { if case .range(let range) = selection { range } else { nil } }
-        set {
-            if let newValue { selection = .range(newValue) }
-            else if case .range = selection { selection = .none }
-        }
+        if case .range(let range) = selection { range } else { nil }
     }
     /// The movie the preview plays now; nil until it is first made.
     public private(set) var composition: StudioComposition?
@@ -392,30 +380,42 @@ public final class StudioDocument {
         change(named: String(localized: "Add Zoom", bundle: .module)) {
             project.zooms = (project.zooms + [zoom]).sorted { $0.start < $1.start }
         }
-        selectedZoom = zoom.id
+        selection = .zoom(zoom.id)
     }
 
+    /// Changes a zoom, kept inside the recording and at least `StudioProject.shortestZoom` long: its start no later
+    /// than that before the recording's end, its end pushed out to that past its start.
     public func updateZoom(_ id: UUID, _ change: (inout StudioProject.Zoom) -> Void) {
         guard let index = project.zooms.firstIndex(where: { $0.id == id }) else { return }
         var zoom = project.zooms[index]
         change(&zoom)
         // Changed by hand, it is no longer placed again with the automatic ones.
         zoom.isAutomatic = false
-        zoom.start = max(0, min(zoom.start, duration - 0.3))
-        zoom.end = min(duration, max(zoom.end, zoom.start + 0.3))
+        zoom.start = max(0, min(zoom.start, duration - StudioProject.shortestZoom))
+        zoom.end = min(duration, max(zoom.end, zoom.start + StudioProject.shortestZoom))
         project.zooms[index] = zoom
     }
 
-    /// Removes the chosen zoom or camera layout, or takes back the chosen cut.
+    /// Moves one end of a zoom to `time`, the other staying where it is: an end taken past the other stops
+    /// `StudioProject.shortestZoom` short of it. `updateZoom` alone pushes the end out from the start, which
+    /// would move the end a start was dragged against. Returns where the zoom is then, for a field to show
+    /// what the time typed became; nil when there is no such zoom.
+    @discardableResult
+    public func setZoomEdge(_ id: UUID, start: Bool, to time: Double) -> ClosedRange<Double>? {
+        updateZoom(id) { zoom in
+            if start { zoom.start = min(time, zoom.end - StudioProject.shortestZoom) } else { zoom.end = max(time, zoom.start + StudioProject.shortestZoom) }
+        }
+        return project.zooms.first { $0.id == id }.map { $0.start...$0.end }
+    }
+
+    /// Removes the chosen zoom or camera layout, takes back the chosen cut, or cuts the chosen stretch.
     public func deleteSelection() {
-        if let id = selectedZoom {
-            removeZoom(id)
-        } else if let id = selectedSegment {
-            removeCameraSegment(id)
-        } else if let start = selectedCut {
-            restoreCut(at: start)
-        } else if let range = selectedRange {
-            cut(range)
+        switch selection {
+        case .zoom(let id): removeZoom(id)
+        case .cameraSegment(let id): removeCameraSegment(id)
+        case .cut(let start): restoreCut(at: start)
+        case .range(let range): cut(range)
+        case .none: break
         }
     }
 
@@ -469,9 +469,7 @@ public final class StudioDocument {
         change(named: String(localized: "Add Layout", bundle: .module)) {
             project.cameraSegments = (project.cameraSegments + [segment]).sorted { $0.start < $1.start }
         }
-        selectedSegment = segment.id
-        selectedZoom = nil
-        selectedCut = nil
+        selection = .cameraSegment(segment.id)
     }
 
     /// How far a stretch can reach before it meets the one before it or the one after it, or the ends of the recording.
@@ -494,6 +492,18 @@ public final class StudioDocument {
         project.cameraSegments[index] = segment
     }
 
+    /// Moves one end of a stretch to `time`, the other staying where it is, as `setZoomEdge` does a zoom's: an end
+    /// taken past the other stops `StudioProject.shortestSegment` short of it, and either stays within the
+    /// stretch's limits. Returns where the stretch is then; nil when there is no such stretch.
+    @discardableResult
+    public func setCameraSegmentEdge(_ id: UUID, start: Bool, to time: Double) -> ClosedRange<Double>? {
+        updateCameraSegment(id) { segment in
+            if start { segment.start = min(time, segment.end - StudioProject.shortestSegment) }
+            else { segment.end = max(time, segment.start + StudioProject.shortestSegment) }
+        }
+        return project.cameraSegments.first { $0.id == id }.map { $0.start...$0.end }
+    }
+
     /// Shows the camera another way in the chosen stretch, as one step that Undo names.
     public func setCameraSegmentLayout(_ id: UUID, _ layout: StudioProject.Camera.Layout) {
         guard let index = project.cameraSegments.firstIndex(where: { $0.id == id }), layout != .sideBySide else { return }
@@ -506,14 +516,14 @@ public final class StudioDocument {
         change(named: String(localized: "Remove Layout", bundle: .module)) {
             project.cameraSegments.removeAll { $0.id == id }
         }
-        if selectedSegment == id { selectedSegment = nil }
+        if selection == .cameraSegment(id) { selection = .none }
     }
 
     public func removeZoom(_ id: UUID) {
         change(named: String(localized: "Remove Zoom", bundle: .module)) {
             project.zooms.removeAll { $0.id == id }
         }
-        if selectedZoom == id { selectedZoom = nil }
+        if selection == .zoom(id) { selection = .none }
     }
 
     /// Takes back the cut that starts at `start`: that stretch is in the movie again.
@@ -521,7 +531,7 @@ public final class StudioDocument {
         change(named: String(localized: "Restore Cut", bundle: .module)) {
             project.cuts.removeAll { $0.lowerBound == start }
         }
-        if selectedCut == start { selectedCut = nil }
+        if selection == .cut(start) { selection = .none }
     }
 
     /// Leaves `range` (the recording's seconds) out of the movie, joined with cuts it meets.
@@ -534,8 +544,7 @@ public final class StudioDocument {
         change(named: String(localized: "Cut", bundle: .module)) {
             project.cuts = cuts
         }
-        selectedCut = merged.lowerBound
-        selectedZoom = nil
+        selection = .cut(merged.lowerBound)
     }
 
     // MARK: Undo
@@ -657,12 +666,15 @@ public final class StudioDocument {
         projectRevision += 1
         saveState = .pending
         scheduleSave()
-        if let id = selectedZoom, !project.zooms.contains(where: { $0.id == id }) { selectedZoom = nil }
-        if let start = selectedCut, !project.cuts.contains(where: { $0.lowerBound == start }) { selectedCut = nil }
-        // A layout chosen on the timeline that is gone (taken back, or the layout made side by side) is no longer chosen.
-        if let id = selectedSegment, !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains(where: { $0.id == id }) {
-            selectedSegment = nil
+        // What is chosen and gone is no longer chosen: a zoom or a cut taken back, or a layout taken back or made
+        // side by side.
+        let gone = switch selection {
+        case .zoom(let id): !project.zooms.contains { $0.id == id }
+        case .cut(let start): !project.cuts.contains { $0.lowerBound == start }
+        case .cameraSegment(let id): !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains { $0.id == id }
+        case .range, .none: false
         }
+        if gone { selection = .none }
         // The preview isn't encoded, so the movie's quality is no reason to film it again.
         var seen = project
         seen.quality = old.quality

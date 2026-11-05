@@ -560,9 +560,8 @@ struct StudioTimeline: View {
     }
 
     private func nudge(_ id: UUID, start: Bool, by shift: Double) {
-        document.updateZoom(id) { zoom in
-            if start { zoom.start = min(zoom.start + shift, zoom.end - 0.3) } else { zoom.end = max(zoom.end + shift, zoom.start + 0.3) }
-        }
+        guard let zoom = document.project.zooms.first(where: { $0.id == id }) else { return }
+        document.setZoomEdge(id, start: start, to: (start ? zoom.start : zoom.end) + shift)
     }
 
     private func nudge(layout id: UUID, start: Bool, by shift: Double) {
@@ -645,9 +644,7 @@ struct StudioTimeline: View {
                 duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
             )
             snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
-            document.updateZoom(id) { zoom in
-                if start { zoom.start = min(snapped.time, zoom.end - 0.3) } else { zoom.end = max(snapped.time, zoom.start + 0.3) }
-            }
+            document.setZoomEdge(id, start: start, to: snapped.time)
         case .moveLayout(let id, let grabbedAt, let start, let end):
             // Kept to the room between its neighbors, whole.
             let limits = document.limits(ofCameraSegment: id)
@@ -663,9 +660,7 @@ struct StudioTimeline: View {
                 duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
             )
             snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
-            document.updateCameraSegment(id) { segment in
-                if start { segment.start = min(snapped.time, segment.end - StudioProject.shortestSegment) } else { segment.end = max(snapped.time, segment.start + StudioProject.shortestSegment) }
-            }
+            document.setCameraSegmentEdge(id, start: start, to: snapped.time)
         case nil:
             break
         }
