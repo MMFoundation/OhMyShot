@@ -791,42 +791,18 @@ final class TextRecognitionModel {
         }
     }
 
-    /// Only web links open from a code: a code can carry any URL scheme, and a picture is no reason to
-    /// launch whatever app claims it.
+    /// Only web links open from a code (`OCRCode.webURL`).
     func action(for code: OCRCode) -> Action? {
-        guard let url = URL(string: code.payload), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
+        guard let url = code.webURL else { return nil }
         return Action(title: Text("Open Link", bundle: .module), symbol: "arrow.up.forward.app") { NSWorkspace.shared.open(url) }
     }
 
-    /// Opens a one-event calendar file, which Calendar offers to add; no calendar access is needed. The
-    /// event is named after the line the date is on.
+    /// Opens a one-event calendar file (`CalendarEvent`), which Calendar offers to add; no calendar access is needed.
     func addToCalendar(_ item: DetectedItem) {
-        guard let date = item.date else { return }
-        let string = text as NSString
-        let line = NSMaxRange(item.range) <= string.length ? string.substring(with: string.lineRange(for: item.range)) : item.text
-        let title = String(line.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
-        let hasTime = item.text.range(of: #"\d\s*[:：]\s*\d|(?i)\b[ap]\.?m\b|[点點时時]"#, options: .regularExpression) != nil
-        func stamp(_ date: Date, _ format: String, utc: Bool) -> String {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = utc ? TimeZone(identifier: "UTC") : .current
-            formatter.dateFormat = format
-            return formatter.string(from: date)
-        }
-        let span = hasTime
-            ? ["DTSTART:" + stamp(date, "yyyyMMdd'T'HHmmss'Z'", utc: true), "DTEND:" + stamp(date.addingTimeInterval(3600), "yyyyMMdd'T'HHmmss'Z'", utc: true)]
-            : ["DTSTART;VALUE=DATE:" + stamp(date, "yyyyMMdd", utc: false), "DTEND;VALUE=DATE:" + stamp(date.addingTimeInterval(86400), "yyyyMMdd", utc: false)]
-        let summary = title
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: ";", with: "\\;")
-            .replacingOccurrences(of: ",", with: "\\,")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        let calendar = (["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//OhMyShot//OCR Panel//EN", "BEGIN:VEVENT",
-                         "UID:\(UUID().uuidString)", "DTSTAMP:" + stamp(.now, "yyyyMMdd'T'HHmmss'Z'", utc: true)]
-            + span + ["SUMMARY:\(summary)", "END:VEVENT", "END:VCALENDAR"]).joined(separator: "\r\n") + "\r\n"
+        guard let event = CalendarEvent(for: item, in: text) else { return }
         let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot-\(UUID().uuidString).ics")
         do {
-            try calendar.write(to: file, atomically: true, encoding: .utf8)
+            try event.iCalendar().write(to: file, atomically: true, encoding: .utf8)
             NSWorkspace.shared.open(file)
         } catch {
             Log.capture.error("Could not write the calendar event: \(error.localizedDescription, privacy: .public)")
