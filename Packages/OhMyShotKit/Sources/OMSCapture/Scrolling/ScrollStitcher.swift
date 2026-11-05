@@ -162,108 +162,76 @@ nonisolated public final class ScrollStitcher {
             horizontal = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin, corners: corners))
             return .started
         }
+        // Down or up first; sideways while the axis is not known and the rows lined up with nothing, or once the
+        // content is known to scroll that way.
         var verticalReason: String?
-        if axis != .horizontal, preferredAxis != .horizontal, var track = vertical {
-            guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin, corners: corners) else {
-                return .lost
-            }
-            var why = ""
-            let reference = track.reference
-            switch Lines.compare(
-                view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset, previousVotes: track.lastVotes,
-                avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: false) != nil } : nil,
-                why: &why
-            ) {
-            case .same:
-                count(view, reference: track.reference)
-                noteBlank(view, reference: track.reference)
-                track.spare = view
-                vertical = track
-                return .unchanged
-            case .scrolled(let match):
-                if axis != nil, overscrolled(match, view: view, old: track.reference) {
-                    track.spare = view
-                    vertical = track
-                    return .unchanged
-                }
-                if let inner = innerScroller(match, view: view, old: track.reference, turned: false) {
-                    innerPart = inner.part
-                    if inner.underGesture { heldInner = inner.part }
-                    track.spare = view
-                    vertical = track
-                    return .unchanged
-                }
-                axis = .vertical
-                horizontal = nil
-                let step = accept(match, view: view, track: &track)
-                vertical = track
-                return step
-            case .lost:
-                if axis != nil, let step = pastBlank(view, track: &track) ?? relocate(view, track: &track) {
-                    vertical = track
-                    return step
-                }
-                track.spare = view
-                vertical = track
-                lostBecause = why
-                guard axis == nil else { return .lost }
-                verticalReason = why
-            }
+        if axis != .horizontal, preferredAxis != .horizontal, let track = vertical {
+            if let step = take(pixels, bytesPerRow: bytesPerRow, along: track, turned: false, verticalReason: nil) { return step }
+            verticalReason = lostBecause
         }
-        guard preferredAxis != .vertical, var track = horizontal else { return .lost }
-        guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin, corners: corners) else {
+        guard preferredAxis != .vertical, let track = horizontal else { return .lost }
+        return take(pixels, bytesPerRow: bytesPerRow, along: track, turned: true, verticalReason: verticalReason) ?? .lost
+    }
+
+    /// Lines the view up with `track`'s last view, as its rows or (`turned`) its columns, and takes it in as that
+    /// finds. Nil when it lined up with nothing while the axis is not known, what was found in `lostBecause`: after
+    /// the rows, the columns are tried, told `verticalReason`, what the rows found.
+    private func take(_ pixels: UnsafeRawPointer, bytesPerRow: Int, along track: Track, turned: Bool, verticalReason: String?) -> Step? {
+        let kept: ReferenceWritableKeyPath<ScrollStitcher, Track?> = turned ? \.horizontal : \.vertical
+        var track = track
+        guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned, margin: margin, corners: corners) else {
             return .lost
         }
         var why = ""
         let reference = track.reference
         switch Lines.compare(
             view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset, previousVotes: track.lastVotes,
-            avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: true) != nil } : nil,
+            avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: turned) != nil } : nil,
             why: &why
         ) {
         case .same:
             count(view, reference: track.reference)
             noteBlank(view, reference: track.reference)
             track.spare = view
-            horizontal = track
+            self[keyPath: kept] = track
             return .unchanged
         case .scrolled(let match):
             if axis != nil, overscrolled(match, view: view, old: track.reference) {
                 track.spare = view
-                horizontal = track
+                self[keyPath: kept] = track
                 return .unchanged
             }
-            if let inner = innerScroller(match, view: view, old: track.reference, turned: true) {
+            if let inner = innerScroller(match, view: view, old: track.reference, turned: turned) {
                 innerPart = inner.part
                 if inner.underGesture { heldInner = inner.part }
                 track.spare = view
-                horizontal = track
+                self[keyPath: kept] = track
                 return .unchanged
             }
             // Before the axis is known, only the whole view moving sideways says the content scrolls sideways: a
             // carousel's slide, or a hero's, moves only some of it, and must never turn a page on its side.
             let bands = track.reference.bands.count
-            if axis == nil, match.movingBands.count < max(1, bands - 1, (bands * 3 + 3) / 4) {
+            if turned, axis == nil, match.movingBands.count < max(1, bands - 1, (bands * 3 + 3) / 4) {
                 track.spare = view
-                horizontal = track
+                self[keyPath: kept] = track
                 lostBecause = "\(verticalReason ?? why); sideways only \(match.movingBands.count) of \(bands) bands moved"
                 return .lost
             }
-            axis = .horizontal
-            vertical = nil
+            axis = turned ? .horizontal : .vertical
+            if turned { vertical = nil } else { horizontal = nil }
             let step = accept(match, view: view, track: &track)
-            horizontal = track
+            self[keyPath: kept] = track
             return step
         case .lost:
             if axis != nil, let step = pastBlank(view, track: &track) ?? relocate(view, track: &track) {
-                horizontal = track
+                self[keyPath: kept] = track
                 return step
             }
             track.spare = view
-            horizontal = track
+            self[keyPath: kept] = track
             // Before the axis is known the vertical comparison's reason is the one that tells most.
             lostBecause = verticalReason.map { "\($0); sideways: \(why)" } ?? why
-            return .lost
+            return axis == nil ? nil : .lost
         }
     }
 
