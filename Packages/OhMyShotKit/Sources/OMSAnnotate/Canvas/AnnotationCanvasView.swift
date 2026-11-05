@@ -41,10 +41,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onPrint: (() -> Void)?
     /// Asks for the size to scale the picture to, which the host shows its own way.
     public var onImageSize: (() -> Void)?
-    /// Whether a drag over the canvas is the host's own, not to be combined into the capture: the editor's
-    /// capture, dragged out from its toolbar, is not combined into itself. Nil takes every picture.
-    var isHostsOwnDrag: ((any NSDraggingInfo) -> Bool)?
-
     private enum Drag {
         /// A shape dragged out from `start`; `beyondClick` once the pointer has gone 4 points or more from
         /// it, so it draws rather than clicks.
@@ -1347,7 +1343,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard isHostsOwnDrag?(sender) != true, IncomingPicture.isOffered(by: sender.draggingPasteboard) else { return [] }
+        guard !(sender.draggingSource is CaptureDragSource), IncomingPicture.isOffered(by: sender.draggingPasteboard) else { return [] }
         selectionLayer.dropFrame = canvasFrame
         return .copy
     }

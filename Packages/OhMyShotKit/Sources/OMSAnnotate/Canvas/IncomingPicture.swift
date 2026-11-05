@@ -3,6 +3,10 @@ import ImageIO
 import OMSCore
 import UniformTypeIdentifiers
 
+/// A drag source that hands on a whole capture as it is, as the editor's drag-out handle does: never a picture to
+/// combine into a capture, in its own editor's canvas or any other.
+protocol CaptureDragSource: AnyObject {}
+
 /// A picture coming in to be combined: its name in the picture store, its size in pixels, and its
 /// pixels per point.
 struct IncomingPicture {
