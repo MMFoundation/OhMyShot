@@ -129,7 +129,7 @@ final class ShortcutActions {
         defer { try? FileManager.default.removeItem(at: file) }
         do {
             let formula = try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
-            Log.capture.notice("A shortcut's formula reading ended with \(formula.ending, privacy: .public), \(formula.latex.count, privacy: .public) characters")
+            Log.capture.notice("A shortcut's formula reading ended with \(formula.ended.rawValue, privacy: .public), \(formula.latex.count, privacy: .public) characters")
             return formula.isFormula ? formula.latex : nil
         } catch let failure as TextReaderTool.Failure {
             Log.capture.error("Reading a shortcut's formula failed: \(String(describing: failure), privacy: .public)")

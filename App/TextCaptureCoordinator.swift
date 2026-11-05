@@ -612,7 +612,7 @@ final class TextCaptureCoordinator {
         let formula = await Self.formula(in: image, pack: pack, helper: reader.helper)
         probe.end()
         guard let formula, formula.isFormula else {
-            Log.capture.notice("Capture Formula found no formula (\(formula?.ending ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+            Log.capture.notice("Capture Formula found no formula (\(formula?.ended.rawValue ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
             if showsCard { presentCard(.noFormula, near: selection) }
             done?(nil)
