@@ -77,12 +77,8 @@ struct TextSettingsView: View {
                 AppTextSetting(settings: settings, permissions: permissions)
             }
             SettingsRow(String(localized: "Translate into", bundle: .module)) {
-                Picker(selection: $settings.translationTarget) {
-                    Text("Automatic", bundle: .module).tag("")
-                    Divider()
-                    ForEach(translationOptions, id: \.self) { identifier in
-                        Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
-                    }
+                TranslationTargetPicker(selection: $settings.translationTarget, targets: translationTargets) {
+                    Text("Automatic", bundle: .module)
                 } label: {
                     Text("Translate into", bundle: .module)
                 }
@@ -102,14 +98,6 @@ struct TextSettingsView: View {
                 CloudReadingRow(store: cloudModels, help: CloudReadingRow.help(store: cloudModels))
             }
         }
-    }
-
-    /// The languages to translate into, by identifier; the chosen one even before the list has loaded.
-    private var translationOptions: [String] {
-        var options = translationTargets.map(Translator.identifier(of:))
-        let choice = settings.translationTarget
-        if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
-        return options
     }
 }
 

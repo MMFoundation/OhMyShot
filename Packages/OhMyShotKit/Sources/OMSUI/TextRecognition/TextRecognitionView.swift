@@ -95,21 +95,15 @@ struct TextRecognitionView: View {
             if model.translates, model.phase == .ready {
                 // A short label that never changes under the pointer; the menu names what Automatic chose.
                 Menu {
-                    Picker(selection: $model.translationChoice) {
-                        automaticTarget.tag("")
-                        Divider()
-                        ForEach(targetOptions, id: \.self) { identifier in
-                            Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
-                        }
+                    TranslationTargetPicker(selection: $model.translationChoice, targets: model.targets) {
+                        automaticTarget
                     } label: {
                         EmptyView()
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
                 } label: {
-                    model.translationChoice.isEmpty
-                        ? Text("Automatic", bundle: .module)
-                        : Text(verbatim: Translator.name(of: Locale.Language(identifier: model.translationChoice)))
+                    model.translationLanguage.map { Text(verbatim: Translator.name(of: $0)) } ?? Text("Automatic", bundle: .module)
                 }
                 .fixedSize()
                 .help(Text("The language to translate into", bundle: .module))
@@ -131,15 +125,6 @@ struct TextRecognitionView: View {
         } else {
             Text("Automatic", bundle: .module)
         }
-    }
-
-    /// The languages to choose from, by identifier; the chosen one even before the list has loaded, so
-    /// the menu never shows a choice it does not have.
-    private var targetOptions: [String] {
-        var options = model.targets.map(Translator.identifier(of:))
-        let choice = model.translationChoice
-        if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
-        return options
     }
 
     private var copyLabel: some View {

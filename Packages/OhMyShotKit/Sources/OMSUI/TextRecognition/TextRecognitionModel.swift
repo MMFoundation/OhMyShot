@@ -503,6 +503,9 @@ final class TextRecognitionModel {
         }
     }
 
+    /// The same as a language, nil for automatic.
+    var translationLanguage: Locale.Language? { settings.translationLanguage }
+
     private func translatesChanged() {
         if translates {
             if cloudOn { readsInCloud = false }
@@ -531,8 +534,9 @@ final class TextRecognitionModel {
         translationTask?.cancel()
         let lines = lines
         let scale = scale
+        // The choice as kept, so turning translation off and on again finds the same one; and as a language.
         let choice = settings.translationTarget
-        let target = choice.isEmpty ? nil : Locale.Language(identifier: choice)
+        let target = settings.translationLanguage
         let translator = translator
         translation = nil
         isTranslating = true
