@@ -186,7 +186,7 @@ extension CompositionRoot {
 
     /// A URL command's area in global points: `.some(nil)` when the user is to choose it, nil (with a beep) when it
     /// lies on no display.
-    func area(of region: AutomationRegion) -> CGRect?? {
+    private func area(of region: AutomationRegion) -> CGRect?? {
         do {
             return .some(try region.area(in: displays.layout, pointer: NSEvent.mouseLocation))
         } catch {
@@ -199,7 +199,7 @@ extension CompositionRoot {
     /// The URL API's `action` (or an upload shortcut's) as a capture's follow-up, telling `done` the capture's record; nil
     /// when it cannot be done: an upload with no destination, which is said by the pointer. A URL command never asks for
     /// a file name, being nobody's to answer; an upload shortcut, pressed at the keyboard, does.
-    func followUp(for action: CaptureAction?, asksForName: Bool = false, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
+    private func followUp(for action: CaptureAction?, asksForName: Bool = false, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
         if action == .upload, !uploads.canUpload {
             uploads.tellNoDestination()
             return nil
@@ -231,7 +231,7 @@ extension CompositionRoot {
 
     /// Annotate Latest Capture: the newest screenshot in the history, in the editor, whether its card is still up or not.
     /// Beeps when there is none.
-    func annotateLatestCapture() {
+    private func annotateLatestCapture() {
         guard let entry = history.latestScreenshot() else {
             Log.hotkeys.notice("Annotate Latest Capture: no screenshot in the history")
             return NSSound.beep()

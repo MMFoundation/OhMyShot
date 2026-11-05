@@ -42,7 +42,7 @@ extension CompositionRoot {
     /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
     /// the copy is made.
-    func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
+    private func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
         guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
@@ -274,14 +274,14 @@ extension CompositionRoot {
     /// A card's capture's pixels per point, for a file that says nothing of its resolution: as the history records it, else
     /// its display's (captures are saved without a resolution, so the scale is their display's, unless it was scaled to one
     /// pixel per point); `fallback` once that display is gone.
-    func scale(of item: QuickAccessItem, orElse fallback: CGFloat) -> CGFloat {
+    private func scale(of item: QuickAccessItem, orElse fallback: CGFloat) -> CGFloat {
         history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? fallback
     }
 
     /// A history capture's pixels per point, for a file that says nothing of its resolution: as the history records it,
     /// else the sharpest display's (the display a capture came from is not recorded; most captures come from the
     /// sharpest); `fallback` with no display.
-    func scale(of entry: HistoryItem, orElse fallback: CGFloat) -> CGFloat {
+    private func scale(of entry: HistoryItem, orElse fallback: CGFloat) -> CGFloat {
         entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.sharpestPixelsPerPoint ?? fallback
     }
 }

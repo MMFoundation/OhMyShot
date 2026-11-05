@@ -119,14 +119,14 @@ final class CompositionRoot {
         return cover
     }()
     /// The replay (macOS 27), kept as any object: a stored property can't be of a type this macOS may lack.
-    var replayStorage: AnyObject?
-    let hotkeys: HotkeyCenter
+    private(set) var replayStorage: AnyObject?
+    private let hotkeys: HotkeyCenter
     let urlScheme: String
-    var statusItem: StatusItemController?
+    private var statusItem: StatusItemController?
     /// Release builds' updates; nil in builds without a feed, until a debug hook starts one against a feed of its own.
     var updates: UpdateController?
-    var automation: AutomationController?
-    var settingsWindow: SettingsWindowController?
+    private var automation: AutomationController?
+    private(set) var settingsWindow: SettingsWindowController?
     private var onboardingWindow: OnboardingWindowController?
     /// The invitation to MMFoundation's Discord: counted as captures are kept, shown once, at a later launch.
     private let communityInvite = CommunityInvite()
