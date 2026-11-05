@@ -200,7 +200,7 @@ extension CompositionRoot {
     /// when it cannot be done: an upload with no destination, which is said by the pointer. A URL command never asks for
     /// a file name, being nobody's to answer; an upload shortcut, pressed at the keyboard, does.
     func followUp(for action: CaptureAction?, asksForName: Bool = false, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
-        if action == .upload, uploads.destinations.defaultDestination == nil {
+        if action == .upload, !uploads.canUpload {
             uploads.tellNoDestination()
             return nil
         }

@@ -77,14 +77,10 @@ final class AnnotationCoordinator {
                     entry: { [weak self] in self?.history.item(id: id) }
                 )
             )
-            editor.onClose = { [weak self] in
-                // Released on the next turn, never inside the window's own close.
-                Task { @MainActor in
-                    self?.editors[id] = nil
-                    self?.onEditing?(id, false)
-                    MemoryRelief.endEventWait()
-                    MemoryRelief.returnFreedPages()
-                }
+            editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+                self?.editors[id] = nil
+                self?.onEditing?(id, false)
+                MemoryRelief.endEventWait()
             }
             editors[id] = editor
             editor.show()
@@ -171,12 +167,9 @@ final class AnnotationCoordinator {
                     coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }
                 )
             )
-            editor.onClose = { [weak self] in
-                Task { @MainActor in
-                    self?.projectEditors[file] = nil
-                    MemoryRelief.endEventWait()
-                    MemoryRelief.returnFreedPages()
-                }
+            editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+                self?.projectEditors[file] = nil
+                MemoryRelief.endEventWait()
             }
             projectEditors[file] = editor
             // The title bar shows the project's icon, to drag or to find in Finder.

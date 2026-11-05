@@ -57,7 +57,7 @@ final class ShortcutActions {
     /// action after it. The capture's record once it is kept, or nil when it was cancelled or failed.
     func capture(_ command: AutomationCommand) async throws(ShortcutFailure) -> HistoryItem? {
         try requireScreenRecording()
-        if command.captureAction == .upload, uploads.destinations.defaultDestination == nil { throw .noUploadDestination }
+        if command.captureAction == .upload, !uploads.canUpload { throw .noUploadDestination }
         return await withCheckedContinuation { continuation in
             let answer = Answer(continuation)
             run(command) { answer.give($0) }

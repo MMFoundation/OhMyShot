@@ -920,12 +920,9 @@ final class RecordingCoordinator {
                 copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )
-        controller.onClose = { [weak self] in
-            Task { @MainActor in
-                self?.windows[id] = nil
-                self?.windowClosed?(id)
-                MemoryRelief.returnFreedPages()
-            }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.windows[id] = nil
+            self?.windowClosed?(id)
         }
         windows[id] = controller
         return controller

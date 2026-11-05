@@ -834,14 +834,10 @@ final class TextCaptureCoordinator {
 
     private func makePanel() -> TextRecognitionWindowController {
         let controller = TextRecognitionWindowController(settings: settings, translator: translator, cloud: cloud?())
-        controller.onClose = { [weak self] in
-            // Released on the next turn so the window is not deallocated inside its own delegate call.
-            Task { @MainActor in
-                self?.panel = nil
-                // Nothing translates until the next panel: the system's models need not stay loaded.
-                await self?.translator.releaseSessions()
-                MemoryRelief.returnFreedPages()
-            }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.panel = nil
+            // Nothing translates until the next panel: the system's models need not stay loaded.
+            await self?.translator.releaseSessions()
         }
         return controller
     }

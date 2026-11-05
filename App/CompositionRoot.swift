@@ -292,7 +292,7 @@ final class CompositionRoot {
             self?.recordings.record(target, on: display, choices: choices, appName: app)
         }
         captures.recordingSetupCancelled = { [weak self] in self?.recordings.recordingSetupCancelled() }
-        captures.canUpload = { [weak self] in self?.uploads.destinations.defaultDestination != nil }
+        captures.canUpload = { [weak self] in self?.uploads.canUpload ?? false }
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
         }
@@ -452,12 +452,8 @@ final class CompositionRoot {
             bindings: keys?.bindings ?? SystemScreenshotKeys.currentBindings,
             relaunch: { Relauncher.relaunch() }
         )
-        controller.onClose = { [weak self, weak controller] in
-            // Released on the next turn so the window is not deallocated inside its own delegate call.
-            Task { @MainActor in
-                if self?.onboardingWindow === controller { self?.onboardingWindow = nil }
-                MemoryRelief.returnFreedPages()
-            }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
+            if self?.onboardingWindow === controller { self?.onboardingWindow = nil }
         }
         onboardingWindow = controller
         controller.show()
@@ -471,12 +467,8 @@ final class CompositionRoot {
         communityInvite.shown()
         Log.app.notice("Showing the invitation to the Discord")
         let controller = CommunityInviteWindowController()
-        controller.onClose = { [weak self, weak controller] in
-            // Released on the next turn so the window is not deallocated inside its own delegate call.
-            Task { @MainActor in
-                if self?.communityInviteWindow === controller { self?.communityInviteWindow = nil }
-                MemoryRelief.returnFreedPages()
-            }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
+            if self?.communityInviteWindow === controller { self?.communityInviteWindow = nil }
         }
         communityInviteWindow = controller
         controller.show()
@@ -532,12 +524,7 @@ final class CompositionRoot {
             updates: updates?.status,
             acknowledgments: Bundle.main.url(forResource: "Acknowledgments", withExtension: "md")
         ))
-        controller.onClose = { [weak self] in
-            Task { @MainActor in
-                self?.settingsWindow = nil
-                MemoryRelief.returnFreedPages()
-            }
-        }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.settingsWindow = nil }
         return controller
     }
 

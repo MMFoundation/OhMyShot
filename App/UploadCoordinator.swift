@@ -66,12 +66,17 @@ final class UploadCoordinator {
 
     // MARK: Starting
 
+    /// Whether there is anywhere to upload to: a default destination is set up.
+    var canUpload: Bool {
+        destinations.defaultDestination != nil
+    }
+
     /// Uploads a capture's file.
     /// - Parameter destinationID: nil for the default destination.
     /// - Returns: false when there was nothing to upload to, or the capture is already uploading.
     @discardableResult
     func upload(captureID: UUID, fileURL: URL, destinationID: UUID? = nil) -> Bool {
-        guard destinations.defaultDestination != nil else {
+        guard canUpload else {
             tellNoDestination()
             return false
         }

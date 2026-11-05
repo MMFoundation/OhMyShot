@@ -30,7 +30,7 @@ extension CompositionRoot {
 
     /// Settings' Upload after a capture: to the default destination, when there is one.
     func uploadKept(_ entry: HistoryItem) {
-        guard uploads.destinations.defaultDestination != nil else { return }
+        guard uploads.canUpload else { return }
         uploadAfterCapture(entry)
     }
 
@@ -244,12 +244,7 @@ extension CompositionRoot {
             store: history, settings: settings, actions: historyActions, textReader: textReader,
             expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 }
         )
-        controller.onClose = { [weak self] in
-            Task { @MainActor in
-                self?.historyWindow = nil
-                MemoryRelief.returnFreedPages()
-            }
-        }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller
     }
 
