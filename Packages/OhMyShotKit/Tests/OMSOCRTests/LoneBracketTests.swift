@@ -129,6 +129,26 @@ struct LoneBracketTests {
         }
     }
 
+    @Test func aLineOfProseDoesNotMakeAListingPython() {
+        // Above a Swift listing, the end of a sentence that starts on a word Python opens a block with. "//" still
+        // starts a comment under it, and the glyph nothing read in the comment's column closes the list.
+        let page = [line("with the default settings:", row: 0), line("let steps = [", row: 1), line("load,", indent: 1, row: 2), line("// retry (later", row: 3)]
+        #expect(!VisionPipeline.isPythonLike(page.map(\.text)))
+        #expect(texts(page, glyphs: [glyph(row: 4)]) == page.map(\.text) + ["]"])
+    }
+
+    @Test func aScriptOfAnotherInterpreterIsNotPython() {
+        // Node: "// }" is a comment, and the glyph nothing read under it is the block's own "}".
+        let node = [line("#!/usr/bin/env node", row: 0), line("if (ready) {", row: 1), line("save();", indent: 1, row: 2), line("// }", row: 3)]
+        #expect(texts(node, glyphs: [glyph(row: 4)]) == node.map(\.text) + ["}"])
+        for line in ["#!/usr/bin/env python3", "#!/usr/bin/python", "#!/usr/bin/env -S python3 -u"] {
+            #expect(VisionPipeline.isPythonLike([line]), "\(line)")
+        }
+        for line in ["#!/usr/bin/env node", "#!/bin/sh", "#!/usr/bin/env -S deno run"] {
+            #expect(!VisionPipeline.isPythonLike([line]), "\(line)")
+        }
+    }
+
     @Test func aGlyphClosesTheInnerOfTwoBracketsOpenedOnOneLine() {
         // JavaScript: an object and a function open on one line. The function's "}" was left unread, the object's
         // "};" was read: the one closer the code has is the outer bracket's.

@@ -147,10 +147,17 @@ public enum TranslationUnits {
         return words >= 4 && words * 4 >= tokens.count * 3
     }
 
-    /// The verbs PowerShell's commands most often start on: a cmdlet is named verb-noun ("Write-Host", "Get-ChildItem").
+    /// PowerShell's approved verbs (what `Get-Verb` lists), and the four its own cmdlets start on besides (`ForEach-Object`,
+    /// `Sort-Object`, `Tee-Object`, `Where-Object`): a cmdlet is named verb-noun ("Write-Host", "Format-Table").
     private static let cmdletVerbs: Set<Substring> = [
-        "Add", "Clear", "Copy", "Export", "Get", "Import", "Invoke", "Move", "New", "Out", "Read", "Remove", "Rename", "Select", "Set", "Start",
-        "Stop", "Test", "Update", "Write",
+        "Add", "Approve", "Assert", "Backup", "Block", "Build", "Checkpoint", "Clear", "Close", "Compare", "Complete", "Compress", "Confirm",
+        "Connect", "Convert", "ConvertFrom", "ConvertTo", "Copy", "Debug", "Deny", "Deploy", "Disable", "Disconnect", "Dismount", "Edit", "Enable",
+        "Enter", "Exit", "Expand", "Export", "Find", "ForEach", "Format", "Get", "Grant", "Group", "Hide", "Import", "Initialize", "Install",
+        "Invoke", "Join", "Limit", "Lock", "Measure", "Merge", "Mount", "Move", "New", "Open", "Optimize", "Out", "Ping", "Pop", "Protect",
+        "Publish", "Push", "Read", "Receive", "Redo", "Register", "Remove", "Rename", "Repair", "Request", "Reset", "Resize", "Resolve", "Restart",
+        "Restore", "Resume", "Revoke", "Save", "Search", "Select", "Send", "Set", "Show", "Skip", "Sort", "Split", "Start", "Step", "Stop",
+        "Submit", "Suspend", "Switch", "Sync", "Tee", "Test", "Trace", "Unblock", "Undo", "Uninstall", "Unlock", "Unprotect", "Unpublish",
+        "Unregister", "Update", "Use", "Wait", "Watch", "Where", "Write",
     ]
 
     /// Whether the first word of a line is a cmdlet. A capital after its hyphen is not enough, a name has one too

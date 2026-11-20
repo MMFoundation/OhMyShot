@@ -171,9 +171,20 @@ struct TranslationUnitTests {
             #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
         }
         // A cmdlet has one of PowerShell's verbs, a parameter, a quote or a variable to it; a command ends on no period.
-        for command in ["Write-Host Welcome to your home directory", "Send-Greeting Welcome to your home -Name guest",
-                        "Show-Banner 'Welcome' to your home directory", "Show-Banner Welcome to your home $user",
+        for command in ["Write-Host Welcome to your home directory", "Greet-Guest Welcome to your home -Name guest",
+                        "Print-Banner 'Welcome' to your home directory", "Print-Banner Welcome to your home $user",
                         "echo Welcome to your home directory", "SELECT name FROM users WHERE active."] {
+            #expect(!TranslationUnits.isSentence(command), "\(command)")
+        }
+    }
+
+    @Test func aCmdletOnAnyOfPowerShellsVerbsIsNotASentence() {
+        // The second line of a pipeline: a cmdlet and three words a comma apart, with no parameter, quote or variable.
+        let lines = ["function Show-Files($root) {", "    Get-ChildItem -Path $root |", "        Format-Table Name, Length, Mode", "}"]
+            .enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TextAssembler.isCodeListing(lines))
+        #expect(TranslationUnits.group(lines).map(\.skip) == [.code, .code, .code, .code])
+        for command in ["Format-Table Name, Length, Mode", "Sort-Object Name, Length, Mode", "ConvertTo-Json the whole list here"] {
             #expect(!TranslationUnits.isSentence(command), "\(command)")
         }
     }

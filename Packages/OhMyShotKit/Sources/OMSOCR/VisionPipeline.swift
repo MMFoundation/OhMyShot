@@ -586,11 +586,22 @@ public struct VisionPipeline: OCREngine {
     /// Whether a listing is written as Python is, where "//" divides (`size // page_size`) and starts no comment: a
     /// line is a comment on "#", starts on `def` or `elif`, or opens a block on ":" (`if ready:`, `else:`; a `case`
     /// or a label of another language starts on none of these words).
+    ///
+    /// A line on "#!" tells by its interpreter: `#!/usr/bin/env node` starts a script whose comments are on "//". And
+    /// a line that opens a block must read as code (`TextAssembler.isCodeLike`): one of the page's prose starts on
+    /// such a word and ends on a colon too ("with the default settings:"), and tells nothing of the listing under it.
     static func isPythonLike(_ lines: [String]) -> Bool {
-        lines.contains { line in
-            line.trimmingCharacters(in: .whitespaces).range(
-                of: #"^(#( |!|$)|(def|elif) |(if|for|while|with|class|else|try|except|finally|async)\b.*:$)"#, options: .regularExpression
-            ) != nil
+        lines.contains { text in
+            let line = text.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#!") {
+                // The interpreter is the last part of the path, or the word after `env`.
+                let words = line.dropFirst(2).split(separator: " ").map { $0.split(separator: "/").last ?? $0 }
+                let interpreter = words.first == "env" ? words.dropFirst().first { !$0.hasPrefix("-") } : words.first
+                return interpreter?.hasPrefix("python") ?? false
+            }
+            if line.range(of: #"^(#( |$)|(def|elif) )"#, options: .regularExpression) != nil { return true }
+            return TextAssembler.isCodeLike(line)
+                && line.range(of: #"^(if|for|while|with|class|else|try|except|finally|async)\b.*:$"#, options: .regularExpression) != nil
         }
     }
 

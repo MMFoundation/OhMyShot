@@ -2008,7 +2008,8 @@ closer, as a glyph nothing read already did. Those two only: any other character
 a variable or an element of a list. A bracket in a string or a comment opens nothing (`codeBrackets`: after
 `let x = "{";`, a line reading `x` stays). "//" starts a comment unless the listing is written as Python is
 (`isPythonLike`: a comment on "#", `def` or `elif`, a block opened on ":"), where it divides: the "}" after
-`size // page_size` closes its dictionary. Nothing is put where the code closes the bracket itself further down
+`size // page_size` closes its dictionary. A "#!" line tells by its interpreter (`#!/usr/bin/env node` starts a script
+with "//" comments), and a line that opens a block must read as code: "with the default settings:" is the page's prose. Nothing is put where the code closes the bracket itself further down
 (under `let values = [`, a line reading `1` is an element when the `]` follows): counted as the closer, the row would
 leave a closer of the code with nothing to close. Where every closer still finds a bracket, the row is the one the
 code lacks: after `const handlers = { submit: () => {`, the unread "}" before `};`. An opening brace read as "1", "l", or
@@ -2044,7 +2045,7 @@ on one or on a name with one inside ("macOS", "iPhone"), or ends on a period or 
 when the app restarts."), which a command rarely does; its first word is no keyword (`SELECT`) or cmdlet
 (`Write-Host`), and it calls nothing: `echo Welcome to your home directory` and `raise ValueError("This option is not
 available in this mode")` stay code. A capital after a hyphen makes a cmdlet only with one of PowerShell's verbs before
-it, a parameter (`-Path`), a quote, or a variable on the line: "Wi-Fi is required to pair the device." is a sentence.
+it (the approved ones, and `ForEach`, `Sort`, `Tee`, `Where`), a parameter (`-Path`), a quote, or a variable on the line: "Wi-Fi is required to pair the device." is a sentence.
 What only the listing makes code stays code: `break`, a string, a `#` comment, `total = count if ready else zero`. Not
 handled: a sentence inside a listing (a docstring's text) is translated too, and one that names a call ("Call
 read(url) to load the image.") or starts on an acronym ("JSON is…") is left as code.
