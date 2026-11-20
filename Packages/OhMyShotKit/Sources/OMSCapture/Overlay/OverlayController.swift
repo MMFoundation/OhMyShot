@@ -163,6 +163,9 @@ public final class OverlayController {
     /// A recording is about to be set up outside Record Screen (from All-In-One): whoever records sets
     /// `recordingChoices` and `onRecordingSetupChange` for it.
     public var onWillSetUpRecording: (() -> Void)?
+    /// All-In-One is about to turn into Measure (M), in its own session: whoever measures sets the ruler's unit,
+    /// tolerance, and snapping, and what hears them and copies the measurement, as Measure would.
+    public var onWillMeasure: (() -> Void)?
     /// Whether this session (or the one just ended) set up a recording, so whoever began it knows a cancel left a
     /// camera preview to put away.
     public private(set) var didSetUpRecording = false
@@ -441,16 +444,6 @@ public final class OverlayController {
             entry.view.movePointer(to: pointer)
         }
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
-            let announcement = switch purpose {
-            case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.", bundle: .module)
-            case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.", bundle: .module)
-            case .screenshot where isAllInOne: String(localized: "All-In-One. Click a window or drag over an area, then choose what to do with it.", bundle: .module)
-            case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.", bundle: .module)
-            case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.", bundle: .module)
-            case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.", bundle: .module)
-            case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.", bundle: .module)
-            case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.", bundle: .module)
-            }
             VoiceOver.announce(announcement, from: view)
         }
         if let id = pointerDisplay?.id, let entry = entries[id] {
@@ -480,6 +473,20 @@ public final class OverlayController {
         if let chosen = chosenAhead {
             chosenAhead = nil
             select(chosen.area, startingOn: chosen.display, modifiers: [])
+        }
+    }
+
+    /// What VoiceOver says as the overlay takes input, or as All-In-One turns into Measure.
+    private var announcement: String {
+        switch purpose {
+        case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.", bundle: .module)
+        case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.", bundle: .module)
+        case .screenshot where isAllInOne: String(localized: "All-In-One. Click a window or drag over an area, then choose what to do with it.", bundle: .module)
+        case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.", bundle: .module)
+        case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.", bundle: .module)
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.", bundle: .module)
+        case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.", bundle: .module)
+        case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.", bundle: .module)
         }
     }
 
@@ -1350,6 +1357,40 @@ extension OverlayController: OverlayViewDelegate {
         case .screenshot?, nil: String(localized: "Capture. Click a window or drag over an area, then choose what to do with it.", bundle: .module)
         }
         VoiceOver.announce(announcement, from: view)
+    }
+
+    func overlayViewDidRequestMeasure(_ view: OverlayView) {
+        guard isAllInOne, drag == nil else { return }
+        turnToMeasure()
+    }
+
+    /// All-In-One's Measure: the session measures from here on, in place, so no second session takes the keyboard back
+    /// and the screen stays as it was frozen (a live one holds still as the magnifier showed it, since the ruler reads
+    /// that frame). Whatever the next area was for is let go, with the bar, the highlighted window, and any text found
+    /// to snap to; Escape, Return, and C end the session as they end Measure's.
+    private func turnToMeasure() {
+        onWillMeasure?()
+        purpose = .measure
+        options.allInOne = nil
+        allInOneMode = nil
+        selection = SelectionModel(bounds: .zero, pixelsPerPoint: 1)
+        dragDisplay = nil
+        hoverWindows = []
+        hovered = nil
+        pressedWindow = nil
+        cancelTextDetections()
+        snapsToText = false
+        let point = pointer ?? NSEvent.mouseLocation
+        for entry in entries.values {
+            entry.view.turnToMeasure(
+                pointer: point, colorFormat: colorFormat, unit: measureUnit, tolerance: measureTolerance, snapsToContent: measureSnapsToContent
+            )
+        }
+        updateCursorVisibility(at: point)
+        Log.capture.notice("All-In-One turned to Measure")
+        if let display = topology.layout.display(at: point), let view = entries[display.id]?.view {
+            VoiceOver.announce(announcement, from: view)
+        }
     }
 
     func overlayViewDidRequestWindowPicker(_ view: OverlayView) {

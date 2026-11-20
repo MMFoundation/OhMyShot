@@ -13,6 +13,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 - Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
 - All-In-One highlights the window under the pointer until something is chosen, and a click frames it, cut to the display it was clicked on, to take every way an area is taken (or as the area for Text, Scrolling, or Record chosen first). A drag still chooses a free area. (by [@fzlzjerry])
+- All-In-One's bar has Measure after Record (M): the overlay turns into Measure in place, on the screen as it was frozen, without closing and opening again. (by [@fzlzjerry])
 
 ### Changed
 

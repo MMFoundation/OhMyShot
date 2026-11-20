@@ -44,6 +44,8 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance)
     /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
+    /// All-In-One's Measure (M): the overlay turns into Measure, on the screen as it is held.
+    func overlayViewDidRequestMeasure(_ view: OverlayView)
 }
 
 extension OverlayViewDelegate {
@@ -185,8 +187,8 @@ final class OverlayView: NSView {
     /// `showsPointer` is false for a frozen screen until the overlay takes input: the system arrow is
     /// still showing then, and a crosshair under it would double it.
     /// `allInOne` adds All-In-One's modes to the bar and its letter keys: A, W, and F for an area, a window, or the
-    /// screen; O, S, and R for text, a scrolling capture, or a recording. Only a screenshot is All-In-One, which
-    /// `OverlayController.begin` sees to once for every display.
+    /// screen; O, S, and R for text, a scrolling capture, or a recording; M to measure. Only a screenshot is All-In-One,
+    /// which `OverlayController.begin` sees to once for every display.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
@@ -240,7 +242,7 @@ final class OverlayView: NSView {
         let help = switch purpose {
         case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
-        case .screenshot where isAllInOne: String(localized: "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.", bundle: .module)
+        case .screenshot where isAllInOne: String(localized: "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.", bundle: .module)
         case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
         case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
@@ -273,6 +275,21 @@ final class OverlayView: NSView {
             loupeImage.contents = frame.image
             updatePointer(pointer)
         }
+    }
+
+    /// Turns this display's overlay into Measure where it stands (All-In-One's M): the frame it holds stays, and holds
+    /// still even if the screen showed live, since the ruler reads that frame; the bar goes, as Measure has none, and the
+    /// ruler takes the pointer at `globalPointer`.
+    func turnToMeasure(
+        pointer globalPointer: CGPoint, colorFormat: ColorFormat, unit: MeasureUnit, tolerance: MeasureTolerance, snapsToContent: Bool
+    ) {
+        let frame = capturedFrame
+        reset(
+            pointer: globalPointer, mode: .area, windows: [], showsToolbar: false, purpose: .measure, colorFormat: colorFormat,
+            captureLoupeStyle: captureLoupeStyle, captureLoupeSize: captureLoupeSize, measureUnit: unit, measureTolerance: tolerance,
+            measureSnapsToContent: snapsToContent
+        )
+        if let frame { show(frame, frozen: true) }
     }
 
     /// Switches between dragging a region and clicking a window, keeping the pointer where it is.
@@ -825,7 +842,7 @@ final class OverlayView: NSView {
             } else if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
             } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = character.flatMap(AllInOneBar.Choice.init(key:)) {
-                // All-In-One's letters, before an area is chosen: A, W, and F, O, S, and R, as the bar has them.
+                // All-In-One's letters, before an area is chosen: A, W, and F, O, S, R, and M, as the bar has them.
                 toolbarChose(choice)
             } else if character == "l", !event.modifierFlags.contains(.command), mode == .area, !isDraggingSelection,
                       purpose.takesPicture {
@@ -900,6 +917,8 @@ final class OverlayView: NSView {
             }
         case .fullscreen:
             delegate?.overlayView(self, didSelect: display.frame, modifiers: [])
+        case .measure:
+            delegate?.overlayViewDidRequestMeasure(self)
         case .cancel:
             delegate?.overlayViewDidCancel(self)
         default:
