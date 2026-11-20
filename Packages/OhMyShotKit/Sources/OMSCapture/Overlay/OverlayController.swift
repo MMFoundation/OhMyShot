@@ -37,6 +37,18 @@ public final class OverlayController {
         /// recording chosen there is set up in the same session, and ends it as `record`.
         case allInOne(AllInOneChoice, CGRect, display: DisplayInfo, frozen: CapturedFrame?)
         case cancelled
+
+        /// The area this outcome took, in global points, for L to bring back: a region, All-In-One's area whatever it
+        /// was for, a scrolling capture's, or what was recorded unless it was a window; nil for a window, a color, an
+        /// annotation, or nothing.
+        public var takenArea: CGRect? {
+            switch self {
+            case .region(let rect, _, _, _), .allInOne(_, let rect, _, _), .scroll(let rect, _, _): rect
+            case .record(.area(let rect), _, _): rect
+            case .record(.display, let display, _): display.frame
+            case .record(.window, _, _), .window, .windows, .annotated, .color, .cancelled: nil
+            }
+        }
     }
 
     /// What the capture is for: a screenshot, or text to copy. Text gets a lighter overlay: no All-In-One
@@ -225,6 +237,8 @@ public final class OverlayController {
     private var hovered: HoveredWindow?
     /// The window under the press, which the release frames while the press stays a click.
     private var pressedWindow: HoveredWindow?
+    /// The window a click framed, and the area it framed, in this session or the one just ended (`window(framing:)`).
+    private var framed: (window: WindowTarget, area: CGRect)?
     private var windowPicker: WindowPickerController?
     private var purpose: Purpose = .screenshot
     /// This app's windows are no window to scroll: a scrolling capture's stream never sees them, and Auto-scroll
@@ -323,6 +337,7 @@ public final class OverlayController {
         hoverWindows = []
         hovered = nil
         pressedWindow = nil
+        framed = nil
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
         prepare()
@@ -446,10 +461,7 @@ public final class OverlayController {
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
             VoiceOver.announce(announcement, from: view)
         }
-        if let id = pointerDisplay?.id, let entry = entries[id] {
-            entry.panel.makeKey()
-            entry.panel.makeFirstResponder(entry.view)
-        }
+        giveKeyboard(to: pointerDisplay)
         // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
         // keeps the system crosshair, from the start rather than the first move. Only once the overlay has input, so an
         // early move never hides the pointer. A nonactivating key panel owns selection input while the
@@ -474,6 +486,30 @@ public final class OverlayController {
             chosenAhead = nil
             select(chosen.area, startingOn: chosen.display, modifiers: [])
         }
+    }
+
+    /// Gives the overlay on `display` the keyboard, so its view hears the keys: they act on what is under the crosshair
+    /// there.
+    private func giveKeyboard(to display: DisplayInfo?) {
+        guard let id = display?.id, let entry = entries[id] else { return }
+        if !entry.panel.isKeyWindow { entry.panel.makeKey() }
+        if entry.panel.firstResponder !== entry.view { entry.panel.makeFirstResponder(entry.view) }
+    }
+
+    /// Picking a pixel (Measure, Pick Color), the keyboard goes with the crosshair onto another display while no button
+    /// is down, so Return, Command-C, and C act on what is under it there rather than on the display it left, whose
+    /// ruler and crosshair are gone.
+    private func keyboardFollowsCrosshair(to point: CGPoint) {
+        guard purpose.picksPixels, hasInput, NSEvent.pressedMouseButtons == 0 else { return }
+        giveKeyboard(to: topology.layout.display(at: point))
+    }
+
+    /// The window a click in All-In-One framed `area` from, in this session or the one just ended; nil for any other
+    /// area, dragged out or changed after it was framed. What is taken in that area is named after this window, its app
+    /// and title, as a window capture is, rather than after the app in front.
+    public func window(framing area: CGRect) -> WindowTarget? {
+        guard let framed, framed.area == area else { return nil }
+        return framed.window
     }
 
     /// What VoiceOver says as the overlay takes input, or as All-In-One turns into Measure.
@@ -1039,6 +1075,7 @@ extension OverlayController {
         showHover()
         place(clicked.area, startingOn: clicked.display)
         guard let rect = selection.rect, !selection.isTooSmall else { return }
+        framed = (clicked.window, rect)
         Log.capture.notice("All-In-One window \(clicked.window.id, privacy: .public) clicked: \(NSStringFromRect(rect), privacy: .public) on display \(clicked.display.id, privacy: .public)")
         select(rect, startingOn: clicked.display, modifiers: modifiers)
     }
@@ -1186,6 +1223,7 @@ extension OverlayController: OverlayViewDelegate {
         }
         updateCursorVisibility(at: point)
         updateHover(at: point)
+        keyboardFollowsCrosshair(to: point)
     }
 
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {
@@ -1225,6 +1263,7 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.movePointer(to: next)
         }
         updateHover(at: next)
+        keyboardFollowsCrosshair(to: next)
         if let under = layout.display(at: next) { entries[under.id]?.view.announceValue() }
     }
 
@@ -1386,6 +1425,7 @@ extension OverlayController: OverlayViewDelegate {
                 pointer: point, colorFormat: colorFormat, unit: measureUnit, tolerance: measureTolerance, snapsToContent: measureSnapsToContent
             )
         }
+        giveKeyboard(to: topology.layout.display(at: point))
         updateCursorVisibility(at: point)
         Log.capture.notice("All-In-One turned to Measure")
         if let display = topology.layout.display(at: point), let view = entries[display.id]?.view {
