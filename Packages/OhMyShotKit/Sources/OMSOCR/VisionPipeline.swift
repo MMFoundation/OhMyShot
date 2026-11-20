@@ -172,7 +172,7 @@ public struct VisionPipeline: OCREngine {
 
     /// A line a column cut went through that the column beyond the cut read no part of has no second piece to
     /// be joined to (`PieceMerge.loneCuts`). It is read again with the stretch of its row past the cut, and gives way
-    /// to that reading when it reaches past the cut and holds more.
+    /// to that reading when it is the line read on past the cut (`PieceMerge.completes`).
     private func completedAtCuts(_ lines: [OCRLine], pieces: [CGRect], in image: CGImage) async throws -> [OCRLine] {
         let cuts = PieceMerge.loneCuts(in: lines, pieces: pieces)
         guard !cuts.isEmpty else { return lines }
@@ -191,8 +191,7 @@ public struct VisionPipeline: OCREngine {
             let line = lines[cut.line]
             let text = read.map(\.text).joined(separator: " ")
             let box = read.dropFirst().reduce(start.box) { $0.union($1.box) }
-            guard box.minX < line.box.minX - line.box.height || box.maxX > line.box.maxX + line.box.height,
-                  text.filter({ !$0.isWhitespace }).count > line.text.filter({ !$0.isWhitespace }).count else { continue }
+            guard PieceMerge.completes(line, text: text, box: box, before: cut.before, after: cut.after) else { continue }
             lines[cut.line] = OCRLine(
                 text: text, box: line.box.union(box), confidence: read.map(\.confidence).min() ?? line.confidence,
                 direction: line.direction, wrapsToNextLine: line.wrapsToNextLine
@@ -441,30 +440,33 @@ public struct VisionPipeline: OCREngine {
     ///
     /// - A row holding a lone glyph nothing read (`glyphs`) becomes the closer of the bracket left open on the line
     ///   above it that starts in the same column.
-    /// - So does a line read as one character that is no bracket: the Chinese model reads "}" alone as "子" and "]"
-    ///   as "J". A statement of one character inside the block (a variable returned) is indented under the line
-    ///   that opened it, not in its column.
+    /// - So does a line read as "子" where a "{" is open in its column, or as "J" where a "[" is: what the Chinese
+    ///   model makes of "}" and "]" alone on a line. Any other character alone on its line is the code's own (a
+    ///   variable, an element of a list), whatever is open above it.
     /// - An opening brace read as "1", "l" or "I" at the end of its line ("else 1", ") l") is put back when the next
     ///   line is indented under it and the block closes in its column. "0 if done else 1" ends a statement and no
     ///   block: no line is indented under it, or nothing closes in its column.
     ///
-    /// Nothing is guessed where no open bracket lines up.
+    /// Nothing is guessed where no open bracket lines up, nor where a bracket of the code closes that one further
+    /// down: a line under `let values = [` is an element when the "]" comes after it. A bracket in a string or a
+    /// comment opens nothing (`codeBrackets`).
     static func withBrackets(_ lines: [OCRLine], glyphs: [CGRect], characterWidth: CGFloat) -> [OCRLine] {
         enum Row {
             case line(Int)
             case glyph(CGRect)
         }
+        typealias Open = (bracket: Character, x: CGFloat)
         let pairs: [Character: Character] = ["{": "}", "[": "]", "(": ")"]
-        let closers = Set(pairs.values)
+        // What the Chinese model makes of a closer alone on its line.
+        let misread: [Character: Character] = ["子": "}", "J": "]"]
         var lines = lines
         let rows = (lines.indices.map { (box: lines[$0].box, row: Row.line($0)) } + glyphs.map { (box: $0, row: Row.glyph($0)) })
             .sorted { $0.box.minY < $1.box.minY }
         func isAligned(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < characterWidth * 0.6 }
-        // One character that is no bracket: a closer misread, where an open bracket lines up.
-        func loneCharacter(_ line: OCRLine) -> Character? {
+        // The closer a line of one character is a misreading of.
+        func misreadCloser(_ line: OCRLine) -> Character? {
             let text = TextAssembler.asCode(line.text).filter { !$0.isWhitespace }
-            guard text.count == 1, let character = text.first, pairs[character] == nil, !closers.contains(character) else { return nil }
-            return character
+            return text.count == 1 ? text.first.flatMap { misread[$0] } : nil
         }
 
         for (position, entry) in rows.enumerated() {
@@ -475,37 +477,100 @@ public struct VisionPipeline: OCREngine {
                   isAligned(end.box.minX, entry.box.minX) else { continue }
             let closes = switch end.row {
             case .glyph: true
-            case .line(let closing): loneCharacter(lines[closing]) != nil || TextAssembler.asCode(lines[closing].text).first == "}"
+            case .line(let closing): misreadCloser(lines[closing]) == "}" || TextAssembler.asCode(lines[closing].text).first == "}"
             }
             if closes { lines[index].text = String(lines[index].text.dropLast()) + "{" }
         }
 
-        var open: [(bracket: Character, x: CGFloat)] = []
-        var inferred: [OCRLine] = []
-        for entry in rows {
-            switch entry.row {
-            case .line(let index):
-                if loneCharacter(lines[index]) != nil, let opener = open.lastIndex(where: { isAligned($0.x, entry.box.minX) }),
-                   let closer = pairs[open[opener].bracket] {
-                    open.removeSubrange(opener...)
-                    lines[index].text = String(closer)
+        // Takes the brackets of a line on and off `open`, and gives where each closer cut it back to. A closer that
+        // starts its line closes the bracket opened in its column, when one is; any other, the innermost of its kind.
+        func take(_ index: Int, from open: inout [Open]) -> [Int] {
+            let x = lines[index].box.minX
+            var cuts: [Int] = []
+            for bracket in codeBrackets(TextAssembler.asCode(lines[index].text)) {
+                if pairs[bracket.character] != nil {
+                    open.append((bracket.character, x))
                     continue
                 }
-                for character in TextAssembler.asCode(lines[index].text) {
-                    if pairs[character] != nil {
-                        open.append((character, entry.box.minX))
-                    } else if closers.contains(character), let index = open.lastIndex(where: { pairs[$0.bracket] == character }) {
-                        open.removeSubrange(index...)
-                    }
+                let isItsKind = { (opened: Open) in pairs[opened.bracket] == bracket.character }
+                let inItsColumn = bracket.startsLine ? open.lastIndex { isItsKind($0) && isAligned($0.x, x) } : nil
+                guard let opener = inItsColumn ?? open.lastIndex(where: isItsKind) else { continue }
+                open.removeSubrange(opener...)
+                cuts.append(opener)
+            }
+            return cuts
+        }
+        // Whether a bracket of the code closes `open[opener]` on a row after `position`: then nothing else is its closer.
+        func isClosedLater(_ opener: Int, of open: [Open], after position: Int) -> Bool {
+            var open = open
+            for entry in rows[(position + 1)...] {
+                guard case .line(let index) = entry.row else { continue }
+                for cut in take(index, from: &open) where cut <= opener { return cut == opener }
+            }
+            return false
+        }
+
+        var open: [Open] = []
+        var inferred: [OCRLine] = []
+        for (position, entry) in rows.enumerated() {
+            // The bracket left open in this row's column, of the kind `closer` closes, that the code doesn't close itself.
+            func opener(for closer: Character?) -> Int? {
+                let index = open.lastIndex { isAligned($0.x, entry.box.minX) && (closer == nil || pairs[$0.bracket] == closer) }
+                return index.flatMap { isClosedLater($0, of: open, after: position) ? nil : $0 }
+            }
+            switch entry.row {
+            case .line(let index):
+                if let closer = misreadCloser(lines[index]), let opener = opener(for: closer) {
+                    open.removeSubrange(opener...)
+                    lines[index].text = String(closer)
+                } else {
+                    _ = take(index, from: &open)
                 }
             case .glyph(let rectangle):
-                guard let index = open.lastIndex(where: { isAligned($0.x, rectangle.minX) }),
-                      let closer = pairs[open[index].bracket] else { continue }
-                open.removeSubrange(index...)
+                guard let opener = opener(for: nil), let closer = pairs[open[opener].bracket] else { continue }
+                open.removeSubrange(opener...)
                 inferred.append(OCRLine(text: String(closer), box: rectangle, confidence: 0.3, direction: .leftToRight))
             }
         }
         return lines + inferred
+    }
+
+    /// The brackets of a line of code, left to right, and whether each starts the line. Those in a string (between two
+    /// of the same quote; a quote with no partner on the line is an apostrophe or a lifetime) and those after `//` or
+    /// `# ` are text, and open nothing.
+    static func codeBrackets(_ text: String) -> [(character: Character, startsLine: Bool)] {
+        let characters = Array(text)
+        func endOfString(from start: Int) -> Int? {
+            var index = start + 1
+            while index < characters.count {
+                if characters[index] == "\\" {
+                    index += 2
+                } else if characters[index] == characters[start] {
+                    return index
+                } else {
+                    index += 1
+                }
+            }
+            return nil
+        }
+        var brackets: [(character: Character, startsLine: Bool)] = []
+        var index = 0
+        var startsLine = true
+        while index < characters.count {
+            let character = characters[index]
+            let next = index + 1 < characters.count ? characters[index + 1] : nil
+            if character == "/", next == "/" { break }
+            if character == "#", next?.isWhitespace ?? true, index == 0 || characters[index - 1].isWhitespace { break }
+            if "\"'`".contains(character), let end = endOfString(from: index) {
+                index = end + 1
+                startsLine = false
+                continue
+            }
+            if "{}[]()".contains(character) { brackets.append((character, startsLine)) }
+            if !character.isWhitespace { startsLine = false }
+            index += 1
+        }
+        return brackets
     }
 
     // MARK: Latin lines on a CJK page

@@ -82,4 +82,41 @@ struct LoneBracketTests {
         let after = [line("let rows = [", row: 0), line("1, 2,", indent: 1, row: 1), line("]", row: 2), line("J", row: 3)]
         #expect(texts(after) == after.map(\.text))
     }
+
+    @Test func aCharacterThatIsNoKnownMisreadingIsLeftAsItIs() {
+        // Rust: the brace is in a string, and the variable on the next line is the block's value.
+        let value = [line(#"let x = "{";"#, row: 0), line("x", row: 1)]
+        #expect(texts(value) == value.map(\.text))
+        // An element under the line that opened the list, and the list's own closer after it.
+        let element = [line("let values = [", row: 0), line("1", row: 1), line("]", row: 2)]
+        #expect(texts(element) == element.map(\.text))
+        // Whatever is open above it: "x" in the column of a "[" that nothing closes further down.
+        let open = [line("let rows = [", row: 0), line("1, 2,", indent: 1, row: 1), line("x", row: 2)]
+        #expect(texts(open) == open.map(\.text))
+    }
+
+    @Test func aBracketInAStringOrACommentOpensNothing() {
+        // "子" under a line whose only brace is in a string; a glyph nothing read under brackets in comments, and under
+        // brackets written as characters.
+        let string = [line(#"let brace = "{""#, row: 0), line("子", row: 1)]
+        #expect(texts(string) == string.map(\.text))
+        let comments = [line("// the block opens with {", row: 0), line("# rows[", row: 1), line("total = 0", row: 2)]
+        #expect(texts(comments, glyphs: [glyph(row: 3)]) == comments.map(\.text))
+        let characters = [line("if next == '{' || next == '[' { depth += 1 }", row: 0), line("print(depth)", row: 1)]
+        #expect(texts(characters, glyphs: [glyph(row: 2)]) == characters.map(\.text))
+        #expect(VisionPipeline.codeBrackets(#"let pair = ("{", [1]) // (x"#).map(\.character) == ["(", "[", "]", ")"])
+        #expect(VisionPipeline.codeBrackets("} else {").map(\.startsLine) == [true, false])
+        // A lifetime's quote has no partner on the line: the brace after it is the code's.
+        #expect(VisionPipeline.codeBrackets("impl<'a> Reader {").map(\.character) == ["{"])
+    }
+
+    @Test func aBracketTheCodeClosesItselfIsNotClosedTwice() {
+        // "J", and a glyph nothing read, under the line that opened a list whose own "]" follows in its column.
+        let named = [line("let rows = [", row: 0), line("J", row: 1), line("]", row: 2)]
+        #expect(texts(named) == named.map(\.text))
+        #expect(texts([named[0], named[2]], glyphs: [glyph(row: 1)]) == ["let rows = [", "]"])
+        // The closer of the block around it is not the inner block's: the glyph still closes the one opened in its column.
+        let nested = [line("func run() {", row: 0), line("if ready {", indent: 1, row: 1), line("start()", indent: 2, row: 2), line("}", row: 4)]
+        #expect(texts(nested, glyphs: [glyph(indent: 1, row: 3)]) == ["func run() {", "if ready {", "start()", "}", "}"])
+    }
 }

@@ -89,6 +89,10 @@ public enum TextAssembler {
     /// and below is a picture away, so pieces are joined only where text is stacked as lines are, another line
     /// within three line heights above or below them, or where the row is all the text there is (one row of a
     /// listing, captured alone).
+    ///
+    /// Two columns of a few lines each come here row by row as well (`ReadingOrder` looks for columns from five lines
+    /// up), and the lines of two columns are not one line: pieces that both read as running text (`isRunningText`),
+    /// further apart than a line is tall, stay apart. Closer, they are one line Vision returned in two.
     static func rowPieces(_ lines: [OCRLine]) -> [Int?] {
         let continuations = rowContinuations(lines)
         let isOneRow = continuations.dropFirst().allSatisfy { $0 != nil }
@@ -98,12 +102,25 @@ public enum TextAssembler {
             guard !line.isTableRow, !previous.isTableRow, line.math == nil, previous.math == nil,
                   !ReadingOrder.isVertical(line), !ReadingOrder.isVertical(previous) else { return nil }
             let row = previous.box.union(line.box)
+            if line.box.minX - previous.box.maxX > row.height, isRunningText(previous.text), isRunningText(line.text) { return nil }
             let isStacked = lines.contains { other in
                 let gap = max(other.box.minY - row.maxY, row.minY - other.box.maxY)
                 return gap > -row.height / 2 && gap < row.height * 3 && other.box.maxX > row.minX && other.box.minX < row.maxX
             }
             return isOneRow || isStacked ? 1 : nil
         }
+    }
+
+    /// Whether a piece of a row reads as running text rather than as a field or two: four words or more that are three
+    /// in four of what it holds, or eight characters of Chinese or Japanese. "384 Nov 12 09:41 Assets" holds two words,
+    /// and "Built-in Liquid Retina XDR" three.
+    static func isRunningText(_ text: String) -> Bool {
+        let tokens = text.split(whereSeparator: \.isWhitespace)
+        let words = tokens.count { token in
+            let word = token.trimmingCharacters(in: .punctuationCharacters)
+            return !word.isEmpty && word.allSatisfy(\.isLetter)
+        }
+        return words >= 4 && words * 4 >= tokens.count * 3 || text.count(where: Script.isCJK) >= 8
     }
 
     private static func medianCharacterWidth(_ lines: [OCRLine]) -> CGFloat? {

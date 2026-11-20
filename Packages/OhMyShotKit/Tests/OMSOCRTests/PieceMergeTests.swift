@@ -132,6 +132,31 @@ struct PieceMergeTests {
         #expect(PieceMerge.loneCuts(in: [left, right, above], pieces: pieces).isEmpty)
     }
 
+    @Test func aLetterOrTwoPastTheCutCompletesTheLine() {
+        let pieces = PictureText.pieces(width: 10_989, height: 2880)
+        // The first column (to 2880) read a line up to its last two letters, which lie past the cut.
+        let start = line("28. The gentle lantern cross", x: 2300, y: 1045, width: 578, height: 24)
+        #expect(PieceMerge.loneCuts(in: [start], pieces: pieces).map(\.after) == [2880])
+        let read = CGRect(x: 2300, y: 1045, width: 600, height: 24)
+        #expect(PieceMerge.completes(start, text: "28. The gentle lantern crosses", box: read, before: nil, after: 2880))
+        // The cut went through the last letter the column read, "c" for an "o".
+        let clipped = line("28. The gentle lantern crc", x: 2300, y: 1045, width: 578, height: 24)
+        #expect(PieceMerge.completes(clipped, text: "28. The gentle lantern crosses", box: read, before: nil, after: 2880))
+        // Not past the cut, no longer, or another line's text: the line stays as it was.
+        #expect(!PieceMerge.completes(start, text: "28. The gentle lantern crosses", box: CGRect(x: 2300, y: 1045, width: 583, height: 24), before: nil, after: 2880))
+        #expect(!PieceMerge.completes(start, text: "28. The gentle lantern cross", box: read, before: nil, after: 2880))
+        #expect(!PieceMerge.completes(start, text: "29. The plain compass crosses on", box: read, before: nil, after: 2880))
+        // The end of a line, whose start lies before the second column's left edge (2624).
+        let end = line("es the narrow orchard near the old mill", x: 2624, y: 1045, width: 900, height: 24)
+        #expect(PieceMerge.loneCuts(in: [end], pieces: pieces).map(\.before) == [2624])
+        let whole = CGRect(x: 2570, y: 1045, width: 954, height: 24)
+        #expect(PieceMerge.completes(end, text: "crosses the narrow orchard near the old mill", box: whole, before: 2624, after: nil))
+        #expect(!PieceMerge.completes(end, text: "crosses the narrow orchard near the old mill", box: whole, before: nil, after: 3840))
+        // Two readings of one line differ by a letter: "moring" in the column's, "morning" in the stretch's.
+        let misread = line("es the narrow orchard until the moring bell.", x: 2624, y: 1045, width: 900, height: 24)
+        #expect(PieceMerge.completes(misread, text: "crosses the narrow orchard until the morning bell.", box: whole, before: 2624, after: nil))
+    }
+
     @Test func aFragmentOfALineReadWholeIsDropped() {
         // A piece's passes left the start of a line a second time, over the line itself.
         let whole = line("21. The quiet harbor crosses the plain compass near the old mill", x: 1100, y: 820, width: 946)

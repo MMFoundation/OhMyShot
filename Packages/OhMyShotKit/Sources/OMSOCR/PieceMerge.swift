@@ -136,10 +136,12 @@ enum PieceMerge {
     /// The lines a column cut went through that the column beyond it read no part of: `crossings` pairs the two
     /// pieces of a cut line, and such a line has one. Each comes with the stretch of its row to read again: the line
     /// and what lies past the cut, up to the next line on the row or that column's far edge, and no wider than a
-    /// column in all, which is what Vision reads without shrinking it.
-    static func loneCuts(in lines: [OCRLine], pieces: [CGRect]) -> [(line: Int, stretch: CGRect)] {
+    /// column in all, which is what Vision reads without shrinking it; and with where it was cut, `before` its start
+    /// or `after` its end.
+    static func loneCuts(in lines: [OCRLine], pieces: [CGRect]) -> [(line: Int, stretch: CGRect, before: CGFloat?, after: CGFloat?)] {
         let paired = Set(crossings(in: lines, pieces: pieces).joined())
         var stretches: [Int: CGRect] = [:]
+        var cuts: [Int: (before: CGFloat?, after: CGFloat?)] = [:]
         for left in pieces {
             for right in pieces where right.minY == left.minY && right.height == left.height
                 && right.minX == left.maxX - CGFloat(PictureText.overlap) {
@@ -150,15 +152,43 @@ enum PieceMerge {
                     var (start, end) = (stretches[index]?.minX ?? box.minX, stretches[index]?.maxX ?? box.maxX)
                     if box.maxX >= left.maxX - slack, box.maxX <= left.maxX + 1 {
                         end = min(others.filter { $0.minX >= box.maxX }.map(\.minX).min() ?? right.maxX, right.maxX, start + left.width)
+                        cuts[index, default: (nil, nil)].after = left.maxX
                     }
                     if box.minX <= right.minX + slack, box.minX >= right.minX - 1 {
                         start = max(others.filter { $0.maxX <= box.minX }.map(\.maxX).max() ?? left.minX, left.minX, end - left.width)
+                        cuts[index, default: (nil, nil)].before = right.minX
                     }
                     if end - start > box.width { stretches[index] = CGRect(x: start, y: box.minY, width: end - start, height: box.height) }
                 }
             }
         }
-        return stretches.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
+        return stretches.sorted { $0.key < $1.key }.map { ($0.key, $0.value, cuts[$0.key]?.before, cuts[$0.key]?.after) }
+    }
+
+    /// Whether what was read in a lone cut's stretch (`text`, in `box`) is `line` read on past a cut it stopped at
+    /// (`before` its start, `after` its end). It reaches a quarter of the line's height past the cut: a letter or two
+    /// may be all that lay there, so the line's own box is no measure. It is longer. And the line's own reading is a
+    /// part of it, but for the two characters the cut went through and one in ten besides: two readings of one line
+    /// differ by a letter here and there ("moring" for "morning"), and a line left cut for that loses all that lay
+    /// past the cut.
+    static func completes(_ line: OCRLine, text: String, box: CGRect, before: CGFloat?, after: CGFloat?) -> Bool {
+        let reach = line.box.height / 4
+        guard before.map({ box.minX <= $0 - reach }) ?? false || after.map({ box.maxX >= $0 + reach }) ?? false else { return false }
+        let (read, own) = (Array(text.filter { !$0.isWhitespace }), Array(line.text.filter { !$0.isWhitespace }))
+        guard read.count > own.count else { return false }
+        // The fewest edits that make the line's reading a part of the other: for each character of `read`, the fewest
+        // for a part that ends on it.
+        var edits = [Int](repeating: 0, count: read.count + 1)
+        for (row, character) in own.enumerated() {
+            var diagonal = edits[0]
+            edits[0] = row + 1
+            for column in 1...read.count {
+                let above = edits[column]
+                edits[column] = min(diagonal + (read[column - 1] == character ? 0 : 1), above + 1, edits[column - 1] + 1)
+                diagonal = above
+            }
+        }
+        return (edits.min() ?? 0) <= 2 + own.count / 10
     }
 
     /// Whether `text` reads as the whole of the line that `parts` (left to right, each over the next) are cut

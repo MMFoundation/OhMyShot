@@ -115,9 +115,12 @@ public enum TranslationUnits {
         return isCode
     }
 
-    /// A sentence rather than a line of code: it starts on a word (no quote before it), none of its tokens is an operator ("=", "->"), and
-    /// it holds five characters of Chinese or Japanese, or four words that are three in four of its tokens: "Call
-    /// read(url) to load the image." is one, `total = count if ready else zero` and `print("Hello to you all")` are not.
+    /// A sentence rather than a line of code: it starts on a word (no quote before it), none of its tokens is an operator
+    /// ("=", "->"), and it holds five characters of Chinese or Japanese, or four words that are three in four of its
+    /// tokens. A statement can be all that: `echo Welcome to your home directory`, `raise ValueError("This option is
+    /// not available")`. So in a script that has capitals, it starts on one as a sentence does ("The", or a name,
+    /// "JavaScript"), its first word no command ("echo"), keyword ("SELECT") or cmdlet ("Write-Host"), and it calls
+    /// nothing ("name(").
     static func isSentence(_ text: String) -> Bool {
         let marks = CharacterSet(charactersIn: ".,:;!?…'\"“”‘’，。：；！？、")
         let isWord = { (token: Substring) in
@@ -125,9 +128,15 @@ public enum TranslationUnits {
             return !word.isEmpty && word.allSatisfy { $0.isLetter || "'’-".contains($0) }
         }
         let tokens = text.split(whereSeparator: \.isWhitespace)
-        guard let first = tokens.first, first.first?.isLetter == true, isWord(first),
+        guard let first = tokens.first, let initial = first.first, initial.isLetter, isWord(first),
               tokens.allSatisfy({ token in token.contains { $0.isLetter || $0.isNumber } || token.allSatisfy { "-–—&".contains($0) } })
         else { return false }
+        if initial.isCased {
+            let word = first.trimmingCharacters(in: marks)
+            guard initial.isUppercase, word.count == 1 || word.contains(where: \.isLowercase),
+                  word.range(of: #"-\p{Lu}"#, options: .regularExpression) == nil,
+                  text.range(of: #"\w\("#, options: .regularExpression) == nil else { return false }
+        }
         if text.count(where: Script.isCJK) >= 5 { return true }
         let words = tokens.count(where: isWord)
         return words >= 4 && words * 4 >= tokens.count * 3

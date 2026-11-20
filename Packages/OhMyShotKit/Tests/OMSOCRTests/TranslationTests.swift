@@ -125,13 +125,37 @@ struct TranslationUnitTests {
                        "    print(\"Hello to you all\")", "    break", "    return total / Double(values.count)", "}"]
             .enumerated().map { line($1, y: CGFloat($0) * 24) }
         #expect(TranslationUnits.group(listing).allSatisfy { $0.skip == .code })
-        for sentence in ["The first line reads the picture from disk.", "Call read(url) to load the image.", "Step 2: wait for the reply, then read it.",
+        for sentence in ["The first line reads the picture from disk.", "Step 2: wait for the reply, then read it.",
                          "然后把读到的文字交给翻译。", "调用 read(url) 读取这张图片。"] {
             #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
         }
         for code in ["total = count if ready else zero", "print(\"Hello to you all\")", "# the sum of the values over their count", "\"\"\"",
                      "break", "x + y", "\"Hello to you all, and welcome\"", "print(\"你好世界欢迎回来\")", "名字 = 读取到的文字内容"] {
             #expect(!TranslationUnits.isSentence(code), "\(code)")
+        }
+    }
+
+    @Test func aStatementRaisingAnErrorIsNotASentence() {
+        // Python: the message is words, and the line is a statement of the listing, though it reads as no code alone.
+        let lines = ["def check(option, mode):", "    if mode == \"strict\":", "        raise ValueError(\"This option is not available in this mode\")",
+                     "    return option"].enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TextAssembler.isCodeListing(lines))
+        #expect(!TextAssembler.isCodeLike(lines[2].text))
+        #expect(TranslationUnits.group(lines).map(\.skip) == [.code, .code, .code, .code])
+    }
+
+    @Test func aCommandPrintingWordsIsNotASentence() {
+        // A shell script: `echo`, then five words.
+        let lines = ["greet() {", "    echo Welcome to your home directory", "    return 0", "}"].enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TextAssembler.isCodeListing(lines))
+        #expect(TranslationUnits.group(lines).map(\.skip) == [.code, .code, .code, .code])
+        // A sentence starts on a capital, and calls nothing: a command, a keyword and a cmdlet start no sentence.
+        for statement in ["echo Welcome to your home directory", "SELECT name FROM users WHERE active", "Write-Host Welcome to your home directory",
+                          "raise ValueError(\"This option is not available in this mode\")", "Call read(url) to load the image."] {
+            #expect(!TranslationUnits.isSentence(statement), "\(statement)")
+        }
+        for sentence in ["Welcome to your home directory.", "JavaScript runs the script in the browser.", "A reply comes back in a second."] {
+            #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
         }
     }
 

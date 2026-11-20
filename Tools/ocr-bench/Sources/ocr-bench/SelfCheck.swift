@@ -41,16 +41,17 @@ enum SelfCheck {
             if halvesSwapped.map(Normalize.content) != content {
                 disturbed.append(("its second half read first", halvesSwapped))
             }
-            for (what, output) in disturbed where score(output).lineOrder >= 1 {
+            // Line order alone: `score` would also measure the edit distance of each whole text, twice, for nothing.
+            for (what, output) in disturbed where Metrics.lineOrder(output, against: lines) >= 1 {
                 failures.append("\(item.id): \(what) still scores line order 1")
             }
 
             if item.category == .code {
                 var indented = lines
                 indented[middle] = "  " + indented[middle]
-                let moved = score(indented)
-                if moved.indentation ?? 1 >= 1 || moved.lineOrder != 1 {
-                    failures.append("\(item.id): a line indented further scores indentation \(moved.indentation ?? 1), line order \(moved.lineOrder)")
+                let (indentation, lineOrder) = (Metrics.indentation(indented, against: lines), Metrics.lineOrder(indented, against: lines))
+                if indentation >= 1 || lineOrder != 1 {
+                    failures.append("\(item.id): a line indented further scores indentation \(indentation), line order \(lineOrder)")
                 }
             }
             return failures

@@ -138,6 +138,26 @@ struct TextAssemblerTests {
         #expect(TextAssembler.assemble(lines) == "Wi-Fi Connected\n蓝牙耳机 已连接\nDisplay Built-in Liquid Retina XDR")
     }
 
+    @Test func twoColumnsOfAFewLinesAreNotJoinedRowByRow() {
+        // Four lines are too few for `ReadingOrder` to look for columns, so they come row by row: each column's line is
+        // still a line of its own.
+        let english = [
+            line("The harbor wakes before the town does.", x: 0, y: 0), line("Inland the road climbs through orchards", x: 480, y: 0),
+            line("Gulls argue over the first catch while", x: 0, y: 30), line("planted in rows as straight as rulers.", x: 480, y: 30),
+        ]
+        let chinese = [
+            line("清晨的港口比小镇醒得更早。海鸥为", x: 0, y: 0, characterWidth: 20), line("往内陆走，公路穿过一片果园，果树", x: 400, y: 0, characterWidth: 20),
+            line("第一网鱼争个不停，渡船的水手在码", x: 0, y: 30, characterWidth: 20), line("一行一行排得像尺子一样直。采摘的", x: 400, y: 30, characterWidth: 20),
+        ]
+        for lines in [english, chinese] {
+            let text = TextAssembler.assemble(ReadingOrder.sorted(lines))
+            #expect(text.components(separatedBy: "\n").sorted() == lines.map(\.text).sorted())
+        }
+        // One line that Vision returned in two pieces a space apart is one line still.
+        let split = [line("Quick Access keeps every capture", x: 0, y: 0), line("one click away from the menu bar", x: 330, y: 0), line("so you can copy or annotate it.", x: 0, y: 30)]
+        #expect(TextAssembler.assemble(ReadingOrder.sorted(split)) == "Quick Access keeps every capture one click away from the menu bar\nso you can copy or annotate it.")
+    }
+
     @Test func captionsUnderARowOfPicturesStayLinesOfTheirOwn() {
         // Two rows of three pictures: the captions of a row share a baseline, with a picture's height between the rows.
         let captions = ["Harbor at dawn", "果园小路", "Lighthouse", "Cider press", "海关码头", "Ferry crew"]
