@@ -885,7 +885,7 @@ Once ever, OhMyShot asks the person to star it on GitHub or join MMFoundation's 
 - **Presentation:** the invitation takes keyboard focus and floats above ordinary windows on the active Space, including full-screen Spaces. It remains nonmodal and closes with any of its buttons, Escape, or its close button.
 - **When:** at a launch, never the first (counted from the first launch of a version that has it), once 10 captures have been kept on at least 3 different days; screenshots and recordings count, with a card or without. Launches and kept captures are counted as they happen, a few numbers in the defaults (`communityInvite…`), so waiting costs nothing: no timer, no polling. It never comes as a capture is kept, though that is when it becomes due: the capture is on the clipboard on its way somewhere, and a window coming forward would take the keys it is pasted with.
 - **Never over work:** not while the capture overlay, Self-Timer, a recording or its countdown, or a scrolling capture is on, while an annotation editor, a recording window, or Studio is open, while onboarding, a modal window, or a sheet is up, or while one of OhMyShot's windows has the keyboard. Skipped, it waits for the next launch.
-- **Always there:** Settings › About and the status menu keep Join Discord. Reset to Default Settings leaves the invitation spent.
+- **Always there:** Settings › About and the status menu keep Join Discord. Reset to Default Settings leaves the invitation spent. It is spent under a key of its own (`communityInviteStarShown`), so whoever saw the earlier Discord-only invitation is asked once more.
 
 ### What’s New (Update Welcome)
 What’s New opens once per installed build (also on the first launch with this feature) and can be reopened from the

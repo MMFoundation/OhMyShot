@@ -10043,36 +10043,36 @@
         }
       }
     },
-    "Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, approved apps, and capture history stay as they are." : {
+    "Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, usage data choice, approved apps, and capture history stay as they are." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cada opción de Ajustes vuelve a como estaba al instalar OhMyShot. Tus atajos, destinos de subida, lectura en la nube, idioma, apps aprobadas e historial de capturas se mantienen."
+            "value" : "Cada opción de Ajustes vuelve a como estaba al instalar OhMyShot. Tus atajos, destinos de subida, lectura en la nube, idioma, elección sobre los datos de uso, apps aprobadas e historial de capturas se mantienen."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chaque choix des Réglages revient à son état lors de l’installation d’OhMyShot. Vos raccourcis, destinations d’envoi, la lecture dans le cloud, la langue, les apps approuvées et l’historique des captures restent inchangés."
+            "value" : "Chaque choix des Réglages revient à son état lors de l’installation d’OhMyShot. Vos raccourcis, destinations d’envoi, la lecture dans le cloud, la langue, le choix concernant les données d’utilisation, les apps approuvées et l’historique des captures restent inchangés."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定のすべての項目が OhMyShot をインストールしたときの状態に戻ります。ショートカット、アップロード先、クラウド読み取り、言語、承認済みのアプリ、キャプチャ履歴はそのまま残ります。"
+            "value" : "設定のすべての項目が OhMyShot をインストールしたときの状態に戻ります。ショートカット、アップロード先、クラウド読み取り、言語、使用状況データの設定、承認済みのアプリ、キャプチャ履歴はそのまま残ります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "设置中的每一项都会回到 OhMyShot 刚安装时的样子。你的快捷键、上传目标、云端读取、语言、已批准的 App 和截图历史保持不变。"
+            "value" : "设置中的每一项都会回到 OhMyShot 刚安装时的样子。你的快捷键、上传目标、云端读取、语言、使用数据设置、已批准的 App 和截图历史保持不变。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定中的每一項都會回到 OhMyShot 剛安裝時的樣子。你的快速鍵、上傳目的地、雲端讀取、語言、已核准的 App 和擷取記錄保持不變。"
+            "value" : "設定中的每一項都會回到 OhMyShot 剛安裝時的樣子。你的快速鍵、上傳目的地、雲端讀取、語言、使用資料設定、已核准的 App 和擷取記錄保持不變。"
           }
         }
       }

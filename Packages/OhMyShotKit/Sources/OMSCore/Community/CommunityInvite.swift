@@ -79,6 +79,8 @@ public final class CommunityInvite {
         static let captures = "communityInviteCaptures"
         static let days = "communityInviteDays"
         static let lastCapture = "communityInviteLastCapture"
-        static let shown = "communityInviteShown"
+        /// Spent by this invitation, which also asks for a star on GitHub. The Discord-only one that came before it
+        /// was spent under `communityInviteShown`, so whoever saw only that one is asked once more.
+        static let shown = "communityInviteStarShown"
     }
 }
