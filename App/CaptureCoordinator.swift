@@ -527,8 +527,7 @@ final class CaptureCoordinator {
     /// around the window as the display shows it now and kept with the pictures backgrounds use, so the capture can be
     /// marked up and kept the same later.
     private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool) async -> CaptureBackground {
-        let preset = BackdropPresets.shared.automatic.map { $0.id != BackdropPresets.roundedShadow.id } ?? false
-        let resolved = settings.windowBackground.resolved(automaticPreset: preset, shiftHeld: shiftHeld)
+        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, shiftHeld: shiftHeld)
         switch resolved {
         case .none: return .none
         case .preset: return .automatic

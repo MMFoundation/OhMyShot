@@ -54,6 +54,13 @@ public final class BackdropPresets {
         return choices.first { $0.id == id }
     }
 
+    /// The preset set on window screenshots that take the screenshots' background: none for Rounded Corners and
+    /// Shadow, as a window keeps corners and a shadow of its own.
+    public var automaticForWindows: BackdropPreset? {
+        guard let automatic, automatic.id != Self.roundedShadow.id else { return nil }
+        return automatic
+    }
+
     /// The last picture chosen for a background, by its name in the picture store, offered again beside the
     /// colors. Kept with the presets, whose pictures it is kept among.
     var lastPicture: String? {

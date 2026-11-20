@@ -245,6 +245,17 @@ struct AnnotationBackdropTests {
         #expect(presets.automatic == BackdropPresets.roundedShadow)
     }
 
+    @Test func aWindowIsNotGivenRoundedCornersAndShadow() {
+        let scratch = ScratchDefaults()
+        let presets = BackdropPresets(defaults: scratch.make())
+        #expect(presets.automaticForWindows == nil)
+        presets.setAutomatic(BackdropPresets.roundedShadow.id)
+        #expect(presets.automatic == BackdropPresets.roundedShadow && presets.automaticForWindows == nil)
+        let saved = presets.add(name: "Sky", backdrop: Backdrop())
+        presets.setAutomatic(saved.id)
+        #expect(presets.automaticForWindows == saved)
+    }
+
     @Test func theLastBackgroundPictureIsKeptAmongThePresetsPictures() {
         let scratch = ScratchDefaults()
         let defaults = scratch.make()
