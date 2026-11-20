@@ -138,7 +138,7 @@ public enum TranslationUnits {
         if initial.isCased {
             let word = first.trimmingCharacters(in: marks)
             let startsAsOne = initial.isUppercase || word.dropFirst().contains(where: \.isUppercase)
-            let endsAsOne = text.last { !$0.isWhitespace }.map { ".!?。！？".contains($0) } ?? false
+            let endsAsOne = tokens.last?.last.map(sentenceEnds.contains) ?? false
             guard startsAsOne || endsAsOne, word.count == 1 || word.contains(where: \.isLowercase), !isCmdlet(word, in: tokens),
                   text.range(of: #"\w\("#, options: .regularExpression) == nil else { return false }
         }
@@ -160,17 +160,24 @@ public enum TranslationUnits {
         "Unregister", "Update", "Use", "Wait", "Watch", "Where", "Write",
     ]
 
-    /// Whether the first word of a line is a cmdlet. A capital after its hyphen is not enough, a name has one too
-    /// ("Wi-Fi is required to pair the device."): the line is a command besides, by the word's verb, a parameter
-    /// ("-Path"), a quote, or a variable ("$name").
+    /// What a sentence ends on.
+    private static let sentenceEnds = ".!?。！？"
+
+    /// Whether the first word of a line is a cmdlet: a verb, a hyphen, and one word that starts on a capital
+    /// ("Step-By-Step" is none). That is not enough, a name is written so too ("Wi-Fi is required to pair the
+    /// device."): the line is a command besides. It holds a parameter ("-Path"), a quote, or a variable ("$name"); or
+    /// the verb is one of PowerShell's and the line ends as no sentence does. Those verbs are English words, and
+    /// "Open-Source libraries are listed in the appendix." is prose, where `Format-Table Name, Length, Mode` ends on
+    /// no period.
     static func isCmdlet(_ word: String, in tokens: [Substring]) -> Bool {
-        guard word.range(of: #"-\p{Lu}"#, options: .regularExpression) != nil else { return false }
-        return cmdletVerbs.contains(word.prefix { $0 != "-" })
-            || tokens.dropFirst().contains { token in
-                guard let first = token.first else { return false }
-                return "\"'".contains(first) || first == "-" && token.dropFirst().first?.isLetter == true
-                    || token.range(of: #"\$[\p{L}_{(]"#, options: .regularExpression) != nil
-            }
+        guard word.range(of: #"^[^-]+-\p{Lu}[^-]*$"#, options: .regularExpression) != nil else { return false }
+        let holdsArguments = tokens.dropFirst().contains { token in
+            guard let first = token.first else { return false }
+            return "\"'".contains(first) || first == "-" && token.dropFirst().first?.isLetter == true
+                || token.range(of: #"\$[\p{L}_{(]"#, options: .regularExpression) != nil
+        }
+        let endsAsSentence = tokens.last?.last.map(sentenceEnds.contains) ?? false
+        return holdsArguments || cmdletVerbs.contains(word.prefix { $0 != "-" }) && !endsAsSentence
     }
 
     // MARK: Code outside code listings

@@ -588,8 +588,11 @@ public struct VisionPipeline: OCREngine {
     /// or a label of another language starts on none of these words).
     ///
     /// A line on "#!" tells by its interpreter: `#!/usr/bin/env node` starts a script whose comments are on "//". And
-    /// a line that opens a block must read as code (`TextAssembler.isCodeLike`): one of the page's prose starts on
-    /// such a word and ends on a colon too ("with the default settings:"), and tells nothing of the listing under it.
+    /// a line that opens a block tells nothing where it reads as prose, three words or more of lowercase letters alone
+    /// before its colon: a sentence of the page starts on such a word and ends on a colon too ("with the default
+    /// settings:"). Code is shorter (`else:`, `except ValueError:`) or holds more than such words, a call, an
+    /// operator, a name with a capital (`with open(path) as f:`). `for item in items:` reads as prose too, and what
+    /// tells then is another line of the listing.
     static func isPythonLike(_ lines: [String]) -> Bool {
         lines.contains { text in
             let line = text.trimmingCharacters(in: .whitespaces)
@@ -600,8 +603,10 @@ public struct VisionPipeline: OCREngine {
                 return interpreter?.hasPrefix("python") ?? false
             }
             if line.range(of: #"^(#( |$)|(def|elif) )"#, options: .regularExpression) != nil { return true }
-            return TextAssembler.isCodeLike(line)
-                && line.range(of: #"^(if|for|while|with|class|else|try|except|finally|async)\b.*:$"#, options: .regularExpression) != nil
+            guard line.range(of: #"^(if|for|while|with|class|else|try|except|finally|async)\b.*:$"#, options: .regularExpression) != nil
+            else { return false }
+            let words = line.dropLast().split(whereSeparator: \.isWhitespace)
+            return words.count < 3 || !words.allSatisfy { $0.allSatisfy(\.isLowercase) }
         }
     }
 

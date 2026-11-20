@@ -2009,7 +2009,9 @@ a variable or an element of a list. A bracket in a string or a comment opens not
 `let x = "{";`, a line reading `x` stays). "//" starts a comment unless the listing is written as Python is
 (`isPythonLike`: a comment on "#", `def` or `elif`, a block opened on ":"), where it divides: the "}" after
 `size // page_size` closes its dictionary. A "#!" line tells by its interpreter (`#!/usr/bin/env node` starts a script
-with "//" comments), and a line that opens a block must read as code: "with the default settings:" is the page's prose. Nothing is put where the code closes the bracket itself further down
+with "//" comments), and a line that opens a block tells nothing where it reads as prose, three words or more of
+lowercase letters alone before its colon ("with the default settings:", and `for item in items:` too; `with open(path)
+as f:` and `except ValueError:` are code). Nothing is put where the code closes the bracket itself further down
 (under `let values = [`, a line reading `1` is an element when the `]` follows): counted as the closer, the row would
 leave a closer of the code with nothing to close. Where every closer still finds a bracket, the row is the one the
 code lacks: after `const handlers = { submit: () => {`, the unread "}" before `};`. An opening brace read as "1", "l", or
@@ -2046,6 +2048,9 @@ when the app restarts."), which a command rarely does; its first word is no keyw
 (`Write-Host`), and it calls nothing: `echo Welcome to your home directory` and `raise ValueError("This option is not
 available in this mode")` stay code. A capital after a hyphen makes a cmdlet only with one of PowerShell's verbs before
 it (the approved ones, and `ForEach`, `Sort`, `Tee`, `Where`), a parameter (`-Path`), a quote, or a variable on the line: "Wi-Fi is required to pair the device." is a sentence.
+The verbs are English words, so a verb alone makes none where the line ends as a sentence does ("Open-Source libraries
+are listed in the appendix."; `Format-Table Name, Length, Mode` ends on no period), and a name of more than two parts
+is none at all ("Step-By-Step").
 What only the listing makes code stays code: `break`, a string, a `#` comment, `total = count if ready else zero`. Not
 handled: a sentence inside a listing (a docstring's text) is translated too, and one that names a call ("Call
 read(url) to load the image.") or starts on an acronym ("JSON is…") is left as code.

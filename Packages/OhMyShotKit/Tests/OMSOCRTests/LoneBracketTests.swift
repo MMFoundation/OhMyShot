@@ -121,7 +121,7 @@ struct LoneBracketTests {
         #expect(texts(python, glyphs: [glyph(indent: 1, row: 3)]) == python.map(\.text) + ["]"])
         #expect(VisionPipeline.codeBrackets("size // page_size}", slashesComment: false).map(\.character) == ["}"])
         // What tells such a listing: a comment on "#", `def` or `elif`, a block opened on ":". A `case` or a label is none.
-        for line in ["# the pages", "#!/usr/bin/env python3", "elif size > 0:", "for item in items:", "else:", "class Reader:"] {
+        for line in ["# the pages", "#!/usr/bin/env python3", "elif size > 0:", "for item in self.items:", "else:", "class Reader:"] {
             #expect(VisionPipeline.isPythonLike([line]), "\(line)")
         }
         for line in ["case .ready:", "default:", "outer:", "#include <stdio.h>", "let pages = size / pageSize // per page", "format(size):"] {
@@ -135,6 +135,22 @@ struct LoneBracketTests {
         let page = [line("with the default settings:", row: 0), line("let steps = [", row: 1), line("load,", indent: 1, row: 2), line("// retry (later", row: 3)]
         #expect(!VisionPipeline.isPythonLike(page.map(\.text)))
         #expect(texts(page, glyphs: [glyph(row: 4)]) == page.map(\.text) + ["]"])
+    }
+
+    @Test func aBlockOpenedOnAColonTellsPythonUnlessItReadsAsProse() {
+        // The one line of each listing that tells Python. Under it "//" divides, the "}" after it closes the
+        // dictionary, and the glyph nothing read under `pages` closes the list.
+        for opener in ["with open(path) as f:", "except ValueError:"] {
+            let listing = [line(opener, row: 0), line("pages = [{", indent: 1, row: 1), line(#""total": size // page_size},"#, indent: 2, row: 2)]
+            #expect(texts(listing, glyphs: [glyph(indent: 1, row: 3)]) == listing.map(\.text) + ["]"], "\(opener)")
+        }
+        for line in ["try:", "else:", "if ready:", "while len(queue) > 0:"] {
+            #expect(VisionPipeline.isPythonLike([line]), "\(line)")
+        }
+        // Three words or more of lowercase letters alone are a sentence's, and `for item in items:` reads as one too.
+        for line in ["with the default settings:", "for those still in doubt:", "for item in items:"] {
+            #expect(!VisionPipeline.isPythonLike([line]), "\(line)")
+        }
     }
 
     @Test func aScriptOfAnotherInterpreterIsNotPython() {

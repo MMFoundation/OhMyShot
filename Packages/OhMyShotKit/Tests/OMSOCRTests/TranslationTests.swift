@@ -189,6 +189,22 @@ struct TranslationUnitTests {
         }
     }
 
+    @Test func aCompoundThatStartsOnOneOfPowerShellsVerbsIsStillProse() {
+        // "Open" and "Pop" are verbs of PowerShell's, and words of English: above two lines of Swift, a line that ends
+        // as a sentence does is one.
+        for sentence in ["Open-Source libraries are listed in the appendix.", "Pop-Up windows close on Escape."] {
+            let lines = [line(sentence, y: 0), line("let image = try await read(url)", y: 48), line("let text = try await recognize(image)", y: 72)]
+            #expect(TextAssembler.isCodeListing(lines))
+            #expect(TranslationUnits.group(lines).map(\.skip) == [nil, .code, .code], "\(sentence)")
+        }
+        // A cmdlet's name is a verb and one word, whatever the line ends on.
+        #expect(TranslationUnits.isSentence("Step-By-Step guides are listed in the appendix"))
+        // A command ends on no period, and one that does still holds a parameter.
+        for command in ["Format-Table Name, Length, Mode", "Get-Greeting -Name guest for the new user."] {
+            #expect(!TranslationUnits.isSentence(command), "\(command)")
+        }
+    }
+
     @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {
         // A paragraph, then a table's rows (TableMerge): each row alone, left as on the image, which one run of text
         // drawn across the table would cover.
