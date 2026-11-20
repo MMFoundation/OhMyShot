@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import OMSCore
 import Testing
 @testable import OMSRecording
 
@@ -61,5 +62,57 @@ struct RecordingRecoveryTests {
         #expect(movie.duration >= 2)
         #expect(movie.hasAudio)
         #expect(try await TestMedia.frameCount(of: finished) >= 60)
+    }
+
+    @Test func telemetryCheckpointsStayWithTheirDraftAndAreRemovedTogether() throws {
+        let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: drafts.directory) }
+        let draft = try drafts.create(.init(startedAt: .now, appName: "Xcode", output: .studio))
+        try Data([0]).write(to: draft.movieURL)
+        try Data([0]).write(to: draft.cameraURL)
+        try Data("{\"telemetry\":true}".utf8).write(to: draft.telemetryURL)
+
+        let found = drafts.leftovers()
+        #expect(found.count == 1)
+        #expect(found[0].id == draft.id)
+        #expect(draft.telemetryURL.lastPathComponent == "\(draft.id.uuidString).telemetry.json")
+
+        drafts.remove(draft)
+        #expect(!FileManager.default.fileExists(atPath: draft.movieURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: draft.cameraURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: draft.telemetryURL.path(percentEncoded: false)))
+        #expect(drafts.leftovers().isEmpty)
+    }
+
+    @Test func diskSpaceChecksEnforceStartAndRecordingThresholds() {
+        let nonExistent = FileManager.default.temporaryDirectory.appending(path: "Missing-\(UUID().uuidString)/Drafts")
+        let drafts = RecordingDrafts(directory: nonExistent)
+        var probedURL: URL?
+        let lowToStart = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesToStart) { url in
+            probedURL = url
+            return RecordingDrafts.minimumFreeBytesToStart - 1
+        }
+        #expect(probedURL != nil)
+        #expect(FileManager.default.fileExists(atPath: probedURL!.path(percentEncoded: false)))
+        #expect(lowToStart == .insufficient(
+            availableBytes: RecordingDrafts.minimumFreeBytesToStart - 1,
+            requiredBytes: RecordingDrafts.minimumFreeBytesToStart
+        ))
+
+        let okToStart = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesToStart) { _ in
+            RecordingDrafts.minimumFreeBytesToStart
+        }
+        #expect(okToStart == .sufficient(availableBytes: RecordingDrafts.minimumFreeBytesToStart))
+
+        let lowWhileRecording = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesWhileRecording) { _ in
+            RecordingDrafts.minimumFreeBytesWhileRecording - 1024
+        }
+        #expect(lowWhileRecording == .insufficient(
+            availableBytes: RecordingDrafts.minimumFreeBytesWhileRecording - 1024,
+            requiredBytes: RecordingDrafts.minimumFreeBytesWhileRecording
+        ))
+
+        let unreadable = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesToStart) { _ in nil }
+        #expect(unreadable == .sufficient(availableBytes: nil))
     }
 }

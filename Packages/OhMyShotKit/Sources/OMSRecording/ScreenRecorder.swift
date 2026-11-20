@@ -53,6 +53,11 @@ public final class ScreenRecorder {
     /// The stream stopped on its own (a display went away, Screen Recording was turned off, or the system's
     /// own control stopped it): the recording so far should be finished and kept.
     public var onStreamStopped: ((any Error) -> Void)?
+    /// The movie writer failed while recording (disk full, encoder error, etc.): the session should stop
+    /// immediately and salvage what was written up to the last committed fragment.
+    public var onWriterFailed: ((RecordingWriter.Failure) -> Void)?
+    /// Fired once when the first video frame lands in the movie, with its host-clock timestamp.
+    public var onFirstFrame: ((CMTime) -> Void)?
 
     private let writer: RecordingWriter
     private let queue = DispatchSerialQueue(label: "OhMyShot.recording", qos: .userInitiated)
@@ -63,6 +68,7 @@ public final class ScreenRecorder {
     private var startedAt: ContinuousClock.Instant?
     private var pausedFor: Duration = .zero
     private var pausedSince: ContinuousClock.Instant?
+    private var pendingWriterFailure: RecordingWriter.Failure?
 
     public init(_ request: Request) throws {
         self.request = request
@@ -105,6 +111,14 @@ public final class ScreenRecorder {
         output.onStop = { [weak self] error in
             Task { @MainActor in self?.streamStopped(error) }
         }
+        await writer.setCallbacks(
+            onFirstFrame: { [weak self] time in
+                Task { @MainActor in self?.onFirstFrame?(time) }
+            },
+            onFailure: { [weak self] failure in
+                Task { @MainActor in self?.writerFailed(failure) }
+            }
+        )
         do {
             try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
             if request.audio.system { try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: queue) }
@@ -122,6 +136,10 @@ public final class ScreenRecorder {
         // Kept from App Nap and idle sleep while recording; the display may still sleep.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Recording the screen")
         Log.recording.notice("Recording \(self.request.format.width, privacy: .public)x\(self.request.format.height, privacy: .public) \(self.request.format.codec.rawValue, privacy: .public) at \(self.request.format.framesPerSecond, privacy: .public) fps")
+        if let pending = pendingWriterFailure {
+            pendingWriterFailure = nil
+            writerFailed(pending)
+        }
     }
 
     /// How long the recording has run, pauses left out.
@@ -165,11 +183,24 @@ public final class ScreenRecorder {
         stream = nil
         // Taken once the stream has stopped, so no frame comes after the end.
         let end = Self.hostTime()
-        defer { release() }
+        defer {
+            state = .finished
+            release()
+        }
         let statistics = try await writer.finish(at: end)
-        state = .finished
         Log.recording.notice("Recording finished: \(statistics.duration.seconds, format: .fixed(precision: 2), privacy: .public) s, \(statistics.framesWritten, privacy: .public) frames written, \(statistics.framesDropped, privacy: .public) dropped, \(statistics.audioBuffersWritten + statistics.microphoneBuffersWritten, privacy: .public) audio buffers")
         return statistics
+    }
+
+    /// The writer's statistics as recorded so far, including the first frame's host time and pauses.
+    public func currentStatistics() async -> RecordingWriter.Statistics {
+        await writer.currentStatistics
+    }
+
+    /// Checks for an asynchronous writer failure when no new samples are arriving (such as a still screen).
+    public func checkWriterHealth() async {
+        guard state == .recording || state == .paused else { return }
+        await writer.checkHealth()
     }
 
     /// Stops and throws the movie away.
@@ -195,6 +226,15 @@ public final class ScreenRecorder {
         Log.recording.error("The recording stream stopped: \(String(describing: error), privacy: .public)")
         stream = nil
         onStreamStopped?(error)
+    }
+
+    private func writerFailed(_ failure: RecordingWriter.Failure) {
+        guard state == .recording || state == .paused else {
+            if state == .idle { pendingWriterFailure = failure }
+            return
+        }
+        Log.recording.error("The recording writer failed after \(failure.writtenDuration.seconds, format: .fixed(precision: 2), privacy: .public) s: \(failure.message, privacy: .public)")
+        onWriterFailed?(failure)
     }
 
     private func release() {

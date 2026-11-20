@@ -25,6 +25,16 @@ public struct RecordingDrafts: Sendable {
         }
     }
 
+    /// Minimum free space required on the draft volume before starting a recording (500 MiB).
+    public static let minimumFreeBytesToStart: Int64 = 500 * 1_024 * 1_024
+    /// Minimum free space kept while recording; dropping below this stops early so finishing still has room (250 MiB).
+    public static let minimumFreeBytesWhileRecording: Int64 = 250 * 1_024 * 1_024
+
+    public enum DiskSpaceStatus: Equatable, Sendable {
+        case sufficient(availableBytes: Int64?)
+        case insufficient(availableBytes: Int64, requiredBytes: Int64)
+    }
+
     /// One recording in progress, or left behind.
     public struct Draft: Equatable, Sendable {
         public let id: UUID
@@ -34,6 +44,11 @@ public struct RecordingDrafts: Sendable {
         /// Where a Studio recording's camera is written beside it, in a movie of its own.
         public var cameraURL: URL {
             movieURL.deletingPathExtension().appendingPathExtension("camera.mov")
+        }
+
+        /// Where a Studio recording's telemetry checkpoint is written beside it.
+        public var telemetryURL: URL {
+            movieURL.deletingPathExtension().appendingPathExtension("telemetry.json")
         }
     }
 
@@ -48,6 +63,37 @@ public struct RecordingDrafts: Sendable {
         RecordingDrafts(directory: AppFolders.support.appending(path: "Recordings in Progress", directoryHint: .isDirectory))
     }
 
+    /// Checks free space on the volume hosting the drafts folder. Uses the nearest existing ancestor when
+    /// the drafts folder has not been created yet.
+    public func checkDiskSpace(
+        requiring minimumBytes: Int64,
+        measure: (URL) -> Int64? = Self.volumeAvailableBytes(at:)
+    ) -> DiskSpaceStatus {
+        let probe = Self.existingAncestor(of: directory)
+        guard let available = measure(probe) else { return .sufficient(availableBytes: nil) }
+        if available < minimumBytes {
+            return .insufficient(availableBytes: available, requiredBytes: minimumBytes)
+        }
+        return .sufficient(availableBytes: available)
+    }
+
+    public static func volumeAvailableBytes(at url: URL) -> Int64? {
+        let keys: Set<URLResourceKey> = [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]
+        guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+        if let important = values.volumeAvailableCapacityForImportantUsage { return important }
+        return values.volumeAvailableCapacity.map { Int64($0) }
+    }
+
+    private static func existingAncestor(of url: URL) -> URL {
+        var current = url
+        while !FileManager.default.fileExists(atPath: current.path(percentEncoded: false)) {
+            let parent = current.deletingLastPathComponent()
+            if parent.path(percentEncoded: false) == current.path(percentEncoded: false) { break }
+            current = parent
+        }
+        return current
+    }
+
     /// Makes room for a new recording and notes when it began. The movie is written at the draft's URL.
     public func create(_ info: Info, id: UUID = UUID()) throws -> Draft {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -56,10 +102,11 @@ public struct RecordingDrafts: Sendable {
         return draft
     }
 
-    /// Removes a draft, its movies and its record.
+    /// Removes a draft, its movies, its telemetry checkpoint, and its record.
     public func remove(_ draft: Draft) {
         try? FileManager.default.removeItem(at: draft.movieURL)
         try? FileManager.default.removeItem(at: draft.cameraURL)
+        try? FileManager.default.removeItem(at: draft.telemetryURL)
         try? FileManager.default.removeItem(at: infoURL(for: draft.id))
     }
 
