@@ -12,9 +12,12 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Added
 
 - Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
+- All-In-One highlights the window under the pointer until something is chosen, and a click frames it, cut to the display it was clicked on, to take every way an area is taken (or as the area for Text, Scrolling, or Record chosen first), named after that window rather than the app in front. A drag still chooses a free area. (by [@fzlzjerry])
+- All-In-One's bar has Measure after Record (M): the overlay turns into Measure in place, on the screen as it was frozen, without closing and opening again. (by [@fzlzjerry])
 
 ### Changed
 
+- All-In-One opens with nothing chosen instead of framing the area it last took, which read as reusing it: Settings › Capture › Selecting › All-In-One remembers the last area is off by default now, and L brings back the last area taken since OhMyShot opened, whatever it was for. Turning it on brings the old behavior back, and a choice already made there is kept. (by [@fzlzjerry])
 - Settings › General › Usage Data is now on by default, also on a Mac where it was never turned on or off. It sends the same daily counts as before (screenshots, recordings, and text recognitions, with the app's version, the macOS version, and a random ID that changes every day); turning it off still stops sending and deletes the unsent counts, and Reset to Default Settings now keeps whichever choice was made.
 - The one-time invitation that comes after using OhMyShot for a while now also asks for a star on GitHub: Star on GitHub, the default, opens OhMyShot's repository, beside Join Discord. Anyone who already saw the Discord-only invitation is asked once more.
 
@@ -25,6 +28,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Studio keeps a recording's draft until its pointer, clicks, keys, and camera are all saved, and says which were not. A recording recovered after a crash or a forced quit opens in Studio with them.
 - Studio's automatic zooms: shortcuts no longer count as typing, and typing with no click near it places no zoom; a zoom placed by hand no longer removes the automatic zooms on either side of it; a drag too wide to frame places none; the camera no longer leaves a place before its last click there; and two zooms on the same place hand over without pulling back to the whole recording.
 - Auto-scroll stops at the end of a page at every speed and view height.
+- In Measure and Pick Color, Command-C, Return, and C now act where the crosshair is after it moves onto another display without a click; they used to read the display the session began on, and copied nothing. (by [@fzlzjerry])
 
 ## [0.2.0] - 2026-11-19
 
