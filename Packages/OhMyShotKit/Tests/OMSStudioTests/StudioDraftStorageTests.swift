@@ -334,4 +334,209 @@ struct StudioDraftStorageTests {
         #expect(deletedOutcome == .discarded)
         #expect(history.items().isEmpty)
     }
+
+    @Test func recoveryDropsDraftWhenHistoryMovieWasReplacedByEdit() async throws {
+        let root = temporaryFolder()
+        let draftDir = root.appending(path: "Draft", directoryHint: .isDirectory)
+        let historyDir = root.appending(path: "History", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: draftDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let history = HistoryStore(directory: historyDir)
+        let originalMovie = root.appending(path: "original.mp4")
+        try Data("original-untrimmed-movie-bytes".utf8).write(to: originalMovie)
+        let entry = try history.add(
+            movingFileAt: originalMovie, name: "Studio Clip", kind: .recording,
+            pixelWidth: 1600, pixelHeight: 1000, appName: "Xcode", duration: 6.0, pixelsPerPoint: 2
+        )
+        let keptValues = try history.fileURL(for: entry).resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let keptSize = Int64(try #require(keptValues.fileSize))
+        let keptModified = try #require(keptValues.contentModificationDate).timeIntervalSince1970
+
+        let draftCamera = draftDir.appending(path: "clip.camera.mov")
+        let draftTelemetryURL = draftDir.appending(path: "clip.telemetry.json")
+        try Data("camera-bytes".utf8).write(to: draftCamera)
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2,
+            samples: [.init(time: 0, x: 400, y: 300, cursor: 0)],
+            camera: .init(start: 0, fills: [], bubble: StudioProject.Camera())
+        )
+        let draftTelemetry = StudioDraftTelemetry(telemetry: telemetry, isRetimed: true, cameraWanted: true)
+        try JSONEncoder().encode(draftTelemetry).write(to: draftTelemetryURL, options: .atomic)
+
+        // Scenario A: telemetry originally failed while project.json saved (leaving an incomplete .studio folder),
+        // openStudio fell back to the regular recording editor, and keepEdit trimmed the movie via replaceRecording.
+        let projectDir = history.studioURL(for: entry)
+        let partial = StudioProjectStorage.save(
+            telemetry: telemetry, project: StudioProject(), cameraURL: draftCamera, to: projectDir,
+            writeData: { data, url in
+                if url.lastPathComponent == StudioFiles.telemetry { throw CocoaError(.fileWriteOutOfSpace) }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        #expect(!partial.savedTelemetry && partial.savedProject && partial.savedCamera)
+        #expect(history.hasStudioProject(entry))
+
+        let trimmedMovie = root.appending(path: "trimmed.mp4")
+        try Data("trimmed-movie".utf8).write(to: trimmedMovie)
+        _ = try history.replaceRecording(of: entry, withFileAt: trimmedMovie, pixelWidth: 1600, pixelHeight: 1000, duration: 3.0)
+        #expect(history.hasOriginal(entry))
+
+        let editedOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            expectedMovieByteCount: keptSize,
+            expectedMovieModifiedAt: keptModified,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        #expect(editedOutcome == .movieReplaced)
+        #expect(!history.hasStudioProject(entry))
+        #expect(!FileManager.default.fileExists(atPath: projectDir.appending(path: StudioFiles.telemetry).path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: projectDir.appending(path: StudioFiles.camera).path(percentEncoded: false)))
+
+        // Even without a stored fingerprint (older draft), history.hasOriginal alone blocks attaching telemetry.
+        let editedWithoutFingerprint = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        #expect(editedWithoutFingerprint == .movieReplaced)
+
+        // Scenario B: the movie file was replaced without keeping `.original` (e.g., flattened or externally
+        // replaced); comparing the recorded movie size / modification time still detects the replacement.
+        try FileManager.default.removeItem(at: history.originalURL(for: entry))
+        #expect(!history.hasOriginal(entry))
+        let flattenedOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            expectedMovieByteCount: keptSize,
+            expectedMovieModifiedAt: keptModified,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        #expect(flattenedOutcome == .movieReplaced)
+        #expect(!FileManager.default.fileExists(atPath: projectDir.appending(path: StudioFiles.telemetry).path(percentEncoded: false)))
+    }
+
+    @Test func recoveryInvalidatesPreviousStudioExportWhenAddingMedia() async throws {
+        let root = temporaryFolder()
+        let draftDir = root.appending(path: "Draft", directoryHint: .isDirectory)
+        let historyDir = root.appending(path: "History", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: draftDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let history = HistoryStore(directory: historyDir)
+        let originalMovie = root.appending(path: "original.mp4")
+        try Data("original-recording-bytes".utf8).write(to: originalMovie)
+        let entry = try history.add(
+            movingFileAt: originalMovie, name: "Studio Clip", kind: .recording,
+            pixelWidth: 1600, pixelHeight: 1000, appName: "Xcode", duration: 6.0, pixelsPerPoint: 2
+        )
+        let keptValues = try history.fileURL(for: entry).resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let keptSize = Int64(try #require(keptValues.fileSize))
+        let keptModified = try #require(keptValues.contentModificationDate).timeIntervalSince1970
+
+        let draftCamera = draftDir.appending(path: "clip.camera.mov")
+        let draftTelemetryURL = draftDir.appending(path: "clip.telemetry.json")
+        try Data("camera-bytes".utf8).write(to: draftCamera)
+
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2,
+            samples: [.init(time: 0, x: 400, y: 300, cursor: 0)],
+            camera: .init(start: 0, fills: [], bubble: StudioProject.Camera(corner: .bottomLeft))
+        )
+        let draftTelemetry = StudioDraftTelemetry(
+            telemetry: telemetry, isRetimed: true, movieStart: 100,
+            cameraStart: 100, cameraBubble: StudioProject.Camera(corner: .bottomLeft),
+            cameraWanted: true, showsClicks: true, showsKeystrokes: false
+        )
+        try JSONEncoder().encode(draftTelemetry).write(to: draftTelemetryURL, options: .atomic)
+
+        // Initial save: camera copy failed, telemetry saved with cameraFailed, project saved.
+        let projectDir = history.studioURL(for: entry)
+        var project = StudioProject(zooms: [.init(start: 1, end: 3, scale: 2, isAutomatic: true)])
+        project.camera = StudioProject.Camera(corner: .bottomLeft)
+        let partial = StudioProjectStorage.save(
+            telemetry: telemetry, project: project, cameraURL: draftCamera, to: projectDir,
+            copyCamera: { _, _ in throw CocoaError(.fileWriteOutOfSpace) }
+        )
+        #expect(!partial.isComplete && !partial.savedCamera)
+
+        // User opens Studio before relaunch and exports a camera-less movie.
+        let cameraLessExport = root.appending(path: "exported-no-camera.mp4")
+        try Data("camera-less-export".utf8).write(to: cameraLessExport)
+        let exportedEntry = try history.replaceStudioMovie(
+            of: entry, withFileAt: cameraLessExport, pixelWidth: 1600, pixelHeight: 1000, duration: 6.0,
+            project: try JSONEncoder().encode(project)
+        )
+        #expect(history.hasStudioMovie(exportedEntry))
+        #expect(history.studioMovieProject(of: exportedEntry) != nil)
+
+        // Relaunch recovery adds camera.mov and updates telemetry.json. Because source.mp4 matches the kept
+        // recording, recovery succeeds (does not treat the Studio export as an external edit) and invalidates
+        // the previous camera-less export so Studio will re-export with the camera.
+        let outcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            expectedMovieByteCount: keptSize,
+            expectedMovieModifiedAt: keptModified,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        guard case .completed(let result) = outcome else {
+            Issue.record("Expected completed recovery after Studio export, got \(outcome)")
+            return
+        }
+        #expect(result.isComplete)
+        #expect(result.addedMedia)
+        #expect(history.hasStudioMovie(exportedEntry))
+        #expect(history.studioMovieProject(of: exportedEntry) == nil)
+        #expect(try history.studioSource(for: exportedEntry) == history.studioSourceURL(for: exportedEntry))
+
+        // Verify the exact openStudio check now marks the document as needing a fresh export.
+        let recoveredTelemetry = try JSONDecoder().decode(
+            StudioTelemetry.self, from: Data(contentsOf: projectDir.appending(path: StudioFiles.telemetry))
+        )
+        let made = history.studioMovieProject(of: exportedEntry).flatMap { try? JSONDecoder().decode(StudioProject.self, from: $0) }
+        let hasBeenExported = made?.opened(for: recoveredTelemetry, duration: 6.0) == project.opened(for: recoveredTelemetry, duration: 6.0)
+        #expect(!hasBeenExported)
+        let document = StudioDocument(
+            source: try history.studioSource(for: exportedEntry), telemetry: recoveredTelemetry, project: project,
+            duration: 6.0, recordingSize: CGSize(width: 1600, height: 1000), folder: projectDir,
+            hasBeenExported: hasBeenExported, background: { _, _ in nil }
+        )
+        defer { document.releasePreview() }
+        #expect(document.hasUnexportedChanges)
+
+        // If Studio later re-exports WITH camera and a subsequent recovery only restores missing project.json
+        // (no media added), the fresh export marker stays valid.
+        let cameraExport = root.appending(path: "exported-with-camera.mp4")
+        try Data("export-with-camera".utf8).write(to: cameraExport)
+        let reexported = try history.replaceStudioMovie(
+            of: exportedEntry, withFileAt: cameraExport, pixelWidth: 1600, pixelHeight: 1000, duration: 6.0,
+            project: try JSONEncoder().encode(project)
+        )
+        try FileManager.default.removeItem(at: projectDir.appending(path: StudioFiles.project))
+        let projectOnlyOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            expectedMovieByteCount: keptSize,
+            expectedMovieModifiedAt: keptModified,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        guard case .completed(let projectOnlyResult) = projectOnlyOutcome else {
+            Issue.record("Expected completed project-only recovery, got \(projectOnlyOutcome)")
+            return
+        }
+        #expect(!projectOnlyResult.addedMedia)
+        #expect(history.studioMovieProject(of: reexported) != nil)
+    }
 }

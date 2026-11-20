@@ -189,4 +189,29 @@ struct RecordingRecoveryTests {
         #expect(await drafts.pruneIfExpiredAndUnreadable(corruptOld))
         #expect(!FileManager.default.fileExists(atPath: corruptOld.movieURL.path(percentEncoded: false)))
     }
+
+    @Test func markKeptInHistoryKeepsDraftMovieWhenLinkWriteFails() throws {
+        let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: drafts.directory) }
+
+        let draft = try drafts.create(.init(startedAt: .now, appName: "Xcode", output: .studio))
+        try Data("movie".utf8).write(to: draft.movieURL)
+        try Data("camera".utf8).write(to: draft.cameraURL)
+        try Data("{\"telemetry\":true}".utf8).write(to: draft.telemetryURL)
+
+        #expect(throws: CocoaError.self) {
+            try drafts.markKeptInHistory(draft, historyID: UUID()) { _, _ in
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+        }
+
+        // The draft movie and Studio assets must remain on disk so launch recovery does not strand them.
+        #expect(FileManager.default.fileExists(atPath: draft.movieURL.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: draft.cameraURL.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: draft.telemetryURL.path(percentEncoded: false)))
+        let found = drafts.leftovers()
+        #expect(found.count == 1)
+        #expect(found.first?.id == draft.id)
+        #expect(found.first?.info?.keptHistoryID == nil)
+    }
 }

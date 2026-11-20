@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import OMSCore
 import OSLog
@@ -214,10 +215,19 @@ nonisolated public struct StudioProjectSaveResult: Equatable, Sendable {
     public var savedProject: Bool
     public var expectedCamera: Bool
     public var savedCamera: Bool
+    /// Whether this call actually copied `camera.mov` onto disk (as opposed to finding it already present).
+    public var wroteCamera: Bool
+    /// Whether this call actually wrote or updated `telemetry.json` on disk.
+    public var wroteTelemetry: Bool
     public var errorDescription: String?
 
     public var isComplete: Bool {
         savedTelemetry && savedProject && (!expectedCamera || savedCamera)
+    }
+
+    /// Whether this save added or updated Studio media (`camera.mov` or `telemetry.json`).
+    public var addedMedia: Bool {
+        wroteCamera || wroteTelemetry
     }
 
     public init(
@@ -225,12 +235,16 @@ nonisolated public struct StudioProjectSaveResult: Equatable, Sendable {
         savedProject: Bool,
         expectedCamera: Bool,
         savedCamera: Bool,
+        wroteCamera: Bool = false,
+        wroteTelemetry: Bool = false,
         errorDescription: String? = nil
     ) {
         self.savedTelemetry = savedTelemetry
         self.savedProject = savedProject
         self.expectedCamera = expectedCamera
         self.savedCamera = savedCamera
+        self.wroteCamera = wroteCamera
+        self.wroteTelemetry = wroteTelemetry
         self.errorDescription = errorDescription
     }
 }
@@ -241,6 +255,9 @@ nonisolated public enum StudioRecoveryOutcome: Equatable, Sendable {
     case completed(StudioProjectSaveResult)
     /// At least one Studio asset still could not be saved; keep the draft for a later retry.
     case incomplete(StudioProjectSaveResult)
+    /// The linked history entry's movie was replaced after it was kept (e.g. trimmed in the recording editor),
+    /// so recovered telemetry and camera no longer match it and the draft should be discarded.
+    case movieReplaced
     /// The linked history entry is gone or the draft has no recoverable Studio telemetry; safe to discard the draft.
     case discarded
 }
@@ -292,6 +309,7 @@ nonisolated public enum StudioProjectStorage {
                 do {
                     try copyCamera(cameraURL, cameraDestination)
                     result.savedCamera = true
+                    result.wroteCamera = true
                 } catch {
                     errors.append(error.localizedDescription)
                     writtenTelemetry.camera = nil
@@ -318,6 +336,7 @@ nonisolated public enum StudioProjectStorage {
                 let data = try JSONEncoder().encode(writtenTelemetry)
                 try writeData(data, telemetryDestination)
                 result.savedTelemetry = true
+                result.wroteTelemetry = true
             } catch {
                 errors.append(error.localizedDescription)
             }
@@ -356,6 +375,8 @@ nonisolated public enum StudioProjectStorage {
         telemetryURL: URL,
         cameraURL: URL,
         in history: HistoryStore,
+        expectedMovieByteCount: Int64? = nil,
+        expectedMovieModifiedAt: TimeInterval? = nil,
         hasReadableVideo: (URL) async -> Bool,
         copyCamera: (URL, URL) throws -> Void = { source, destination in
             if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
@@ -368,16 +389,59 @@ nonisolated public enum StudioProjectStorage {
         }
     ) async -> StudioRecoveryOutcome {
         guard let entry = history.item(id: historyID) else { return .discarded }
+        let folder = history.studioURL(for: entry)
+        let studioSource = history.studioSourceURL(for: entry)
+        let hasStudioSource = FileManager.default.fileExists(atPath: studioSource.path(percentEncoded: false))
+
+        func cleanupIncompleteStudioFolderIfSafe() {
+            guard !hasStudioSource, !history.hasStudioMovie(entry),
+                  !FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.telemetry).path(percentEncoded: false))
+            else { return }
+            try? FileManager.default.removeItem(at: folder)
+        }
+
+        if history.hasOriginal(entry) {
+            cleanupIncompleteStudioFolderIfSafe()
+            return .movieReplaced
+        }
+        if history.hasStudioMovie(entry), !hasStudioSource {
+            return .movieReplaced
+        }
+        let sourceMovieURL = hasStudioSource ? studioSource : history.fileURL(for: entry)
+        if expectedMovieByteCount != nil || expectedMovieModifiedAt != nil {
+            guard let values = try? sourceMovieURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  let size = values.fileSize,
+                  let modified = values.contentModificationDate
+            else {
+                cleanupIncompleteStudioFolderIfSafe()
+                return .movieReplaced
+            }
+            if let expectedMovieByteCount, Int64(size) != expectedMovieByteCount {
+                cleanupIncompleteStudioFolderIfSafe()
+                return .movieReplaced
+            }
+            if let expectedMovieModifiedAt, abs(modified.timeIntervalSince1970 - expectedMovieModifiedAt) > 0.001 {
+                cleanupIncompleteStudioFolderIfSafe()
+                return .movieReplaced
+            }
+        }
+
         guard let data = try? Data(contentsOf: telemetryURL),
               let savedDraft = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data)
         else { return .discarded }
 
-        let folder = history.studioURL(for: entry)
         let existingCameraURL = folder.appending(path: StudioFiles.camera)
         let hasExistingCamera = await hasReadableVideo(existingCameraURL)
         let hasDraftCamera = await hasReadableVideo(cameraURL)
         let hasCamera = hasExistingCamera || hasDraftCamera
-        let duration = entry.duration ?? 0
+        let duration: Double
+        if !savedDraft.isRetimed, hasStudioSource,
+           let sourceDuration = try? await AVURLAsset(url: studioSource).load(.duration).seconds,
+           sourceDuration.isFinite, sourceDuration > 0 {
+            duration = sourceDuration
+        } else {
+            duration = entry.duration ?? 0
+        }
         let resolvedTelemetry = savedDraft.resolvedTelemetry(movieDuration: duration, hasCameraFile: hasCamera)
 
         var project = StudioProject(zooms: AutoZoom.zooms(for: resolvedTelemetry, duration: duration))
@@ -396,6 +460,9 @@ nonisolated public enum StudioProjectStorage {
             copyCamera: copyCamera,
             writeData: writeData
         )
+        if result.addedMedia {
+            history.invalidateStudioMovieExport(of: entry)
+        }
         return result.isComplete ? .completed(result) : .incomplete(result)
     }
 }

@@ -809,9 +809,10 @@ final class RecordingCoordinator {
                     kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight, appName: draft.info?.appName ?? plan?.appName,
                     duration: file.duration, pixelsPerPoint: draft.info?.pixelsPerPoint
                 )
+                let keptMovie = RecordingDrafts.Info.KeptMovie.measure(at: history.fileURL(for: entry))
                 var keptDraft = draft
                 do {
-                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id)
+                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie)
                 } catch {
                     Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 }
@@ -1103,6 +1104,8 @@ final class RecordingCoordinator {
             telemetryURL: draft.telemetryURL,
             cameraURL: draft.cameraURL,
             in: history,
+            expectedMovieByteCount: draft.info?.keptMovie?.byteCount,
+            expectedMovieModifiedAt: draft.info?.keptMovie?.modifiedAt,
             hasReadableVideo: RecordingDrafts.hasReadableVideo(at:)
         )
         switch outcome {
@@ -1111,6 +1114,9 @@ final class RecordingCoordinator {
             Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
         case .incomplete(let result):
             Log.recording.error("Recovering Studio assets for history \(historyID.uuidString, privacy: .public) still incomplete: \(result.errorDescription ?? "unknown error", privacy: .public)")
+        case .movieReplaced:
+            drafts.remove(draft)
+            Log.recording.notice("Dropped Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public) because the kept movie was replaced")
         case .discarded:
             drafts.remove(draft)
             Log.recording.notice("Removed orphaned Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public)")

@@ -10,6 +10,27 @@ import OMSCore
 public struct RecordingDrafts: Sendable {
     /// What is known about a recording before it is finished.
     public struct Info: Codable, Equatable, Sendable {
+        /// Size and modification time of the History movie when it was kept, so recovery can detect if
+        /// the movie was replaced (for example, trimmed in the recording editor) before relaunching.
+        public struct KeptMovie: Codable, Equatable, Sendable {
+            public var byteCount: Int64
+            /// `Date.timeIntervalSince1970` of the kept movie's modification date, preserving sub-second precision.
+            public var modifiedAt: TimeInterval
+
+            public init(byteCount: Int64, modifiedAt: TimeInterval) {
+                self.byteCount = byteCount
+                self.modifiedAt = modifiedAt
+            }
+
+            public static func measure(at url: URL) -> KeptMovie? {
+                guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                      let size = values.fileSize,
+                      let modified = values.contentModificationDate
+                else { return nil }
+                return KeptMovie(byteCount: Int64(size), modifiedAt: modified.timeIntervalSince1970)
+            }
+        }
+
         public var startedAt: Date
         /// The app that was in front when recording began, for the file's name.
         public var appName: String?
@@ -20,16 +41,19 @@ public struct RecordingDrafts: Sendable {
         /// The history entry already created for this draft's movie while Studio sidecar assets still
         /// remain to be copied or written into it.
         public var keptHistoryID: UUID?
+        /// Fingerprint of the History movie at the time `keptHistoryID` was recorded.
+        public var keptMovie: KeptMovie?
 
         public init(
             startedAt: Date, appName: String?, output: RecordingOutput = .video,
-            pixelsPerPoint: Double? = nil, keptHistoryID: UUID? = nil
+            pixelsPerPoint: Double? = nil, keptHistoryID: UUID? = nil, keptMovie: KeptMovie? = nil
         ) {
             self.startedAt = startedAt
             self.appName = appName
             self.output = output
             self.pixelsPerPoint = pixelsPerPoint
             self.keptHistoryID = keptHistoryID
+            self.keptMovie = keptMovie
         }
     }
 
@@ -112,22 +136,25 @@ public struct RecordingDrafts: Sendable {
         return draft
     }
 
-    /// Records that this draft's movie is already in History as `historyID` and removes the draft's screen
-    /// movie so launch recovery only retries missing Studio sidecar assets into that entry.
+    /// Records that this draft's movie is already in History as `historyID` (plus its file fingerprint when
+    /// provided) and removes the draft's screen movie only after that link is safely on disk. If writing the
+    /// link fails, the draft movie stays on disk so launch recovery does not strand the draft's Studio assets.
     @discardableResult
-    public func markKeptInHistory(_ draft: Draft, historyID: UUID) throws -> Draft {
-        var info = draft.info ?? Info(startedAt: .now, appName: nil, output: .studio)
-        info.keptHistoryID = historyID
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let data = try JSONEncoder.drafts.encode(info)
-        let url = infoURL(for: draft.id)
-        do {
-            try data.write(to: url, options: .atomic)
-            try? FileManager.default.removeItem(at: draft.movieURL)
-        } catch {
-            try? FileManager.default.removeItem(at: draft.movieURL)
+    public func markKeptInHistory(
+        _ draft: Draft,
+        historyID: UUID,
+        keptMovie: Info.KeptMovie? = nil,
+        writeInfo: (Data, URL) throws -> Void = { data, url in
             try data.write(to: url, options: .atomic)
         }
+    ) throws -> Draft {
+        var info = draft.info ?? Info(startedAt: .now, appName: nil, output: .studio)
+        info.keptHistoryID = historyID
+        info.keptMovie = keptMovie
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONEncoder.drafts.encode(info)
+        try writeInfo(data, infoURL(for: draft.id))
+        try? FileManager.default.removeItem(at: draft.movieURL)
         return Draft(id: draft.id, movieURL: draft.movieURL, info: info)
     }
 
