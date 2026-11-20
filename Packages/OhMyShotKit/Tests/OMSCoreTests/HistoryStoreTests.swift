@@ -19,6 +19,31 @@ struct HistoryStoreTests {
         #expect(FileManager.default.contents(atPath: store.fileURL(for: older).path(percentEncoded: false)) == Data([1]))
     }
 
+    @Test func concurrentCapturesWithTheSameNameKeepTheirOwnFilesAndRecords() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let items = try await withThrowingTaskGroup(of: (HistoryItem, UInt8).self) { group in
+            for byte: UInt8 in 0..<16 {
+                group.addTask {
+                    let item = try store.add(
+                        data: Data(repeating: byte, count: 128 * 1024), name: "Capture", fileExtension: "png",
+                        kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil
+                    )
+                    return (item, byte)
+                }
+            }
+            var result: [(HistoryItem, UInt8)] = []
+            for try await pair in group { result.append(pair) }
+            return result
+        }
+        #expect(Set(items.map { $0.0.fileName }).count == items.count)
+        #expect(Set(store.items().map(\.id)) == Set(items.map { $0.0.id }))
+        for (item, byte) in items {
+            #expect(store.item(id: item.id)?.fileName == item.fileName)
+            #expect(try Data(contentsOf: store.fileURL(for: item)) == Data(repeating: byte, count: 128 * 1024))
+        }
+    }
+
     /// A name with a slash in it (a shortcut's file may carry one) never takes another capture's file.
     @Test func aNameWithASlashKeepsItsOwnFile() throws {
         let store = makeStore()
@@ -52,6 +77,29 @@ struct HistoryStoreTests {
         #expect(FileManager.default.fileExists(atPath: source.path(percentEncoded: false)))
         #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == FileManager.default.contents(atPath: source.path(percentEncoded: false)))
         #expect(store.items().map(\.id) == [item.id])
+    }
+
+    @Test func copyingAndMovingSkipANameAlreadyClaimedByAnotherCapture() async throws {
+        let store = makeStore(), manager = FileManager.default
+        try manager.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: store.directory) }
+        let claim = store.directory.appending(path: "Capture.png.json")
+        try Data().write(to: claim)
+        let input = store.directory.appending(path: "input")
+        try manager.createDirectory(at: input, withIntermediateDirectories: false)
+        let source = input.appending(path: "Capture.png")
+        let context = try #require(CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let data = try ImageExporter.encoded(#require(context.makeImage()), as: .png)
+        try data.write(to: source)
+        let copied = try await store.add(copyOf: source)
+        let moved = try store.add(movingFileAt: source, name: "Capture", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        #expect(copied.fileName == "Capture (2).png")
+        #expect(moved.fileName == "Capture (3).png")
+        #expect(try Data(contentsOf: claim).isEmpty)
+        #expect(Set(store.items().map(\.id)) == [copied.id, moved.id])
     }
 
     /// A photo kept on its side, to be turned upright as it is shown (EXIF orientation 6), has its shown size in the

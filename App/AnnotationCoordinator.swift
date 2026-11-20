@@ -177,10 +177,10 @@ final class AnnotationCoordinator {
                 actions: Self.editorActions(
                     keep: { document, png, _ in
                         do {
-                            try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG).write(to: file)
-                            try png.write(to: picture, options: .atomic)
+                            let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
+                                .keep(at: file, preview: png, previewURL: picture)
                             Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
-                            return picture
+                            return preview
                         } catch {
                             Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
                             return nil

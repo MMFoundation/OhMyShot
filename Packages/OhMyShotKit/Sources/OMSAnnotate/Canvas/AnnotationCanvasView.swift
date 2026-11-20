@@ -519,7 +519,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func position(_ layer: MarkLayer, frames: Frames) {
         // The document point at the parent layer's corner.
         let parent = layer.superlayer === keptLayer ? frames.picture.origin : frames.shown.origin
-        let bounds = layer.mark.drawingBounds(scale: session.document.scale)
+        let bounds = layer.documentDrawingBounds
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0 else {
             layer.frame = .zero
             return
@@ -891,7 +891,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         guard images != redactionImages, !session.isInLiveChange else { return }
         redactionImages = images
         for layer in markLayers.values {
-            if case .redaction = layer.mark.shape { updateRedaction(layer) }
+            if case .redaction = layer.mark.shape {
+                updateRedaction(layer)
+                position(layer, frames: frames)
+            }
             updateGround(layer)
         }
     }

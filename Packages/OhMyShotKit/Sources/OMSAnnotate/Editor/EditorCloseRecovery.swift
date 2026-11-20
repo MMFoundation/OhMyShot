@@ -27,3 +27,18 @@ enum EditorCloseRecovery {
         }
     }
 }
+
+public enum EditorQuitGate {
+    public static func deferQuit(
+        closeEditors: (() async -> Bool)?,
+        finishWork: @escaping (@escaping (Bool) -> Void) -> Bool,
+        reply: @escaping (Bool) -> Void
+    ) -> Bool {
+        guard let closeEditors else { return finishWork(reply) }
+        Task {
+            guard await closeEditors() else { return reply(false) }
+            if !finishWork(reply) { reply(true) }
+        }
+        return true
+    }
+}

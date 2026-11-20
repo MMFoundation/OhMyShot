@@ -34,11 +34,9 @@ final class TextCaptureCoordinator {
     private let translator = Translator()
     private let highlight = TextSelectionHighlight()
     private let lens = TranslationLens()
-    private let hud = TextResultHUD()
+    private let selection = TextSelectionSession()
+    private var hud: TextResultHUD { selection.resultCard }
     private var warmup: Task<Void, Never>?
-    /// The reading the highlight shows, Capture Text's, Capture Formula's, or Translate Area's, however it was started:
-    /// Escape stops it (`cancelReading`).
-    private var selectionReading: (task: Task<Void, Never>, resultGeneration: UInt)?
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
@@ -89,7 +87,7 @@ final class TextCaptureCoordinator {
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
-        resultSetting = Task { [weak hud] in
+        resultSetting = Task { [weak hud = selection.resultCard] in
             for await shows in Observations({ settings.showTextResult }) where !shows {
                 hud?.setPanelAction(nil, showsResult: false)
             }
@@ -101,32 +99,11 @@ final class TextCaptureCoordinator {
 
     deinit { resultSetting.cancel() }
 
-    /// Runs `reading`, one the highlight shows, as `selectionReading`, so Escape reaches it whoever started it; one still
-    /// running is let go, as a newer reading replaces an older one anyway. The caller's own cancellation stops it too.
-    private func asSelectionReading(_ reading: @escaping () async -> Void) async {
-        selectionReading?.task.cancel()
-        let task = Task { await reading() }
-        let generation = hud.resultGeneration
-        selectionReading = (task, generation)
-        await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
-        if selectionReading?.task == task {
-            selectionReading = nil
-            if task.isCancelled { hud.clearPanelAction(ifCurrent: generation) }
-        }
-    }
-
     /// Escape while the highlight showed (it has gone, without a sound): the reading stops, and nothing is copied or
     /// shown. A wait on Vision ends at once, a run of the text reader is ended, and the cloud model is no longer waited
     /// for; each reading's `done` is told nil, as for any reading cancelled.
     private func cancelReading() {
-        guard let reading = selectionReading else { return }
-        reading.task.cancel()
-        selectionReading = nil
-        hud.clearPanelAction(ifCurrent: reading.resultGeneration)
+        guard selection.cancel() else { return }
         waitingForCloud?.cancel()
         waitingForCloud = nil
         Log.capture.notice("Escape stopped the reading behind the highlight")
@@ -158,7 +135,7 @@ final class TextCaptureCoordinator {
     /// keeps the reading on this Mac, for the URL API and Shortcuts.
     func captureText(joinLines: Bool, allowsCloud: Bool = true, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
-        selectionReading?.task.cancel()
+        selection.cancel()
         waitingForCloud?.cancel()
         highlight.hide()
         // The model loads while the person selects, which hides its first-use cost.
@@ -220,7 +197,7 @@ final class TextCaptureCoordinator {
         done: ((String?) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { done?(nil); return }
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             guard !Task.isCancelled else { done?(nil); return }
             highlight.show(rect)
             do {
@@ -241,7 +218,7 @@ final class TextCaptureCoordinator {
 
     private func recognize(window target: WindowTarget, joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
         guard !Task.isCancelled else { done?(nil); return }
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             guard !Task.isCancelled else { done?(nil); return }
             highlight.show(target.frame)
             do {
@@ -636,7 +613,7 @@ final class TextCaptureCoordinator {
     /// pixels (a formula drawn at 2x reads better than at 1x: Docs/ocr.md › L3 spike). Also the URL API's
     /// `capture-formula` with an area. `copiesToClipboard` false leaves the clipboard alone, for scripted checks.
     func readFormula(region rect: CGRect, frozen: CapturedFrame? = nil, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             highlight.show(rect)
             do {
                 let frame = try await capture(rect, frozen: frozen)
@@ -652,7 +629,7 @@ final class TextCaptureCoordinator {
     }
 
     private func readFormula(window target: WindowTarget, done: ((String?) -> Void)?) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             highlight.show(target.frame)
             do {
                 let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
@@ -748,7 +725,7 @@ final class TextCaptureCoordinator {
     }
 
     private func translate(region rect: CGRect, frozen: CapturedFrame?, inPanel: Bool) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             do {
                 let frame = try await capture(rect, frozen: frozen)
                 try Task.checkCancellation()
@@ -762,7 +739,7 @@ final class TextCaptureCoordinator {
     }
 
     private func translate(window target: WindowTarget, inPanel: Bool) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             do {
                 let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
                 try Task.checkCancellation()

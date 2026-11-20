@@ -2,6 +2,34 @@ import AppKit
 import OMSCore
 import OMSDesign
 
+/// A reading in progress and the last published result have separate lifetimes. Escape stops only the reading.
+public final class TextSelectionSession {
+    public let resultCard = TextResultHUD()
+    private var reading: Task<Void, Never>?
+
+    public init() {}
+
+    public func run(_ operation: @escaping @MainActor () async -> Void) async {
+        reading?.cancel()
+        let task = Task { await operation() }
+        reading = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if reading == task { reading = nil }
+    }
+
+    @discardableResult
+    public func cancel() -> Bool {
+        guard let reading else { return false }
+        reading.cancel()
+        self.reading = nil
+        return true
+    }
+}
+
 /// One result's lifetime. Pure timestamps keep hover/reuse/expiry behavior testable without waiting.
 struct TextResultLifetime {
     private(set) var generation: UInt = 0
@@ -67,13 +95,6 @@ public final class TextResultHUD {
     public var onCopy: (() -> Void)?
     /// The current card's action owns its picture only while Open in Panel is offered.
     public private(set) var onOpenInPanel: (() -> Void)?
-
-    public var resultGeneration: UInt { lifetime.generation }
-
-    public func clearPanelAction(ifCurrent generation: UInt) {
-        guard generation == resultGeneration else { return }
-        setPanelAction(nil, showsResult: false)
-    }
 
     public func setPanelAction(_ action: (() -> Void)?, showsResult: Bool) {
         onOpenInPanel = showsResult ? action : nil

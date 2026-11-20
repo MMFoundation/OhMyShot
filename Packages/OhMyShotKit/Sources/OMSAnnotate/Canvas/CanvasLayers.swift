@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage.CIFilterBuiltins
 import OMSCore
 import OMSDesign
 import QuartzCore
@@ -44,7 +45,15 @@ nonisolated final class MarkLayer: StillLayer {
     }
     /// What to draw for a blur or pixelation, including the opaque cover on a render failure.
     var coverage: Redactor.Coverage? {
-        didSet { setNeedsDisplay() }
+        didSet {
+            blendIntoPicture()
+            setNeedsDisplay()
+        }
+    }
+    /// A filtered layer replaces its entire frame, so it must not include the usual drawing margin.
+    var documentDrawingBounds: CGRect {
+        if case .filtered(_, let rect) = coverage { return rect }
+        return mark.drawingBounds(scale: scale)
     }
     /// What a highlight lies on: light ground takes it multiplied, dark ground screened.
     var ground = HighlightGround.light {
@@ -72,11 +81,18 @@ nonisolated final class MarkLayer: StillLayer {
         super.init(layer: layer)
     }
 
-    /// A highlight blends into what is under it, as the export's multiply or screen does. A highlighter's
-    /// mark stays one: while drawn it may turn from a stroke to a highlight snapped to text and back.
+    /// The white mask selects the filtered source even when its pixels are clear. Clip the composite
+    /// to the layer's frame; layers above it still draw normally, as in the flattened export.
     private func blendIntoPicture() {
-        guard mark.multiplies else { return }
-        compositingFilter = ground == .dark ? "screenBlendMode" : "multiplyBlendMode"
+        if case .filtered = coverage {
+            masksToBounds = true
+            let blend = CIFilter.blendWithAlphaMask()
+            blend.maskImage = CIImage(color: .white)
+            compositingFilter = blend
+        } else {
+            masksToBounds = false
+            compositingFilter = mark.multiplies ? (ground == .dark ? "screenBlendMode" : "multiplyBlendMode") : nil
+        }
     }
 
     @available(*, unavailable)

@@ -1,6 +1,7 @@
 import AppKit
 import CoreServices
 import Foundation
+import OMSAnnotate
 import OMSCore
 import OSLog
 
@@ -76,13 +77,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard reopens else { return sender.reply(toApplicationShouldTerminate: true) }
             Relauncher.startNewCopy { _ in sender.reply(toApplicationShouldTerminate: true) }
         }
-        let finishEditors = { [root] (mayQuit: Bool) in
-            guard mayQuit, let root, root.annotations.isEditing else { return quit(mayQuit) }
-            Task { quit(await root.annotations.closeBeforeQuitting()) }
+        if let root {
+            let closeEditors: (() async -> Bool)?
+            if root.annotations.isEditing {
+                closeEditors = { await root.annotations.closeBeforeQuitting() }
+            } else {
+                closeEditors = nil
+            }
+            let deferred = EditorQuitGate.deferQuit(
+                closeEditors: closeEditors, finishWork: { root.finishRecordingBeforeQuitting($0) }, reply: quit
+            )
+            if deferred { return .terminateLater }
         }
-        if let root, root.finishRecordingBeforeQuitting(finishEditors) { return .terminateLater }
-        if reopens || root?.annotations.isEditing == true {
-            Task { finishEditors(true) }
+        if reopens {
+            Task { quit(true) }
             return .terminateLater
         }
         return .terminateNow

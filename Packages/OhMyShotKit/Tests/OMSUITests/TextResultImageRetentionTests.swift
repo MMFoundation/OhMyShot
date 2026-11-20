@@ -51,20 +51,51 @@ struct TextResultImageRetentionTests {
         #expect(second == nil)
     }
 
-    @Test func cancellingAnOlderReadingDoesNotClearAReplacementCard() throws {
-        let hud = TextResultHUD()
-        let older = hud.resultGeneration
-        hud.dismiss()
-        weak var capture: CGImage?
-        do {
-            let image = try image()
-            capture = image
-            hud.setPanelAction({ _ = image.width }, showsResult: true)
+    private func cancelUnpublishedReading(
+        in session: TextSelectionSession, cancelCaller: Bool = false, whileReading: () -> Void = {}
+    ) async {
+        let (started, ready) = AsyncStream<Void>.makeStream()
+        let (gate, finish) = AsyncStream<Void>.makeStream()
+        let caller = Task {
+            await session.run {
+                ready.finish()
+                for await _ in gate {}
+                #expect(Task.isCancelled)
+            }
         }
-        hud.clearPanelAction(ifCurrent: older)
-        #expect(capture != nil)
-        hud.clearPanelAction(ifCurrent: hud.resultGeneration)
-        #expect(capture == nil)
+        for await _ in started {}
+        whileReading()
+        if cancelCaller {
+            caller.cancel()
+        } else {
+            #expect(session.cancel())
+        }
+        finish.finish()
+        await caller.value
+    }
+
+    @Test(arguments: [false, true])
+    func cancellingAnUnpublishedReadingKeepsThePreviousResultOpenable(cancelCaller: Bool) async throws {
+        let session = TextSelectionSession()
+        let visible = try image()
+        var opened: CGImage?
+        session.resultCard.setPanelAction({ opened = visible }, showsResult: true)
+        await cancelUnpublishedReading(in: session, cancelCaller: cancelCaller)
+        session.resultCard.openResultInPanel()
+        #expect(opened === visible)
+        #expect(session.resultCard.onOpenInPanel == nil)
+    }
+
+    @Test func cancellingAnOlderReadingDoesNotClearAReplacementCard() async throws {
+        let session = TextSelectionSession()
+        let old = try image(), replacement = try image()
+        var opened: CGImage?
+        session.resultCard.setPanelAction({ opened = old }, showsResult: true)
+        await cancelUnpublishedReading(in: session) {
+            session.resultCard.setPanelAction({ opened = replacement }, showsResult: true)
+        }
+        session.resultCard.openResultInPanel()
+        #expect(opened === replacement)
     }
 
     @Test func openInPanelTakesTheVisibleImageBeforeDismissalAndOpensOnlyOnce() throws {

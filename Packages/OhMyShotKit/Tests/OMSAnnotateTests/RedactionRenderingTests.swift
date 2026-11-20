@@ -1,6 +1,8 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import Metal
+import QuartzCore
 import Testing
 import Vision
 @testable import OMSAnnotate
@@ -64,6 +66,110 @@ struct RedactionRenderingTests {
     @Test func aUISizedSelectionKeepsSmallBlocksButAHeadingGetsLargerOnes() {
         #expect(Redactor.blockSize(for: CGRect(x: 0, y: 0, width: 116, height: 47), scale: 2) == 12)
         #expect(Redactor.blockSize(for: CGRect(x: 0, y: 0, width: 785, height: 243), scale: 2) > 100)
+    }
+
+    private func box(_ rect: CGRect, color: RGBA) -> Annotation {
+        Annotation(shape: .rectangle(Box(rect: rect, filled: true)), style: Style(color: color, shadow: false))
+    }
+
+    @Test(arguments: [Redaction.Method.blur, .pixelate])
+    func translucentFilterReplacesOnlyItsClippedRectInTheFlattenedExport(method: Redaction.Method) throws {
+        let width = 96, height = 48
+        let input = try context(width: width, height: height)
+        input.setFillColor(CGColor(gray: 1, alpha: 0.4))
+        input.fill(CGRect(x: 0, y: 0, width: 40, height: height))
+        input.setFillColor(CGColor(gray: 0, alpha: 1))
+        for x in stride(from: 0, to: 40, by: 8) { input.fill(CGRect(x: x, y: 4, width: 3, height: 36)) }
+        let base = try #require(input.makeImage())
+        let redaction = Redaction(rect: CGRect(x: -5.5, y: 8.5, width: 90, height: 30), method: method)
+        let mark = Annotation(id: markID, shape: .redaction(redaction), style: Style())
+        let below = box(CGRect(x: 60, y: 0, width: 24, height: 48), color: .green)
+        let above = box(CGRect(x: 12, y: 25, width: 8, height: 18), color: .red)
+        var document = AnnotationDocument(pixelSize: CGSize(width: width, height: height), scale: 1, items: [below, above])
+        let outside = Pixels(try #require(AnnotationRenderer.flatten(document, base: base)))
+        document.items = [below, mark, above]
+        let result = Pixels(try #require(AnnotationRenderer.flatten(document, base: base)))
+
+        guard case let .filtered(image, rect) = Redactor.coverage(for: redaction, id: markID, source: .init(base: base), scale: 1) else {
+            Issue.record("Expected a filtered image"); return
+        }
+        #expect(rect == CGRect(x: 0, y: 8, width: 85, height: 31))
+        let alone = try context(width: width, height: height)
+        alone.translateBy(x: 0, y: CGFloat(height))
+        alone.scaleBy(x: 1, y: -1)
+        alone.interpolationQuality = method == .pixelate ? .none : .high
+        AnnotationRenderer.drawImage(image, in: rect, context: alone)
+        AnnotationRenderer.draw(above, in: alone, scale: 1)
+        let inside = Pixels(try #require(alone.makeImage()))
+        #expect(inside[8, 15].a > 0 && inside[8, 15].a < 255)
+        #expect(inside[80, 20].a == 0 && outside[80, 20].a == 255)
+        #expect(result.region(rect) == inside.region(rect))
+        for strip in [
+            CGRect(x: 0, y: 0, width: width, height: 8), CGRect(x: 85, y: 8, width: 11, height: 31),
+            CGRect(x: 0, y: 39, width: width, height: 9),
+        ] {
+            #expect(result.region(strip) == outside.region(strip))
+        }
+    }
+
+    @Test func canvasFilteredLayerReplacesClearAndPartialPixelsBetweenNeighboringMarks() throws {
+        let width = 36, height = 20
+        let canvas = CGRect(x: 0, y: 0, width: width, height: height)
+        let rect = CGRect(x: 5, y: 4, width: 24, height: 12)
+        let tile = try context(width: 24, height: 12)
+        tile.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 0.5))
+        tile.fill(CGRect(x: 0, y: 0, width: 12, height: 12))
+        let mark = Annotation(shape: .redaction(Redaction(rect: canvas, method: .pixelate)), style: Style())
+        let replacement = MarkLayer(mark: mark)
+        replacement.coverage = .filtered(try #require(tile.makeImage()), rect)
+        replacement.frame = replacement.documentDrawingBounds
+        replacement.mapping = LayerMapping(origin: rect.origin, zoom: 1)
+        #expect(replacement.frame == rect)
+
+        let root = CALayer()
+        root.frame = canvas
+        let lower = CALayer()
+        lower.frame = canvas
+        lower.backgroundColor = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        let upper = CALayer()
+        upper.frame = CGRect(x: 10, y: 0, width: 3, height: height)
+        upper.backgroundColor = CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
+        root.addSublayer(lower)
+        root.addSublayer(replacement)
+        root.addSublayer(upper)
+        replacement.setNeedsDisplay()
+        replacement.displayIfNeeded()
+
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+        descriptor.storageMode = .shared
+        descriptor.usage = [.renderTarget, .shaderRead]
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let renderer = CARenderer(mtlTexture: texture, options: [kCARendererMetalCommandQueue: queue])
+        renderer.layer = root
+        renderer.bounds = canvas
+        CATransaction.flush()
+        renderer.beginFrame(atTime: CACurrentMediaTime(), timeStamp: nil)
+        renderer.addUpdate(canvas)
+        renderer.render()
+        renderer.endFrame()
+        let completion = try #require(queue.makeCommandBuffer())
+        completion.commit()
+        completion.waitUntilCompleted()
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        texture.getBytes(&bytes, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        func bgra(_ x: Int, _ y: Int) -> [UInt8] {
+            let offset = (y * width + x) * 4
+            return Array(bytes[offset..<offset + 4])
+        }
+        #expect(bgra(6, 10) == [128, 0, 0, 128])
+        #expect(bgra(24, 10) == [0, 0, 0, 0])
+        #expect(bgra(11, 10) == [0, 255, 0, 255])
+        #expect(bgra(4, 10) == [0, 0, 255, 255] && bgra(29, 10) == [0, 0, 255, 255])
+        #expect(bgra(6, 3) == [0, 0, 255, 255] && bgra(6, 16) == [0, 0, 255, 255])
+        replacement.coverage = .opaque(rect)
+        #expect(replacement.compositingFilter == nil && !replacement.masksToBounds)
     }
 
     @Test(arguments: [Redaction.Method.blur, .pixelate])

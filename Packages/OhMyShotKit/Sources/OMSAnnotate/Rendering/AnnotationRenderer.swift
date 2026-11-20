@@ -110,6 +110,8 @@ nonisolated public enum AnnotationRenderer {
             case .blur, .pixelate:
                 switch coverage {
                 case let .filtered(image, rect):
+                    context.clip(to: rect)
+                    context.setBlendMode(.copy)
                     context.interpolationQuality = redaction.method == .pixelate ? .none : .high
                     drawImage(image, in: rect, context: context)
                 case .opaque(let rect):

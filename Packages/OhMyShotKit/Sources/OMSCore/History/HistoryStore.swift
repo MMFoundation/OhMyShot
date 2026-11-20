@@ -272,15 +272,10 @@ public final class HistoryStore: Sendable {
         isTemplateNamed: Bool? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let item = HistoryItem(
-            kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
-            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration, pixelsPerPoint: pixelsPerPoint,
-            windowTitle: windowTitle, isTemplateNamed: isTemplateNamed
-        )
-        try FileManager.default.moveItem(at: source, to: fileURL(for: item))
-        try writeRecord(item)
-        return item
+        try add(
+            name: name, fileExtension: source.pathExtension, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+            appName: appName, duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed, date: date
+        ) { try FileManager.default.moveItem(at: source, to: $0) }
     }
 
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
@@ -306,15 +301,10 @@ public final class HistoryStore: Sendable {
             size = found
             if kind == .recording { duration = Self.gifDuration(of: picture) }
         }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let item = HistoryItem(
-            kind: kind, createdAt: date, pixelWidth: size.width, pixelHeight: size.height, appName: nil,
-            fileName: availableFileName(source.deletingPathExtension().lastPathComponent, fileExtension: source.pathExtension.lowercased()),
-            duration: duration
-        )
-        try FileManager.default.copyItem(at: source, to: fileURL(for: item))
-        try writeRecord(item)
-        return item
+        return try add(
+            name: source.deletingPathExtension().lastPathComponent, fileExtension: source.pathExtension.lowercased(), kind: kind,
+            pixelWidth: size.width, pixelHeight: size.height, appName: nil, duration: duration, date: date
+        ) { try FileManager.default.copyItem(at: source, to: $0) }
     }
 
     /// A picture's first image's size in pixels, turned upright as it is shown.
@@ -338,14 +328,6 @@ public final class HistoryStore: Sendable {
         }
     }
 
-    /// `name.fileExtension`, or `name (2).fileExtension` and so on when that is taken. A slash in the name (a file a
-    /// shortcut hands over may carry one) is a dash, as in any file name the app makes: the name checked is the name
-    /// written, in the history's own folder, never another capture's file in it.
-    private func availableFileName(_ name: String, fileExtension: String) -> String {
-        let name = name.replacingOccurrences(of: "/", with: "-")
-        return ImageExporter.availableURL(in: directory, name: name, fileExtension: fileExtension).lastPathComponent
-    }
-
     /// Stores encoded image data under `name` (made unique) and returns its record. The file keeps a
     /// readable name, so dragging it out or revealing it shows the same name a saved copy would have.
     public func add(
@@ -362,25 +344,48 @@ public final class HistoryStore: Sendable {
         isTemplateNamed: Bool? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let id = UUID()
-        let fileName = availableFileName(name, fileExtension: fileExtension)
-        let item = HistoryItem(
-            id: id,
-            kind: kind,
-            createdAt: date,
-            pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight,
-            appName: appName,
-            fileName: fileName,
-            duration: duration,
-            pixelsPerPoint: pixelsPerPoint,
-            windowTitle: windowTitle,
-            isTemplateNamed: isTemplateNamed
-        )
-        try data.write(to: fileURL(for: item), options: .atomic)
-        try writeRecord(item)
-        return item
+        try add(
+            name: name, fileExtension: fileExtension, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+            appName: appName, duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed, date: date
+        ) { try data.write(to: $0, options: .atomic) }
+    }
+
+    /// An empty sidecar claims a name exclusively, but isn't a readable record until its capture has been written.
+    private func add(
+        name: String, fileExtension: String, kind: HistoryItem.Kind, pixelWidth: Int, pixelHeight: Int, appName: String?,
+        duration: TimeInterval?, pixelsPerPoint: Double? = nil, windowTitle: String? = nil, isTemplateNamed: Bool? = nil,
+        date: Date, writeFile: (URL) throws -> Void
+    ) throws -> HistoryItem {
+        let manager = FileManager.default
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let base = name.replacingOccurrences(of: "/", with: "-")
+        let ext = fileExtension.replacingOccurrences(of: "/", with: "-")
+        var number = 0
+        while true {
+            number += 1
+            let stem = number == 1 ? base : "\(base) (\(number))"
+            let fileName = "\(stem).\(ext)"
+            let url = directory.appending(path: fileName)
+            guard !manager.fileExists(atPath: url.path(percentEncoded: false)) else { continue }
+            let record = sidecarURL(forFileName: fileName)
+            do {
+                try Data().write(to: record, options: .withoutOverwriting)
+            } catch let error as CocoaError where error.code == .fileWriteFileExists {
+                continue
+            }
+            let item = HistoryItem(
+                kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName, fileName: fileName,
+                duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed
+            )
+            do {
+                try writeFile(url)
+                try writeRecord(item)
+                return item
+            } catch {
+                try? manager.removeItem(at: record)
+                throw error
+            }
+        }
     }
 
     /// Every item, newest first.

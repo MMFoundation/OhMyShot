@@ -157,7 +157,7 @@ final class CompositionRoot {
     /// How long captures stay: as Keep Captures says, and with history off, as long as something holds them.
     lazy var retention = CaptureRetention(
         settings: settings, history: history,
-        cards: { [weak self] in self?.quickAccess.heldCaptureIDs ?? [] },
+        cards: { [weak self] retention in self?.quickAccess.heldCaptureIDs(for: retention) ?? [] },
         editors: { [weak self] in self?.annotations.openCaptureIDs ?? [] },
         recordingWindows: { [weak self] in self?.recordings.openRecordingIDs ?? [] },
         uploads: { [weak self] in self?.uploads.uploadingIDs ?? [] },

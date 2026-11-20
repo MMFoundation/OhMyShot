@@ -193,9 +193,11 @@ public final class QuickAccessController {
     /// The captures currently shown as cards.
     public var itemIDs: Set<UUID> { Set(items.map(\.id)) }
 
-    /// A card pushed out of the stack still needs its capture until it leaves Recently Closed.
-    public var heldCaptureIDs: Set<UUID> {
-        itemIDs.union(recentlyClosed.compactMap { $0.evicted ? $0.item.id : nil })
+    /// With history off, a displaced card needs its capture until it leaves Recently Closed.
+    /// With timed history, the restore offer lasts only as long as the file does.
+    public func heldCaptureIDs(for retention: HistoryRetention) -> Set<UUID> {
+        guard retention == .never else { return itemIDs }
+        return itemIDs.union(recentlyClosed.compactMap { $0.evicted ? $0.item.id : nil })
     }
 
     /// The card showing capture `id`, if one is.
@@ -275,9 +277,12 @@ public final class QuickAccessController {
 
     /// Marks a capture saved elsewhere (from the editor) as saved on its card.
     public func markSaved(_ id: UUID, at url: URL) {
-        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
-        items[index].savedURL = url
-        stack?.markSaved(id, at: url)
+        if let index = items.firstIndex(where: { $0.id == id }) {
+            items[index].savedURL = url
+            stack?.markSaved(id, at: url)
+        } else if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
+            recentlyClosed[index].item.savedURL = url
+        }
     }
 
     /// Shows how a capture's upload stands on its card, if it has one; a card made later asks the actions. A card
@@ -566,15 +571,9 @@ public final class QuickAccessController {
             case .saveAs: await actions.saveAs(item)
             case .quiet: await actions.save(item, false)
             }
-            recordSave(of: item, at: url)
+            if let url { markSaved(item.id, at: url) }
             return url
         }
-    }
-
-    private func recordSave(of item: QuickAccessItem, at url: URL?) {
-        guard let url, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-        items[index].savedURL = url
-        stack?.markSaved(item.id, at: url)
     }
 
     /// Moves a capture to the Trash: its card waits `trashDelay` under Undo, then goes, and its capture with it. When
@@ -629,7 +628,7 @@ public final class QuickAccessController {
         }
         if items.contains(where: { $0.id == item.id }) {
             stack?.setTrashing(false, for: item.id)
-            schedule.restart(item.id)
+            schedule.keepOpen(item.id)
             updateCountdowns()
         } else {
             rememberEvicted(item)
@@ -669,12 +668,12 @@ public final class QuickAccessController {
         closer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(soonest + 0.02))
             guard !Task.isCancelled else { return }
-            self?.closeDueCards()
+            self?.closeDueCards(at: Self.now)
         }
     }
 
-    private func closeDueCards() {
-        for id in schedule.takeDue(at: Self.now) {
+    func closeDueCards(at now: TimeInterval) {
+        for id in schedule.takeDue(at: now) {
             guard let item = item(id) else { continue }
             if actions.preferences().closeAction == .saveAndClose, item.savedURL == nil {
                 // The card goes once its copy is saved, which never asks for a name: nobody is waiting for it. A copy that
