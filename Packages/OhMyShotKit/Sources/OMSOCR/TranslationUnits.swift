@@ -118,9 +118,13 @@ public enum TranslationUnits {
     /// A sentence rather than a line of code: it starts on a word (no quote before it), none of its tokens is an operator
     /// ("=", "->"), and it holds five characters of Chinese or Japanese, or four words that are three in four of its
     /// tokens. A statement can be all that: `echo Welcome to your home directory`, `raise ValueError("This option is
-    /// not available")`. So in a script that has capitals, it starts on one as a sentence does ("The", or a name,
-    /// "JavaScript"), its first word no command ("echo"), keyword ("SELECT") or cmdlet ("Write-Host"), and it calls
-    /// nothing ("name(").
+    /// not available")`. So in a script that has capitals:
+    ///
+    /// - It starts as a sentence does, on a capital ("The") or on a name with one inside ("macOS", "iPhone"), or it
+    ///   ends as one does, on a period or a mark like it ("the cache is cleared when the app restarts."): a command
+    ///   rarely ends so.
+    /// - Its first word is no keyword in capitals ("SELECT") and no cmdlet ("Write-Host", `isCmdlet`).
+    /// - It calls nothing ("name(").
     static func isSentence(_ text: String) -> Bool {
         let marks = CharacterSet(charactersIn: ".,:;!?…'\"“”‘’，。：；！？、")
         let isWord = { (token: Substring) in
@@ -133,13 +137,33 @@ public enum TranslationUnits {
         else { return false }
         if initial.isCased {
             let word = first.trimmingCharacters(in: marks)
-            guard initial.isUppercase, word.count == 1 || word.contains(where: \.isLowercase),
-                  word.range(of: #"-\p{Lu}"#, options: .regularExpression) == nil,
+            let startsAsOne = initial.isUppercase || word.dropFirst().contains(where: \.isUppercase)
+            let endsAsOne = text.last { !$0.isWhitespace }.map { ".!?。！？".contains($0) } ?? false
+            guard startsAsOne || endsAsOne, word.count == 1 || word.contains(where: \.isLowercase), !isCmdlet(word, in: tokens),
                   text.range(of: #"\w\("#, options: .regularExpression) == nil else { return false }
         }
         if text.count(where: Script.isCJK) >= 5 { return true }
         let words = tokens.count(where: isWord)
         return words >= 4 && words * 4 >= tokens.count * 3
+    }
+
+    /// The verbs PowerShell's commands most often start on: a cmdlet is named verb-noun ("Write-Host", "Get-ChildItem").
+    private static let cmdletVerbs: Set<Substring> = [
+        "Add", "Clear", "Copy", "Export", "Get", "Import", "Invoke", "Move", "New", "Out", "Read", "Remove", "Rename", "Select", "Set", "Start",
+        "Stop", "Test", "Update", "Write",
+    ]
+
+    /// Whether the first word of a line is a cmdlet. A capital after its hyphen is not enough, a name has one too
+    /// ("Wi-Fi is required to pair the device."): the line is a command besides, by the word's verb, a parameter
+    /// ("-Path"), a quote, or a variable ("$name").
+    static func isCmdlet(_ word: String, in tokens: [Substring]) -> Bool {
+        guard word.range(of: #"-\p{Lu}"#, options: .regularExpression) != nil else { return false }
+        return cmdletVerbs.contains(word.prefix { $0 != "-" })
+            || tokens.dropFirst().contains { token in
+                guard let first = token.first else { return false }
+                return "\"'".contains(first) || first == "-" && token.dropFirst().first?.isLetter == true
+                    || token.range(of: #"\$[\p{L}_{(]"#, options: .regularExpression) != nil
+            }
     }
 
     // MARK: Code outside code listings

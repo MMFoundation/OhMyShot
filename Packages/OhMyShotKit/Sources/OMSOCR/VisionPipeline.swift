@@ -449,7 +449,8 @@ public struct VisionPipeline: OCREngine {
     ///
     /// Nothing is guessed where no open bracket lines up, nor where a bracket of the code closes that one further
     /// down: a line under `let values = [` is an element when the "]" comes after it. A bracket in a string or a
-    /// comment opens nothing (`codeBrackets`).
+    /// comment opens nothing (`codeBrackets`), and "//" starts a comment except where the listing is written as
+    /// Python is (`isPythonLike`), which divides with it.
     static func withBrackets(_ lines: [OCRLine], glyphs: [CGRect], characterWidth: CGFloat) -> [OCRLine] {
         enum Row {
             case line(Int)
@@ -459,6 +460,7 @@ public struct VisionPipeline: OCREngine {
         let pairs: [Character: Character] = ["{": "}", "[": "]", "(": ")"]
         // What the Chinese model makes of a closer alone on its line.
         let misread: [Character: Character] = ["子": "}", "J": "]"]
+        let slashesComment = !isPythonLike(lines.map(\.text))
         var lines = lines
         let rows = (lines.indices.map { (box: lines[$0].box, row: Row.line($0)) } + glyphs.map { (box: $0, row: Row.glyph($0)) })
             .sorted { $0.box.minY < $1.box.minY }
@@ -482,32 +484,40 @@ public struct VisionPipeline: OCREngine {
             if closes { lines[index].text = String(lines[index].text.dropLast()) + "{" }
         }
 
-        // Takes the brackets of a line on and off `open`, and gives where each closer cut it back to. A closer that
-        // starts its line closes the bracket opened in its column, when one is; any other, the innermost of its kind.
-        func take(_ index: Int, from open: inout [Open]) -> [Int] {
+        // Takes the brackets of a line on and off `open`, and gives how many of its closers found nothing to close.
+        // A closer that starts its line closes the bracket opened in its column, when one is; any other, the innermost
+        // of its kind.
+        @discardableResult
+        func take(_ index: Int, from open: inout [Open]) -> Int {
             let x = lines[index].box.minX
-            var cuts: [Int] = []
-            for bracket in codeBrackets(TextAssembler.asCode(lines[index].text)) {
+            var unmatched = 0
+            for bracket in codeBrackets(TextAssembler.asCode(lines[index].text), slashesComment: slashesComment) {
                 if pairs[bracket.character] != nil {
                     open.append((bracket.character, x))
                     continue
                 }
                 let isItsKind = { (opened: Open) in pairs[opened.bracket] == bracket.character }
                 let inItsColumn = bracket.startsLine ? open.lastIndex { isItsKind($0) && isAligned($0.x, x) } : nil
-                guard let opener = inItsColumn ?? open.lastIndex(where: isItsKind) else { continue }
-                open.removeSubrange(opener...)
-                cuts.append(opener)
+                if let opener = inItsColumn ?? open.lastIndex(where: isItsKind) {
+                    open.removeSubrange(opener...)
+                } else {
+                    unmatched += 1
+                }
             }
-            return cuts
+            return unmatched
         }
-        // Whether a bracket of the code closes `open[opener]` on a row after `position`: then nothing else is its closer.
+        // Whether the code closes `open[opener]` itself on a row after `position`. Counted as closed here, by this
+        // row, it then leaves a closer of the code with nothing to close. Where every closer further down still finds
+        // a bracket (two opened on one line, and one "}" read after this row), this row is the closer the code lacks.
         func isClosedLater(_ opener: Int, of open: [Open], after position: Int) -> Bool {
-            var open = open
-            for entry in rows[(position + 1)...] {
-                guard case .line(let index) = entry.row else { continue }
-                for cut in take(index, from: &open) where cut <= opener { return cut == opener }
+            func unmatched(_ open: [Open]) -> Int {
+                var open = open
+                return rows[(position + 1)...].reduce(0) { count, entry in
+                    guard case .line(let index) = entry.row else { return count }
+                    return count + take(index, from: &open)
+                }
             }
-            return false
+            return unmatched(Array(open[..<opener])) > unmatched(open)
         }
 
         var open: [Open] = []
@@ -524,7 +534,7 @@ public struct VisionPipeline: OCREngine {
                     open.removeSubrange(opener...)
                     lines[index].text = String(closer)
                 } else {
-                    _ = take(index, from: &open)
+                    take(index, from: &open)
                 }
             case .glyph(let rectangle):
                 guard let opener = opener(for: nil), let closer = pairs[open[opener].bracket] else { continue }
@@ -536,9 +546,9 @@ public struct VisionPipeline: OCREngine {
     }
 
     /// The brackets of a line of code, left to right, and whether each starts the line. Those in a string (between two
-    /// of the same quote; a quote with no partner on the line is an apostrophe or a lifetime) and those after `//` or
-    /// `# ` are text, and open nothing.
-    static func codeBrackets(_ text: String) -> [(character: Character, startsLine: Bool)] {
+    /// of the same quote; a quote with no partner on the line is an apostrophe or a lifetime) and those after `# `, or
+    /// after `//` where that starts a comment (`slashesComment`), are text, and open nothing.
+    static func codeBrackets(_ text: String, slashesComment: Bool = true) -> [(character: Character, startsLine: Bool)] {
         let characters = Array(text)
         func endOfString(from start: Int) -> Int? {
             var index = start + 1
@@ -559,7 +569,7 @@ public struct VisionPipeline: OCREngine {
         while index < characters.count {
             let character = characters[index]
             let next = index + 1 < characters.count ? characters[index + 1] : nil
-            if character == "/", next == "/" { break }
+            if slashesComment, character == "/", next == "/" { break }
             if character == "#", next?.isWhitespace ?? true, index == 0 || characters[index - 1].isWhitespace { break }
             if "\"'`".contains(character), let end = endOfString(from: index) {
                 index = end + 1
@@ -571,6 +581,17 @@ public struct VisionPipeline: OCREngine {
             index += 1
         }
         return brackets
+    }
+
+    /// Whether a listing is written as Python is, where "//" divides (`size // page_size`) and starts no comment: a
+    /// line is a comment on "#", starts on `def` or `elif`, or opens a block on ":" (`if ready:`, `else:`; a `case`
+    /// or a label of another language starts on none of these words).
+    static func isPythonLike(_ lines: [String]) -> Bool {
+        lines.contains { line in
+            line.trimmingCharacters(in: .whitespaces).range(
+                of: #"^(#( |!|$)|(def|elif) |(if|for|while|with|class|else|try|except|finally|async)\b.*:$)"#, options: .regularExpression
+            ) != nil
+        }
     }
 
     // MARK: Latin lines on a CJK page

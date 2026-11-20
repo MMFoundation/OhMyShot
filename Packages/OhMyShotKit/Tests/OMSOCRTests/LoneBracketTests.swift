@@ -100,14 +100,43 @@ struct LoneBracketTests {
         // brackets written as characters.
         let string = [line(#"let brace = "{""#, row: 0), line("子", row: 1)]
         #expect(texts(string) == string.map(\.text))
-        let comments = [line("// the block opens with {", row: 0), line("# rows[", row: 1), line("total = 0", row: 2)]
+        let comments = [line("// the block opens with {", row: 0), line("let half = size / 2 // rounds down (", row: 1), line("total = 0", row: 2)]
         #expect(texts(comments, glyphs: [glyph(row: 3)]) == comments.map(\.text))
+        let hashes = [line("# rows[", row: 0), line("total = 0  # the sum {", row: 1), line("print(total)", row: 2)]
+        #expect(texts(hashes, glyphs: [glyph(row: 3)]) == hashes.map(\.text))
         let characters = [line("if next == '{' || next == '[' { depth += 1 }", row: 0), line("print(depth)", row: 1)]
         #expect(texts(characters, glyphs: [glyph(row: 2)]) == characters.map(\.text))
         #expect(VisionPipeline.codeBrackets(#"let pair = ("{", [1]) // (x"#).map(\.character) == ["(", "[", "]", ")"])
         #expect(VisionPipeline.codeBrackets("} else {").map(\.startsLine) == [true, false])
         // A lifetime's quote has no partner on the line: the brace after it is the code's.
         #expect(VisionPipeline.codeBrackets("impl<'a> Reader {").map(\.character) == ["{"])
+    }
+
+    @Test func twoSlashesDivideInPython() {
+        // `return [{` opens a list and a dictionary; the dictionary closes after a floor division, and the glyph
+        // nothing read under `return` closes the list.
+        let python = [line("def summary(items, size, page_size):", row: 0), line("return [{", indent: 1, row: 1),
+                      line(#""pages": size // page_size},"#, indent: 2, row: 2)]
+        #expect(VisionPipeline.isPythonLike(python.map(\.text)))
+        #expect(texts(python, glyphs: [glyph(indent: 1, row: 3)]) == python.map(\.text) + ["]"])
+        #expect(VisionPipeline.codeBrackets("size // page_size}", slashesComment: false).map(\.character) == ["}"])
+        // What tells such a listing: a comment on "#", `def` or `elif`, a block opened on ":". A `case` or a label is none.
+        for line in ["# the pages", "#!/usr/bin/env python3", "elif size > 0:", "for item in items:", "else:", "class Reader:"] {
+            #expect(VisionPipeline.isPythonLike([line]), "\(line)")
+        }
+        for line in ["case .ready:", "default:", "outer:", "#include <stdio.h>", "let pages = size / pageSize // per page", "format(size):"] {
+            #expect(!VisionPipeline.isPythonLike([line]), "\(line)")
+        }
+    }
+
+    @Test func aGlyphClosesTheInnerOfTwoBracketsOpenedOnOneLine() {
+        // JavaScript: an object and a function open on one line. The function's "}" was left unread, the object's
+        // "};" was read: the one closer the code has is the outer bracket's.
+        let lines = [line("const handlers = { submit: () => {", row: 0), line("save();", indent: 1, row: 1), line("};", row: 3)]
+        #expect(texts(lines, glyphs: [glyph(row: 2)]) == ["const handlers = { submit: () => {", "save();", "}", "};"])
+        // With both closers read, a glyph before them is no third.
+        let closed = [lines[0], lines[1], line("}", row: 3), line("};", row: 4)]
+        #expect(texts(closed, glyphs: [glyph(row: 2)]) == closed.map(\.text))
     }
 
     @Test func aBracketTheCodeClosesItselfIsNotClosedTwice() {

@@ -158,7 +158,8 @@ enum PieceMerge {
                         start = max(others.filter { $0.maxX <= box.minX }.map(\.maxX).max() ?? left.minX, left.minX, end - left.width)
                         cuts[index, default: (nil, nil)].before = right.minX
                     }
-                    if end - start > box.width { stretches[index] = CGRect(x: start, y: box.minY, width: end - start, height: box.height) }
+                    // Compared end with end: `end - start > box.width` holds by rounding for a line no cut is near.
+                    if start < box.minX || end > box.maxX { stretches[index] = CGRect(x: start, y: box.minY, width: end - start, height: box.height) }
                 }
             }
         }
@@ -170,21 +171,27 @@ enum PieceMerge {
     /// may be all that lay there, so the line's own box is no measure. It is longer. And the line's own reading is a
     /// part of it, but for the two characters the cut went through and one in ten besides: two readings of one line
     /// differ by a letter here and there ("moring" for "morning"), and a line left cut for that loses all that lay
-    /// past the cut.
+    /// past the cut. Not at the end no cut touched: the three characters there are in the other reading as they are,
+    /// or what it added past the cut would be paid for with what it lost at the other end (a line's number).
     static func completes(_ line: OCRLine, text: String, box: CGRect, before: CGFloat?, after: CGFloat?) -> Bool {
         let reach = line.box.height / 4
         guard before.map({ box.minX <= $0 - reach }) ?? false || after.map({ box.maxX >= $0 + reach }) ?? false else { return false }
-        let (read, own) = (Array(text.filter { !$0.isWhitespace }), Array(line.text.filter { !$0.isWhitespace }))
+        var (read, own) = (Array(text.filter { !$0.isWhitespace }), Array(line.text.filter { !$0.isWhitespace }))
         guard read.count > own.count else { return false }
+        // Both from the end no cut touched: for a line cut at its start, that is its last character.
+        if after == nil { (read, own) = (read.reversed(), own.reversed()) }
+        let whole = before == nil || after == nil ? min(3, max(0, own.count - 2)) : 0
         // The fewest edits that make the line's reading a part of the other: for each character of `read`, the fewest
-        // for a part that ends on it.
+        // for a part that ends on it. None is allowed in the first `whole` characters.
+        let never = read.count + own.count
         var edits = [Int](repeating: 0, count: read.count + 1)
         for (row, character) in own.enumerated() {
             var diagonal = edits[0]
-            edits[0] = row + 1
+            edits[0] = whole > 0 ? never : row + 1
             for column in 1...read.count {
                 let above = edits[column]
-                edits[column] = min(diagonal + (read[column - 1] == character ? 0 : 1), above + 1, edits[column - 1] + 1)
+                let isSame = read[column - 1] == character
+                edits[column] = row < whole ? (isSame ? diagonal : never) : min(diagonal + (isSame ? 0 : 1), above + 1, edits[column - 1] + 1)
                 diagonal = above
             }
         }

@@ -159,6 +159,25 @@ struct TranslationUnitTests {
         }
     }
 
+    @Test func proseThatStartsOnANameOrInLowercaseIsStillASentence() {
+        // Above two lines of Swift: a name with a capital after its hyphen, a name that starts in lowercase, and a
+        // sentence nobody capitalized, which ends as one.
+        for sentence in ["Wi-Fi is required to pair the device.", "macOS 会自动保存这张截图。", "the cache is cleared when the app restarts."] {
+            let lines = [line(sentence, y: 0), line("let image = try await read(url)", y: 48), line("let text = try await recognize(image)", y: 72)]
+            #expect(TextAssembler.isCodeListing(lines))
+            #expect(TranslationUnits.group(lines).map(\.skip) == [nil, .code, .code], "\(sentence)")
+        }
+        for sentence in ["iPhone users see the same prompt on the lock screen", "Wi-Fi isn't needed once the device is paired"] {
+            #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
+        }
+        // A cmdlet has one of PowerShell's verbs, a parameter, a quote or a variable to it; a command ends on no period.
+        for command in ["Write-Host Welcome to your home directory", "Send-Greeting Welcome to your home -Name guest",
+                        "Show-Banner 'Welcome' to your home directory", "Show-Banner Welcome to your home $user",
+                        "echo Welcome to your home directory", "SELECT name FROM users WHERE active."] {
+            #expect(!TranslationUnits.isSentence(command), "\(command)")
+        }
+    }
+
     @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {
         // A paragraph, then a table's rows (TableMerge): each row alone, left as on the image, which one run of text
         // drawn across the table would cover.

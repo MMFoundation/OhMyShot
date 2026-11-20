@@ -91,18 +91,35 @@ public enum TextAssembler {
     /// listing, captured alone).
     ///
     /// Two columns of a few lines each come here row by row as well (`ReadingOrder` looks for columns from five lines
-    /// up), and the lines of two columns are not one line: pieces that both read as running text (`isRunningText`),
-    /// further apart than a line is tall, stay apart. Closer, they are one line Vision returned in two.
+    /// up), and the lines of two columns are not one line. Pieces that both read as running text (`isRunningText`),
+    /// further apart than a line is tall, stay apart where a row within three line heights is apart at the same
+    /// place: two blocks of text. One such row with no other like it is a label and its value ("Allow accessories to
+    /// connect", "Ask for New Accessories"), and one line. Closer, two pieces are one line Vision returned in two.
     static func rowPieces(_ lines: [OCRLine]) -> [Int?] {
         let continuations = rowContinuations(lines)
         let isOneRow = continuations.dropFirst().allSatisfy { $0 != nil }
+        // Where a piece and the one before it both read as running text, further apart than a line is tall: the row
+        // they make and the gap between them.
+        let breaks: [(row: CGRect, gap: ClosedRange<CGFloat>)?] = lines.indices.map { index in
+            guard continuations[index] != nil else { return nil }
+            let line = lines[index].box, previous = lines[index - 1].box
+            let row = previous.union(line)
+            guard line.minX - previous.maxX > row.height, isRunningText(lines[index - 1].text), isRunningText(lines[index].text) else { return nil }
+            return (row, previous.maxX...line.minX)
+        }
         return lines.indices.map { index in
             guard continuations[index] != nil else { return nil }
             let line = lines[index], previous = lines[index - 1]
             guard !line.isTableRow, !previous.isTableRow, line.math == nil, previous.math == nil,
                   !ReadingOrder.isVertical(line), !ReadingOrder.isVertical(previous) else { return nil }
             let row = previous.box.union(line.box)
-            if line.box.minX - previous.box.maxX > row.height, isRunningText(previous.text), isRunningText(line.text) { return nil }
+            let isBetweenBlocks = breaks[index].map { apart in
+                breaks.indices.contains { other in
+                    guard other != index, let its = breaks[other] else { return false }
+                    return max(its.row.minY - row.maxY, row.minY - its.row.maxY) < row.height * 3 && its.gap.overlaps(apart.gap)
+                }
+            } ?? false
+            if isBetweenBlocks { return nil }
             let isStacked = lines.contains { other in
                 let gap = max(other.box.minY - row.maxY, row.minY - other.box.maxY)
                 return gap > -row.height / 2 && gap < row.height * 3 && other.box.maxX > row.minX && other.box.minX < row.maxX

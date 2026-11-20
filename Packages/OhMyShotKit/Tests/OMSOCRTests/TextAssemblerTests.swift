@@ -138,6 +138,17 @@ struct TextAssemblerTests {
         #expect(TextAssembler.assemble(lines) == "Wi-Fi Connected\n蓝牙耳机 已连接\nDisplay Built-in Liquid Retina XDR")
     }
 
+    @Test func aLabelAndAValueThatBothReadAsTextAreOneLine() {
+        // One row of Settings captured alone: four words either side of the window, and no row near it apart at the
+        // same place, as the rows of two blocks of text are.
+        let row = [line("Allow accessories to connect", x: 0, y: 0), line("Ask for New Accessories", x: 620, y: 0)]
+        #expect(row.allSatisfy { TextAssembler.isRunningText($0.text) })
+        #expect(TextAssembler.assemble(ReadingOrder.sorted(row)) == "Allow accessories to connect Ask for New Accessories")
+        // Under another row of its pane, whose value is a word.
+        let pane = [line("Wi-Fi", x: 0, y: 0), line("Connected", x: 760, y: 0), line("Allow accessories to connect", x: 0, y: 60), line("Ask for New Accessories", x: 620, y: 60)]
+        #expect(TextAssembler.assemble(ReadingOrder.sorted(pane)) == "Wi-Fi Connected\nAllow accessories to connect Ask for New Accessories")
+    }
+
     @Test func twoColumnsOfAFewLinesAreNotJoinedRowByRow() {
         // Four lines are too few for `ReadingOrder` to look for columns, so they come row by row: each column's line is
         // still a line of its own.

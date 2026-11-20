@@ -121,7 +121,8 @@ overlapping pieces first and each piece goes through all of this: see Large sele
    glyph, so closing braces vanish. Scanning the listing's pixels finds unread rows one or two
    characters wide; each becomes the closer of the bracket left open on the line above that starts in
    the same column. Nothing is guessed when no open bracket lines up, or when the code closes that
-   bracket itself further down; a bracket in a string or a comment opens nothing.
+   bracket itself further down; a bracket in a string or a comment opens nothing ("//" starts a comment
+   except in a listing written as Python is, which divides with it).
 8. **Spaces from pixels**: where Chinese meets Latin letters or digits, the empty pixel columns at that
    spot decide. macOS layout itself leaves 0.07–0.25 em there when nobody typed a space (0.25–0.29 em in
    Japanese), and a typed space leaves 0.32–0.50 em, so a space is added above 0.3 em and one of
@@ -1989,7 +1990,9 @@ alone. So that captions under a row of pictures stay lines of their own, pieces 
 as lines are (another line within three line heights above or below) or where the row is all the text there is. Two
 columns of a few lines each come row by row as well (`ReadingOrder` looks for columns from five lines up), and their
 lines are not one line: two pieces that both read as running text (four words or more, or eight characters of Chinese
-or Japanese: `isRunningText`), further apart than a line is tall, stay lines of their own. The
+or Japanese: `isRunningText`), further apart than a line is tall, stay lines of their own where a row within three line
+heights is apart at the same place, as the rows of two blocks of text are. One such row with no other like it is a
+label and its value ("Allow accessories to connect", "Ask for New Accessories") and stays one line. The
 lines keep their own boxes: the panel's line ranges (`TextAssembler.assembly`) still give each field its own range in
 the joined line, and `TranslationUnits` still makes each field a unit (tests for both). In `ReadingOrder`, a gap
 between two groups of lines is no column gap when the lines on each side sit on each other's rows (four in five on
@@ -2003,8 +2006,12 @@ when L1 decides which model reads a page (`VisionPipeline.cjkCount`).
 or as "J" where a "[" is open (what the Chinese model makes of "}" and "]" alone on a line), becomes that bracket's
 closer, as a glyph nothing read already did. Those two only: any other character alone on its line is the code's own,
 a variable or an element of a list. A bracket in a string or a comment opens nothing (`codeBrackets`: after
-`let x = "{";`, a line reading `x` stays), and nothing is put where the code closes the bracket itself further down
-(under `let values = [`, a line reading `1` is an element when the `]` follows). An opening brace read as "1", "l", or
+`let x = "{";`, a line reading `x` stays). "//" starts a comment unless the listing is written as Python is
+(`isPythonLike`: a comment on "#", `def` or `elif`, a block opened on ":"), where it divides: the "}" after
+`size // page_size` closes its dictionary. Nothing is put where the code closes the bracket itself further down
+(under `let values = [`, a line reading `1` is an element when the `]` follows): counted as the closer, the row would
+leave a closer of the code with nothing to close. Where every closer still finds a bracket, the row is the one the
+code lacks: after `const handlers = { submit: () => {`, the unread "}" before `};`. An opening brace read as "1", "l", or
 "I" at the end of its line is put back when the next line is indented under it and the block closes in its column.
 `0 if done else 1`, `let l = 1`, and a continuation line ("+ offset") are left alone (tests).
 
@@ -2016,7 +2023,9 @@ stacked in strips as the cut lines are), and gives way to that reading when it r
 past the cut, is longer, and holds the line's own reading but for the two characters at the cut and one in ten besides
 (`PieceMerge.completes`). Measured from the line's own box, by a line's height, a letter or two past the cut was never
 far enough; and two readings of one line differ by a letter now and then ("moring" for "morning"), so a reading that
-had to hold the other exactly left a line of the dense screen cut. (2) A fragment of a line that was read whole as well ("21. The quiet l" over the line) is
+had to hold the other exactly left a line of the dense screen cut. The three characters at the end no cut touched are
+held as they are, though: a reading that goes on past the cut and has lost the line's number there is no gain. A line
+no cut is near is not read again (its edges' difference passed for a stretch wider than the line, by rounding). (2) A fragment of a line that was read whole as well ("21. The quiet l" over the line) is
 dropped, whichever came first (`PieceMerge.isFragment`). (3) Vision turns a long line over now and then: reads it
 upside down, as letters of a sort ("Tan caon a n ae n en cao"), its corners in that order and its confidence the
 lowest it gives. Such a reading of eight characters or more is left out (`VisionPipeline.isTurnedOver`), and the line
@@ -2031,11 +2040,14 @@ two lines of `let` kept the three sentences explaining them as they were. Now on
 (`TranslationUnits.codeLines`): on such a page, every line but its sentences (`isSentence`: it starts on a word, holds
 no operator, and has four words that are three in four of its tokens, or five characters of Chinese or Japanese) and
 the lines a sentence wraps onto. A statement can be all words as well, so in a script with capitals a sentence starts
-on one, its first word no keyword (`SELECT`) or cmdlet (`Write-Host`), and calls nothing: `echo Welcome to your home
-directory` and `raise ValueError("This option is not available in this mode")` stay code. What only the listing makes
-code stays code: `break`, a string, a `#` comment, `total = count if ready else zero`. Not handled: a sentence inside
-a listing (a docstring's text) is translated too, and one that names a call ("Call read(url) to load the image.") or
-starts on an acronym ("JSON is…") is left as code.
+on one or on a name with one inside ("macOS", "iPhone"), or ends on a period or a mark like it ("the cache is cleared
+when the app restarts."), which a command rarely does; its first word is no keyword (`SELECT`) or cmdlet
+(`Write-Host`), and it calls nothing: `echo Welcome to your home directory` and `raise ValueError("This option is not
+available in this mode")` stay code. A capital after a hyphen makes a cmdlet only with one of PowerShell's verbs before
+it, a parameter (`-Path`), a quote, or a variable on the line: "Wi-Fi is required to pair the device." is a sentence.
+What only the listing makes code stays code: `break`, a string, a `#` comment, `total = count if ready else zero`. Not
+handled: a sentence inside a listing (a docstring's text) is translated too, and one that names a call ("Call
+read(url) to load the image.") or starts on an acronym ("JSON is…") is left as code.
 
 **Formulas among text.** Where the text beside a formula came back empty from its second reading, the row was made of
 what was read: the formula alone, the words Vision had read right gone. An empty reading of a crop that holds a

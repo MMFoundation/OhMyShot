@@ -157,6 +157,29 @@ struct PieceMergeTests {
         #expect(PieceMerge.completes(misread, text: "crosses the narrow orchard until the morning bell.", box: whole, before: 2624, after: nil))
     }
 
+    @Test func whatAReadingAddsPastTheCutDoesNotPayForWhatItLostAtTheOtherEnd() {
+        // The stretch's reading goes on past the cut (2880) and has lost the line's number, at the end no cut touched.
+        let start = line("28. The gentle lantern cross", x: 2300, y: 1045, width: 578, height: 24)
+        let past = CGRect(x: 2300, y: 1045, width: 980, height: 24)
+        #expect(!PieceMerge.completes(start, text: "The gentle lantern crosses the narrow orchard", box: past, before: nil, after: 2880))
+        #expect(PieceMerge.completes(start, text: "28. The gentle lantern crosses the narrow orchard", box: past, before: nil, after: 2880))
+        // A line cut at its start (2624), and a reading that has its start and has lost its last word.
+        let end = line("es the narrow orchard near the old mill", x: 2624, y: 1045, width: 900, height: 24)
+        let whole = CGRect(x: 2570, y: 1045, width: 954, height: 24)
+        #expect(!PieceMerge.completes(end, text: "crosses the narrow orchard near the old", box: whole, before: 2624, after: nil))
+        // What the other reading has more of at that end, a period the column missed, is no loss.
+        let plain = line("es the narrow orchard near the old mill", x: 2624, y: 1045, width: 900, height: 24)
+        #expect(PieceMerge.completes(plain, text: "crosses the narrow orchard near the old mill.", box: whole, before: 2624, after: nil))
+    }
+
+    @Test func aLineNoCutIsNearIsNotReadAgain() {
+        // Its right edge less its left is more than its width, by rounding: (300.3 + 400.4) - 300.3 > 400.4.
+        let pieces = PictureText.pieces(width: 10_989, height: 2880)
+        let clear = line("Another row", x: 300.3, y: 900, width: 400.4, height: 24)
+        #expect(clear.box.maxX - clear.box.minX > clear.box.width)
+        #expect(PieceMerge.loneCuts(in: [clear], pieces: pieces).isEmpty)
+    }
+
     @Test func aFragmentOfALineReadWholeIsDropped() {
         // A piece's passes left the start of a line a second time, over the line itself.
         let whole = line("21. The quiet harbor crosses the plain compass near the old mill", x: 1100, y: 820, width: 946)
