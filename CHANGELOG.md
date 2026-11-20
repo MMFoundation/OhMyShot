@@ -18,6 +18,8 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Changed
 
 - All-In-One opens with nothing chosen instead of framing the area it last took, which read as reusing it: Settings › Capture › Selecting › All-In-One remembers the last area is off by default now, and L brings back the last area taken since OhMyShot opened. Turning it on brings the old behavior back, and a choice already made there is kept. (by [@fzlzjerry])
+- Settings › General › Usage Data is now on by default, also on a Mac where it was never turned on or off. It sends the same daily counts as before (screenshots, recordings, and text recognitions, with the app's version, the macOS version, and a random ID that changes every day); turning it off still stops sending and deletes the unsent counts, and Reset to Default Settings now keeps whichever choice was made.
+- The one-time invitation that comes after using OhMyShot for a while now also asks for a star on GitHub: Star on GitHub, the default, opens OhMyShot's repository, beside Join Discord. Anyone who already saw the Discord-only invitation is asked once more.
 
 ### Fixed
 
