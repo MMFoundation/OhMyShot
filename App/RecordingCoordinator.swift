@@ -604,12 +604,18 @@ final class RecordingCoordinator {
     }
 
     /// Throws the recording so far away and records the same thing again, after the countdown.
+    /// Checks startup disk space before discarding so a refused replacement never loses the current recording.
     func restart() {
         guard let session else { return }
-        phase = .idle
-        endChrome()
-        discard(session)
-        prepare(session.plan)
+        switch drafts.restartDecision() {
+        case .restart:
+            phase = .idle
+            endChrome()
+            discard(session)
+            prepare(session.plan)
+        case .keepCurrent(let available, let required):
+            presentInsufficientDiskSpaceToStart(available: available, required: required)
+        }
     }
 
     /// Stops and throws the recording away.
@@ -909,6 +915,11 @@ final class RecordingCoordinator {
         guard case .insufficient(let available, let required) = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesToStart) else {
             return true
         }
+        presentInsufficientDiskSpaceToStart(available: available, required: required)
+        return false
+    }
+
+    private func presentInsufficientDiskSpaceToStart(available: Int64, required: Int64) {
         Log.recording.error("Not enough disk space to start recording: \(available, privacy: .public) bytes available, \(required, privacy: .public) required")
         let availableText = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
         let requiredText = ByteCountFormatter.string(fromByteCount: required, countStyle: .file)
@@ -916,7 +927,6 @@ final class RecordingCoordinator {
             title: String(localized: "Not Enough Disk Space to Record"),
             message: String(localized: "Recording needs at least \(requiredText) of free disk space, and only \(availableText) is available. Free up space and try again.")
         )
-        return false
     }
 
     private func presentInterruptionKept(_ interruption: Interruption, keptDuration: TimeInterval) {

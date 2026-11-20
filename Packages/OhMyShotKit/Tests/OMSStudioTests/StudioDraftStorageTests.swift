@@ -539,4 +539,169 @@ struct StudioDraftStorageTests {
         #expect(!projectOnlyResult.addedMedia)
         #expect(history.studioMovieProject(of: reexported) != nil)
     }
+
+    @Test func recoveryStaysIncompleteWhenDraftTelemetryCannotBeReadAndHistoryExists() async throws {
+        let root = temporaryFolder()
+        let draftDir = root.appending(path: "Draft", directoryHint: .isDirectory)
+        let historyDir = root.appending(path: "History", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: draftDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let history = HistoryStore(directory: historyDir)
+        let movie = root.appending(path: "recording.mp4")
+        try Data("mp4-bytes".utf8).write(to: movie)
+        let entry = try history.add(
+            movingFileAt: movie, name: "Studio Clip", kind: .recording,
+            pixelWidth: 1600, pixelHeight: 1000, appName: "Xcode", duration: 6.0, pixelsPerPoint: 2
+        )
+
+        let draftCamera = draftDir.appending(path: "clip.camera.mov")
+        let draftTelemetryURL = draftDir.appending(path: "clip.telemetry.json")
+        try Data("camera-bytes".utf8).write(to: draftCamera)
+        try Data("not-valid-json".utf8).write(to: draftTelemetryURL)
+
+        // Corrupt/unreadable telemetry while History entry exists must stay incomplete (never discarded)
+        // so the draft and its camera copy are preserved for a later launch.
+        let corruptOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        guard case .incomplete(let corruptResult) = corruptOutcome else {
+            Issue.record("Expected .incomplete when telemetry cannot be decoded and History entry exists, got \(corruptOutcome)")
+            return
+        }
+        #expect(!corruptResult.isComplete)
+        #expect(!corruptResult.savedTelemetry)
+        #expect(corruptResult.expectedCamera)
+        #expect(corruptResult.errorDescription != nil)
+
+        // Missing telemetry file while History entry exists also stays incomplete rather than discarding the camera.
+        try FileManager.default.removeItem(at: draftTelemetryURL)
+        let missingOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        guard case .incomplete(let missingResult) = missingOutcome else {
+            Issue.record("Expected .incomplete when telemetry is unreadable and History entry exists, got \(missingOutcome)")
+            return
+        }
+        #expect(!missingResult.isComplete)
+        #expect(missingResult.expectedCamera)
+
+        // Only once the History entry itself is gone does recovery return .discarded.
+        history.delete(entry)
+        let goneOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        #expect(goneOutcome == .discarded)
+    }
+
+    @Test func recoveryStaysIncompleteWhenDraftCameraFileExistsButProbeFails() async throws {
+        let root = temporaryFolder()
+        let draftDir = root.appending(path: "Draft", directoryHint: .isDirectory)
+        let historyDir = root.appending(path: "History", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: draftDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let history = HistoryStore(directory: historyDir)
+        let movie = root.appending(path: "recording.mp4")
+        try Data("mp4-bytes".utf8).write(to: movie)
+        let entry = try history.add(
+            movingFileAt: movie, name: "Studio Clip", kind: .recording,
+            pixelWidth: 1600, pixelHeight: 1000, appName: "Xcode", duration: 6.0, pixelsPerPoint: 2
+        )
+
+        let draftCamera = draftDir.appending(path: "clip.camera.mov")
+        let draftTelemetryURL = draftDir.appending(path: "clip.telemetry.json")
+        try Data("camera-bytes".utf8).write(to: draftCamera)
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2,
+            samples: [.init(time: 0, x: 400, y: 300, cursor: 0)],
+            camera: .init(start: 0, fills: [], bubble: StudioProject.Camera(corner: .bottomLeft))
+        )
+        let draftTelemetry = StudioDraftTelemetry(
+            telemetry: telemetry, isRetimed: true, cameraWanted: true,
+            showsClicks: true, showsKeystrokes: false
+        )
+        try JSONEncoder().encode(draftTelemetry).write(to: draftTelemetryURL, options: .atomic)
+
+        // A draft camera file is present on disk, but the readability probe fails right now:
+        // recovery must stay incomplete so the draft camera is kept for a later launch.
+        let unreadableOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { _ in false }
+        )
+        guard case .incomplete(let unreadableResult) = unreadableOutcome else {
+            Issue.record("Expected .incomplete when draft camera exists on disk but probe fails, got \(unreadableOutcome)")
+            return
+        }
+        #expect(!unreadableResult.isComplete)
+        #expect(unreadableResult.expectedCamera)
+        #expect(!unreadableResult.savedCamera)
+        #expect(unreadableResult.errorDescription != nil)
+
+        // On a later launch when the camera file becomes readable, recovery completes and restores camera.mov + telemetry.
+        let recoveredOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        guard case .completed(let recoveredResult) = recoveredOutcome else {
+            Issue.record("Expected .completed once draft camera is readable, got \(recoveredOutcome)")
+            return
+        }
+        #expect(recoveredResult.isComplete && recoveredResult.savedCamera)
+        let projectDir = history.studioURL(for: entry)
+        #expect(FileManager.default.fileExists(atPath: projectDir.appending(path: StudioFiles.camera).path(percentEncoded: false)))
+        let updatedTelemetry = try JSONDecoder().decode(
+            StudioTelemetry.self, from: Data(contentsOf: projectDir.appending(path: StudioFiles.telemetry))
+        )
+        #expect(updatedTelemetry.camera != nil)
+        let savedProject = try JSONDecoder().decode(
+            StudioProject.self, from: Data(contentsOf: projectDir.appending(path: StudioFiles.project))
+        )
+        #expect(savedProject.camera.corner == .bottomLeft)
+
+        // Contrast: when no camera file was recorded (absent on disk), recovery completes without a camera.
+        let noCamMovie = root.appending(path: "nocam.mp4")
+        try Data("mp4-bytes".utf8).write(to: noCamMovie)
+        let noCamEntry = try history.add(
+            movingFileAt: noCamMovie, name: "Screen Only", kind: .recording,
+            pixelWidth: 1600, pixelHeight: 1000, appName: "Xcode", duration: 6.0, pixelsPerPoint: 2
+        )
+        let missingCameraURL = draftDir.appending(path: "missing.camera.mov")
+        let screenOnlyTelemetry = StudioDraftTelemetry(
+            telemetry: StudioTelemetry(width: 1600, height: 1000, pixelsPerPoint: 2, samples: [.init(time: 0, x: 400, y: 300, cursor: 0)]),
+            isRetimed: true, cameraWanted: false
+        )
+        let screenOnlyTelemetryURL = draftDir.appending(path: "nocam.telemetry.json")
+        try JSONEncoder().encode(screenOnlyTelemetry).write(to: screenOnlyTelemetryURL, options: .atomic)
+        let noCamOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: noCamEntry.id,
+            telemetryURL: screenOnlyTelemetryURL,
+            cameraURL: missingCameraURL,
+            in: history,
+            hasReadableVideo: { _ in false }
+        )
+        guard case .completed(let noCamResult) = noCamOutcome else {
+            Issue.record("Expected .completed when no camera file was recorded, got \(noCamOutcome)")
+            return
+        }
+        #expect(noCamResult.isComplete && !noCamResult.expectedCamera)
+    }
 }

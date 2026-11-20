@@ -258,7 +258,7 @@ nonisolated public enum StudioRecoveryOutcome: Equatable, Sendable {
     /// The linked history entry's movie was replaced after it was kept (e.g. trimmed in the recording editor),
     /// so recovered telemetry and camera no longer match it and the draft should be discarded.
     case movieReplaced
-    /// The linked history entry is gone or the draft has no recoverable Studio telemetry; safe to discard the draft.
+    /// The linked history entry is gone; safe to discard the draft.
     case discarded
 }
 
@@ -426,13 +426,28 @@ nonisolated public enum StudioProjectStorage {
             }
         }
 
-        guard let data = try? Data(contentsOf: telemetryURL),
-              let savedDraft = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data)
-        else { return .discarded }
-
         let existingCameraURL = folder.appending(path: StudioFiles.camera)
         let hasExistingCamera = await hasReadableVideo(existingCameraURL)
-        let hasDraftCamera = await hasReadableVideo(cameraURL)
+        let draftCameraExists = FileManager.default.fileExists(atPath: cameraURL.path(percentEncoded: false))
+
+        let savedDraft: StudioDraftTelemetry
+        do {
+            let data = try Data(contentsOf: telemetryURL)
+            savedDraft = try JSONDecoder().decode(StudioDraftTelemetry.self, from: data)
+        } catch {
+            let hasExistingProject = FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path(percentEncoded: false))
+            let result = StudioProjectSaveResult(
+                savedTelemetry: false,
+                savedProject: hasExistingProject,
+                expectedCamera: hasExistingCamera || draftCameraExists,
+                savedCamera: hasExistingCamera,
+                errorDescription: error.localizedDescription
+            )
+            return .incomplete(result)
+        }
+
+        let hasDraftCamera = draftCameraExists ? await hasReadableVideo(cameraURL) : false
+        let unreadableDraftCamera = !hasExistingCamera && draftCameraExists && !hasDraftCamera
         let hasCamera = hasExistingCamera || hasDraftCamera
         let duration: Double
         if !savedDraft.isRetimed, hasStudioSource,
@@ -448,9 +463,9 @@ nonisolated public enum StudioProjectStorage {
         project.cursor.showsClicks = savedDraft.showsClicks
         project.showsKeys = savedDraft.showsKeystrokes
         project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
-        project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
+        project.camera = resolvedTelemetry.camera?.bubble ?? savedDraft.telemetry.camera?.bubble ?? savedDraft.cameraBubble ?? StudioProject.Camera()
 
-        let result = save(
+        var result = save(
             telemetry: resolvedTelemetry,
             project: project,
             cameraURL: hasDraftCamera ? cameraURL : nil,
@@ -460,6 +475,12 @@ nonisolated public enum StudioProjectStorage {
             copyCamera: copyCamera,
             writeData: writeData
         )
+        if unreadableDraftCamera {
+            result.expectedCamera = true
+            result.savedCamera = false
+            let message = "Draft camera file could not be read"
+            result.errorDescription = result.errorDescription.map { "\($0); \(message)" } ?? message
+        }
         if result.addedMedia {
             history.invalidateStudioMovieExport(of: entry)
         }

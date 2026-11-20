@@ -214,4 +214,20 @@ struct RecordingRecoveryTests {
         #expect(found.first?.id == draft.id)
         #expect(found.first?.info?.keptHistoryID == nil)
     }
+
+    @Test func restartDecisionKeepsCurrentRecordingWhenFreeSpaceIsBelowStartMinimum() {
+        let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
+        let threeHundredMiB: Int64 = 300 * 1_024 * 1_024
+
+        // Above the 250 MiB while-recording floor but below the 500 MiB start gate: keep the current recording.
+        let refused = drafts.restartDecision { _ in threeHundredMiB }
+        #expect(refused == .keepCurrent(
+            availableBytes: threeHundredMiB,
+            requiredBytes: RecordingDrafts.minimumFreeBytesToStart
+        ))
+
+        // At or above 500 MiB free (or when disk space can't be measured): allow restart.
+        #expect(drafts.restartDecision { _ in RecordingDrafts.minimumFreeBytesToStart } == .restart)
+        #expect(drafts.restartDecision { _ in nil } == .restart)
+    }
 }

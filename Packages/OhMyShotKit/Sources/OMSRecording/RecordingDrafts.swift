@@ -69,6 +69,13 @@ public struct RecordingDrafts: Sendable {
         case insufficient(availableBytes: Int64, requiredBytes: Int64)
     }
 
+    public enum RestartDecision: Equatable, Sendable {
+        /// Enough free space exists to start a replacement recording: discard the current session and restart.
+        case restart
+        /// Free space is below `minimumFreeBytesToStart`: keep the current session recording so it can be stopped and kept.
+        case keepCurrent(availableBytes: Int64, requiredBytes: Int64)
+    }
+
     /// One recording in progress, or left behind.
     public struct Draft: Equatable, Sendable {
         public let id: UUID
@@ -109,6 +116,19 @@ public struct RecordingDrafts: Sendable {
             return .insufficient(availableBytes: available, requiredBytes: minimumBytes)
         }
         return .sufficient(availableBytes: available)
+    }
+
+    /// Decides whether a running recording can safely restart without discarding the current recording only
+    /// to have its replacement refused by the startup disk-space gate.
+    public func restartDecision(
+        measure: (URL) -> Int64? = Self.volumeAvailableBytes(at:)
+    ) -> RestartDecision {
+        switch checkDiskSpace(requiring: Self.minimumFreeBytesToStart, measure: measure) {
+        case .sufficient:
+            return .restart
+        case .insufficient(let available, let required):
+            return .keepCurrent(availableBytes: available, requiredBytes: required)
+        }
     }
 
     public static func volumeAvailableBytes(at url: URL) -> Int64? {
