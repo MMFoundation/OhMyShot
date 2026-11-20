@@ -495,7 +495,7 @@ public final class SettingsStore {
         let registered: [Key: Any] = [
             .showMenuBarIcon: true,
             .playSounds: true,
-            .sendsUsageData: false,
+            .sendsUsageData: true,
             .checksForUpdates: true,
             .automationEnabled: true,
             .copyAfterCapture: true,

@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct UsageTelemetryTests {
-    @Test func optInDefaultsToOffAndResetDisablesIt() throws {
+    @Test func usageDataDefaultsToOnAndResetTurnsItBackOn() throws {
         let name = UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
@@ -12,13 +12,13 @@ struct UsageTelemetryTests {
         var changes: [Bool] = []
         settings.onUsageDataChange = { changes.append($0) }
 
-        #expect(!settings.sendsUsageData)
-        settings.sendsUsageData = true
-        #expect(SettingsStore(defaults: defaults).sendsUsageData)
+        #expect(settings.sendsUsageData)
+        settings.sendsUsageData = false
+        #expect(!SettingsStore(defaults: defaults).sendsUsageData)
         settings.resetToDefaults()
 
-        #expect(changes == [true, false])
-        #expect(!SettingsStore(defaults: defaults).sendsUsageData)
+        #expect(changes == [false, true])
+        #expect(SettingsStore(defaults: defaults).sendsUsageData)
     }
 
     @Test func retryAndRelaunchPreserveCumulativeSnapshots() async throws {
