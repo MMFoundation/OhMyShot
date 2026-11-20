@@ -16,6 +16,13 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+- A capture that can't be moved to the Trash is no longer deleted for good instead: it stays in Capture History and Quick Access with its original, marks, and text, and the card or History says why.
+- Replacing a recording with an edit, or with a movie exported from Studio, keeps the last one until the new one is in place, so a replacement that fails loses nothing.
+- With Keep Captures set to Never, a card pushed out of Quick Access by newer ones can still be brought back with Restore Recently Closed; only a card you close yourself is deleted at once.
+- The editor stays open until its edits are saved. When saving fails it offers Retry, Save a Copy as Project…, and Discard Edits, and quitting waits for the same choice. A capture open in the editor can't be moved to the Trash from its card or from History.
+- Marking up in place, Escape with marks drawn asks for a second Escape before throwing them away.
+- Blur and Pixelate grow stronger with the size of what they cover, so large text under them can no longer be read back. A redaction that can't be worked out covers its area in solid black instead of leaving it bare, and a capture whose saved marks can't be read opens with its marks flattened, never as the original without them.
+- Copying a recording no longer starts a clipboard check every 3 seconds unless Keep Captures is Never, and Capture Text no longer holds on to the last picture it read.
 
 ## [0.2.0] - 2026-11-19
 

@@ -115,6 +115,28 @@ struct AnnotationCombineTests {
         #expect(redacted.green > 150 && redacted.red < 60)
     }
 
+    @Test func aFailedCompositeCoversThePlacedPictureOutsideTheBase() throws {
+        let base = swatch(60, 40, red: 1, green: 1, blue: 1)
+        let name = try PictureStore.shared.add(swatch(30, 20, red: 0, green: 1, blue: 0))
+        var document = AnnotationDocument(pixelSize: CGSize(width: 60, height: 40), scale: 1)
+        document.canvas = CGRect(x: -50, y: 0, width: 110, height: 40)
+        document.items = [
+            image(CGRect(x: -40, y: 10, width: 30, height: 20), name: name),
+            Annotation(
+                shape: .redaction(Redaction(rect: CGRect(x: -45, y: 10, width: 25, height: 20), method: .blur)),
+                style: Style(color: RGBA(red: 1, green: 0, blue: 0, alpha: 0))
+            ),
+        ]
+        let output = try #require(AnnotationRenderer.flatten(document, base: base, composite: { _, _, area in
+            #expect(area == CGRect(x: -40, y: 0, width: 100, height: 40))
+            return nil
+        }))
+        let pixels = Pixels(output)
+        #expect((10..<30).allSatisfy { x in (10..<30).allSatisfy { y in pixels[x, y] == (0, 0, 0, 255) } })
+        #expect(pixels[9, 20] == (255, 255, 255, 255))
+        #expect(pixels[30, 20].g == 255 && pixels[30, 20].r == 0)
+    }
+
     @Test func aSpotlightDimsCombinedImagesToo() throws {
         let name = try PictureStore.shared.add(swatch(20, 20, red: 1, green: 1, blue: 1))
         var document = AnnotationDocument(pixelSize: CGSize(width: 100, height: 100), scale: 1)

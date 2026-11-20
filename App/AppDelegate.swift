@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingURLs: [(url: URL, senderPID: pid_t?)] = []
     private var pendingFiles: [URL] = []
     private var receivedLaunchInput = false
+    private var decidingQuit = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.make(settingsTarget: self)
@@ -62,19 +63,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// After a permission changes, System Settings offers Quit & Reopen, but it only quits a menu bar
     /// app. When the quit comes from System Settings, start the new copy here before quitting.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !decidingQuit else { return .terminateLater }
+        decidingQuit = true
         let requester = Self.quitRequester()
         if let requester { Log.app.notice("Quit requested by \(requester, privacy: .public)") }
         let reopens = requester.map { $0.hasPrefix("com.apple.systempreferences") || $0.hasPrefix("com.apple.settings.") } ?? false
-        let quit = { (mayQuit: Bool) in
-            guard mayQuit else { return sender.reply(toApplicationShouldTerminate: false) }
+        let quit = { [self] (mayQuit: Bool) in
+            guard mayQuit else {
+                decidingQuit = false
+                return sender.reply(toApplicationShouldTerminate: false)
+            }
             guard reopens else { return sender.reply(toApplicationShouldTerminate: true) }
             Relauncher.startNewCopy { _ in sender.reply(toApplicationShouldTerminate: true) }
         }
-        // A recording is stopped and kept first; quitting goes on once it is.
-        if let root, root.finishRecordingBeforeQuitting(quit) { return .terminateLater }
-        guard reopens else { return .terminateNow }
-        quit(true)
-        return .terminateLater
+        let finishEditors = { [root] (mayQuit: Bool) in
+            guard mayQuit, let root, root.annotations.isEditing else { return quit(mayQuit) }
+            Task { quit(await root.annotations.closeBeforeQuitting()) }
+        }
+        if let root, root.finishRecordingBeforeQuitting(finishEditors) { return .terminateLater }
+        if reopens || root?.annotations.isEditing == true {
+            Task { finishEditors(true) }
+            return .terminateLater
+        }
+        return .terminateNow
     }
 
     /// The bundle identifier of the app that sent the Quit Apple event being handled, if any.

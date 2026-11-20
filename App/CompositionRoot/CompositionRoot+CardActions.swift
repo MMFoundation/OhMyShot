@@ -135,15 +135,19 @@ extension CompositionRoot {
                 return true
             },
             moveToTrash: { [weak self] item in
-                guard let self else { return }
+                guard let self, let entry = history.item(id: item.id) else { throw CocoaError(.fileNoSuchFile) }
+                try history.moveToTrash(entry)
                 uploads.cancel(captureID: item.id)
                 // As in CleanShot, the capture goes as a whole: the copy this card saved goes to the Trash
                 // with it. Both can be put back from the Trash.
                 if let saved = item.savedURL {
-                    try? FileManager.default.trashItem(at: saved, resultingItemURL: nil)
-                }
-                if let entry = history.item(id: item.id) {
-                    history.moveToTrash(entry)
+                    do {
+                        try FileManager.default.trashItem(at: saved, resultingItemURL: nil)
+                    } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                        // The user already removed the copy.
+                    } catch {
+                        NSApp.presentError(error)
+                    }
                 }
                 historyWindow?.reload()
                 retention.sweepWallpaperPictures()
@@ -232,12 +236,14 @@ extension CompositionRoot {
                 pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale(of: entry, orElse: 2))
             },
             moveToTrash: { [weak self] entry in
-                self?.uploads.cancel(captureID: entry.id)
-                self?.quickAccess.remove(entry.id)
-                self?.history.moveToTrash(entry)
-                self?.retention.sweepWallpaperPictures()
+                guard let self else { throw CocoaError(.fileNoSuchFile) }
+                try history.moveToTrash(entry)
+                uploads.cancel(captureID: entry.id)
+                quickAccess.remove(entry.id)
+                retention.sweepWallpaperPictures()
             }
         )
+        historyActions.isBeingEdited = { [weak self] entry in self?.annotations.openCaptureIDs.contains(entry.id) ?? false }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)

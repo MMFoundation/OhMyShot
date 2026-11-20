@@ -24,8 +24,8 @@ public final class QuickAccessController {
         public var pin: (QuickAccessItem) async -> Bool
         /// Prints the capture's picture through the print panel.
         public var print: (QuickAccessItem) async -> Bool = { _ in false }
-        public var moveToTrash: (QuickAccessItem) -> Void
-        /// A card was dismissed without being trashed.
+        public var moveToTrash: (QuickAccessItem) throws -> Void
+        /// Neither the visible stack nor Recently Closed holds this capture any longer.
         public var closed: (QuickAccessItem) -> Void
         /// The file to hand to another app for a capture, when it is dragged out of its card or shared: the capture
         /// itself, or a copy in the format Settings choose.
@@ -79,7 +79,7 @@ public final class QuickAccessController {
             reveal: @escaping (QuickAccessItem) -> Void,
             recognizeText: @escaping (QuickAccessItem) -> Void,
             pin: @escaping (QuickAccessItem) async -> Bool,
-            moveToTrash: @escaping (QuickAccessItem) -> Void,
+            moveToTrash: @escaping (QuickAccessItem) throws -> Void,
             closed: @escaping (QuickAccessItem) -> Void
         ) {
             self.copy = copy
@@ -99,6 +99,10 @@ public final class QuickAccessController {
     public var maximumCards = 5
 
     private let actions: Actions
+    lazy var showTrashFailure: (String) -> Void = {
+        let notice = CopiedHUD()
+        return { notice.show($0, near: NSEvent.mouseLocation) }
+    }()
     private var panel: QuickAccessPanel?
     private var firstCaptureHint: FirstCaptureHintController?
 
@@ -161,7 +165,7 @@ public final class QuickAccessController {
     /// card closing by itself under a Save being asked for, saves once and takes one number.
     private let saves = SingleFlight<UUID, URL?>()
     private var items: [QuickAccessItem] = []
-    private var recentlyClosed: [QuickAccessItem] = []
+    private var recentlyClosed: [(item: QuickAccessItem, evicted: Bool)] = []
     /// Cards moved to the Trash and waiting to go, oldest first, each with the task that sends it on. A card stays
     /// `trashDelay` under Undo, still in `items`, and only then is its capture moved to the Trash, which takes its
     /// record, marks, and text with it: Undo, ⌘Z, and Restore Recently Closed bring it back until then.
@@ -189,13 +193,18 @@ public final class QuickAccessController {
     /// The captures currently shown as cards.
     public var itemIDs: Set<UUID> { Set(items.map(\.id)) }
 
+    /// A card pushed out of the stack still needs its capture until it leaves Recently Closed.
+    public var heldCaptureIDs: Set<UUID> {
+        itemIDs.union(recentlyClosed.compactMap { $0.evicted ? $0.item.id : nil })
+    }
+
     /// The card showing capture `id`, if one is.
     public func item(_ id: UUID) -> QuickAccessItem? {
         items.first { $0.id == id }
     }
 
     public var canRestoreRecentlyClosed: Bool {
-        !trashing.isEmpty || recentlyClosed.contains { FileManager.default.fileExists(atPath: $0.fileURL.path(percentEncoded: false)) }
+        !trashing.isEmpty || recentlyClosed.contains { FileManager.default.fileExists(atPath: $0.item.fileURL.path(percentEncoded: false)) }
     }
 
     private func isTrashing(_ id: UUID) -> Bool {
@@ -217,12 +226,7 @@ public final class QuickAccessController {
             trashing.remove(at: index).sender.cancel()
             stack?.setTrashing(false, for: item.id)
         }
-        items.removeAll { $0.id == item.id }
-        recentlyClosed.removeAll { $0.id == item.id }
-        items.append(item)
-        while items.count > maximumCards {
-            letGo(items.removeFirst())
-        }
+        insertIntoStack(item)
         let preferences = actions.preferences()
         let target = QuickAccessPlacement.display(forCaptureOn: item.displayID, pointerOn: Self.pointerDisplayID(), followsPointer: preferences.onPointerDisplay)
         present(entering: item.id, on: target)
@@ -237,6 +241,13 @@ public final class QuickAccessController {
         if actions.isBeingEdited(item) { hold(.editor, for: item.id, if: true) }
         reselectIfNeeded()
         updateCountdowns()
+    }
+
+    func insertIntoStack(_ item: QuickAccessItem) {
+        items.removeAll { $0.id == item.id }
+        recentlyClosed.removeAll { $0.item.id == item.id }
+        items.append(item)
+        while items.count > maximumCards { letGo(items.removeFirst(), evicted: true) }
     }
 
     /// Shows a capture's new picture (marked up, or put back as taken) on its card, where it is. The copy
@@ -335,13 +346,16 @@ public final class QuickAccessController {
         // The cards are out of the stack when each is told it closed, so none of them still counts as holding its capture.
         let closing = items
         items.removeAll()
-        closing.forEach(letGo)
+        closing.forEach { letGo($0, evicted: false) }
         refresh()
     }
 
-    /// Sends every card waiting under Undo on to the Trash at once: the app is quitting.
+    /// The app is quitting: drop the restore history and send cards waiting under Undo on to the Trash.
     public func finishTrashingNow() {
         for id in trashing.map(\.id) { finishTrashing(id) }
+        let released = recentlyClosed.filter(\.evicted)
+        recentlyClosed.removeAll()
+        for entry in released { actions.closed(entry.item) }
     }
 
     /// Brings back a card waiting to go to the Trash: the one moved last, without `id`. False when none waits.
@@ -377,7 +391,7 @@ public final class QuickAccessController {
     public func remove(_ id: UUID) {
         if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         completing[id] = nil
-        recentlyClosed.removeAll { $0.id == id }
+        recentlyClosed.removeAll { $0.item.id == id }
         if let index = trashing.firstIndex(where: { $0.id == id }) { trashing.remove(at: index).sender.cancel() }
         guard items.contains(where: { $0.id == id }) else { return }
         items.removeAll { $0.id == id }
@@ -396,26 +410,38 @@ public final class QuickAccessController {
     /// whose capture still exists.
     public func restoreRecentlyClosed() {
         if undoTrash() { return }
-        while let item = recentlyClosed.popLast() {
-            if FileManager.default.fileExists(atPath: item.fileURL.path(percentEncoded: false)) {
-                add(item)
-                return
+        if let item = takeRecentlyClosed() { add(item) }
+    }
+
+    func takeRecentlyClosed() -> QuickAccessItem? {
+        while let entry = recentlyClosed.popLast() {
+            if FileManager.default.fileExists(atPath: entry.item.fileURL.path(percentEncoded: false)) {
+                return entry.item
             }
+            if entry.evicted { actions.closed(entry.item) }
         }
+        return nil
     }
 
     /// A card that left the stack goes on as it was: to the Trash if it waited to go there, else closed.
-    private func letGo(_ item: QuickAccessItem) {
-        if isTrashing(item.id) { sendToTrash(item) } else { close(item) }
+    private func letGo(_ item: QuickAccessItem, evicted: Bool) {
+        if isTrashing(item.id) { sendToTrash(item) } else { close(item, evicted: evicted) }
     }
 
-    private func close(_ item: QuickAccessItem) {
+    private func rememberEvicted(_ item: QuickAccessItem) {
+        close(item, evicted: true)
+    }
+
+    private func close(_ item: QuickAccessItem, evicted: Bool = false) {
         if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
         completing[item.id] = nil
-        recentlyClosed.append(item)
-        if recentlyClosed.count > 20 { recentlyClosed.removeFirst() }
+        recentlyClosed.append((item, evicted))
+        if recentlyClosed.count > 20 {
+            let oldest = recentlyClosed.removeFirst()
+            if oldest.evicted { actions.closed(oldest.item) }
+        }
         schedule.forget(item.id)
-        actions.closed(item)
+        if !evicted { actions.closed(item) }
     }
 
     /// Re-lays the stack after cards left it; the last card slides out before the panel goes.
@@ -438,9 +464,7 @@ public final class QuickAccessController {
         let visible = screen.visibleFrame
         let preferences = actions.preferences()
         let margin = CardStackView.margin
-        while CardStackView.height(for: items, size: preferences.size) - margin * 2 > QuickAccessPlacement.tallestStack(visible: visible), items.count > 1 {
-            letGo(items.removeFirst())
-        }
+        fitStack(to: QuickAccessPlacement.tallestStack(visible: visible), size: preferences.size)
         let stack = self.stack ?? makeStack()
         stack.size = preferences.size
         stack.corner = preferences.corner
@@ -461,6 +485,12 @@ public final class QuickAccessController {
         // The display actually used, so a stack moved off a removed display stays where it now is.
         self.displayID = screen.cgDirectDisplayID ?? displayID
         updateFirstCaptureHint()
+    }
+
+    func fitStack(to height: CGFloat, size: QuickAccessSize) {
+        while items.count > 1, CardStackView.height(for: items, size: size) - CardStackView.margin * 2 > height {
+            letGo(items.removeFirst(), evicted: true)
+        }
     }
 
     private func tearDown() {
@@ -552,6 +582,10 @@ public final class QuickAccessController {
     /// the keyboard where it is.
     private func trash(_ item: QuickAccessItem) {
         guard items.contains(where: { $0.id == item.id }), !isTrashing(item.id) else { return }
+        guard !actions.isBeingEdited(item) else {
+            showTrashFailure(String(localized: "Close the capture’s editor first.", bundle: .module))
+            return
+        }
         completing[item.id] = nil
         let next = neighbor(of: item.id)
         let hadKeyboard = selectedID == item.id
@@ -574,14 +608,33 @@ public final class QuickAccessController {
     /// A card's wait under Undo is over: it goes, and its capture to the Trash.
     private func finishTrashing(_ id: UUID) {
         guard isTrashing(id), let index = items.firstIndex(where: { $0.id == id }) else { return }
-        sendToTrash(items.remove(at: index))
+        sendToTrash(items[index])
         refresh()
     }
 
-    /// Moves the capture of a card that waited under Undo, and is out of the stack, to the Trash.
+    /// Moves a capture to the Trash after Undo expires. A failure keeps its card available for retry.
     private func sendToTrash(_ item: QuickAccessItem) {
         if let index = trashing.firstIndex(where: { $0.id == item.id }) { trashing.remove(at: index).sender.cancel() }
-        actions.moveToTrash(item)
+        let message: String
+        if actions.isBeingEdited(item) {
+            message = String(localized: "Close the capture’s editor first.", bundle: .module)
+        } else {
+            do {
+                try actions.moveToTrash(item)
+                items.removeAll { $0.id == item.id }
+                return
+            } catch {
+                message = String(localized: "Couldn’t Move to Trash", bundle: .module)
+            }
+        }
+        if items.contains(where: { $0.id == item.id }) {
+            stack?.setTrashing(false, for: item.id)
+            schedule.restart(item.id)
+            updateCountdowns()
+        } else {
+            rememberEvicted(item)
+        }
+        showTrashFailure(message)
     }
 
     // MARK: Closing by itself

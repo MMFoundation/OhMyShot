@@ -176,13 +176,46 @@ public final class HistoryStore: Sendable {
     /// recording as it was made beside it the first time. Returns the record with the new size and length.
     @discardableResult
     public func replaceRecording(of item: HistoryItem, withFileAt edited: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval) throws -> HistoryItem {
-        if hasOriginal(item) {
-            try FileManager.default.removeItem(at: fileURL(for: item))
-        } else {
-            try FileManager.default.moveItem(at: fileURL(for: item), to: originalURL(for: item))
+        try replaceMovie(of: item, with: edited, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration, studioMarker: nil)
+    }
+
+    /// Stages the incoming movie on the history's volume, then prepares its sidecars. The final rename is the
+    /// only operation that changes the visible movie, so even a failed commit leaves the previous movie in place.
+    func replaceMovie(
+        of item: HistoryItem, with movie: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval,
+        studioMarker: (url: URL, data: Data)?
+    ) throws -> HistoryItem {
+        let manager = FileManager.default, destination = fileURL(for: item)
+        guard movie.standardizedFileURL != destination.standardizedFileURL,
+              try movie.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+        else { throw CocoaError(.fileReadUnknown) }
+        var revised = item
+        var undo: [(url: URL, prior: Data?)] = []
+        do {
+            try AtomicFileCopy.perform(from: movie, to: destination, copy: { source, staging in
+                try manager.moveItem(at: source, to: staging)
+                if let marker = studioMarker {
+                    let prior = manager.fileExists(atPath: marker.url.path(percentEncoded: false)) ? try Data(contentsOf: marker.url) : nil
+                    try marker.data.write(to: marker.url, options: .atomic)
+                    undo.append((marker.url, prior))
+                } else if !hasOriginal(item) {
+                    let original = originalURL(for: item)
+                    try manager.copyItem(at: destination, to: original)
+                    undo.append((original, nil))
+                }
+                let record = sidecarURL(forFileName: item.fileName)
+                let prior = try Data(contentsOf: record)
+                revised = try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+                if revised != item { undo.append((record, prior)) }
+            })
+        } catch {
+            for (url, prior) in undo.reversed() {
+                if let prior { try prior.write(to: url, options: .atomic) }
+                else { try manager.removeItem(at: url) }
+            }
+            throw error
         }
-        try FileManager.default.moveItem(at: edited, to: fileURL(for: item))
-        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+        return revised
     }
 
     /// Puts a recording back as it was made. Returns the record with its size and length then; unchanged
@@ -428,13 +461,11 @@ public final class HistoryStore: Sendable {
     }
 
     /// Moves the capture to the Trash, where it can still be recovered, and forgets it.
-    public func moveToTrash(_ item: HistoryItem) {
+    public func moveToTrash(
+        _ item: HistoryItem, trash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) throws {
+        try trash(fileURL(for: item))
         fileNames.withLock { $0[item.id] = nil }
-        do {
-            try FileManager.default.trashItem(at: fileURL(for: item), resultingItemURL: nil)
-        } catch {
-            try? FileManager.default.removeItem(at: fileURL(for: item))
-        }
         try? FileManager.default.removeItem(at: sidecarURL(forFileName: item.fileName))
         // The Trash keeps the picture as it was last shown; the original, the marks, and its text go with the record.
         removeExtras(of: item)

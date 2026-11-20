@@ -11,7 +11,7 @@ import OSLog
 final class CaptureRetention {
     private let settings: SettingsStore
     private let history: HistoryStore
-    /// The captures with a Quick Access card.
+    /// The captures with a visible Quick Access card or one displaced into Recently Closed.
     private let cards: () -> Set<UUID>
     /// The captures open in the editor, which also keeps the wallpaper sweep off while any is: its Undo may bring a
     /// background back.
@@ -24,9 +24,10 @@ final class CaptureRetention {
     private let historyChanged: () -> Void
     private var pictureSweep: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
-    /// The recording whose file is on the clipboard, and the clipboard's change count when it went there.
-    private var clipboardRecording: (id: UUID, changeCount: Int)?
-    private var clipboardWatch: Task<Void, Never>?
+    private lazy var clipboard = RecordingClipboardHold(
+        changeCount: { NSPasteboard.general.changeCount },
+        released: { [weak self] in self?.releaseIfUnheld($0) }
+    )
 
     init(
         settings: SettingsStore, history: HistoryStore, cards: @escaping () -> Set<UUID>, editors: @escaping () -> Set<UUID>,
@@ -48,7 +49,7 @@ final class CaptureRetention {
             .union(editors())
             .union(recordingWindows())
             .union(uploads())
-            .union(clipboardRecordingID.map { [$0] } ?? [])
+            .union(clipboard.heldID.map { [$0] } ?? [])
     }
 
     /// With history off, a capture lives as long as something holds it (`heldCaptureIDs`); deletes it once nothing does.
@@ -62,26 +63,7 @@ final class CaptureRetention {
     /// A recording went to the clipboard as a reference to its file in the history, which is all the clipboard has of it.
     /// With history off, the file stays until the clipboard holds something else, or until the next launch.
     func recordingCopied(_ id: UUID) {
-        let former = clipboardRecording?.id
-        clipboardRecording = (id, NSPasteboard.general.changeCount)
-        clipboardWatch?.cancel()
-        clipboardWatch = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
-                guard let self, !Task.isCancelled else { return }
-                guard clipboardRecordingID == nil else { continue }
-                clipboardRecording = nil
-                releaseIfUnheld(id)
-                return
-            }
-        }
-        if let former, former != id { releaseIfUnheld(former) }
-    }
-
-    /// The recording whose file the clipboard still holds: nothing else has been copied since it was.
-    private var clipboardRecordingID: UUID? {
-        guard let held = clipboardRecording, held.changeCount == NSPasteboard.general.changeCount else { return nil }
-        return held.id
+        clipboard.copied(id, retention: settings.historyRetention)
     }
 
     /// Takes away the captures older than Settings keep them, but those something holds. The history is listed off the
@@ -90,6 +72,7 @@ final class CaptureRetention {
     func removeExpired() {
         expiry?.cancel()
         let retention = settings.historyRetention, keeping = heldCaptureIDs, now = Date.now
+        clipboard.updatePolling(for: retention)
         expiry = Task { [weak self, history] in
             let expired = await history.loadExpired(retention: retention, keeping: keeping, now: now)
             guard let self, !Task.isCancelled else { return }

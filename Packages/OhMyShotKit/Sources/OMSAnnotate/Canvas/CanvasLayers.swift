@@ -42,8 +42,8 @@ nonisolated final class MarkLayer: StillLayer {
     var mapping = LayerMapping(origin: .zero, zoom: 1) {
         didSet { if mapping != oldValue { setNeedsDisplay() } }
     }
-    /// A blur or pixelation's picture, made from the capture.
-    var redacted: (image: CGImage, rect: CGRect)? {
+    /// What to draw for a blur or pixelation, including the opaque cover on a render failure.
+    var coverage: Redactor.Coverage? {
         didSet { setNeedsDisplay() }
     }
     /// What a highlight lies on: light ground takes it multiplied, dark ground screened.
@@ -67,7 +67,7 @@ nonisolated final class MarkLayer: StillLayer {
         mark = other.mark
         scale = other.scale
         mapping = other.mapping
-        redacted = other.redacted
+        coverage = other.coverage
         ground = other.ground
         super.init(layer: layer)
     }
@@ -86,7 +86,7 @@ nonisolated final class MarkLayer: StillLayer {
 
     override func draw(in context: CGContext) {
         let flipped = prepareDocumentSpace(context, mapping: mapping)
-        AnnotationRenderer.draw(mark, in: context, scale: scale, redacted: redacted, ground: ground, flippedBacking: flipped)
+        AnnotationRenderer.draw(mark, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flipped)
     }
 }
 

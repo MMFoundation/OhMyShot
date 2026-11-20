@@ -157,7 +157,7 @@ final class CompositionRoot {
     /// How long captures stay: as Keep Captures says, and with history off, as long as something holds them.
     lazy var retention = CaptureRetention(
         settings: settings, history: history,
-        cards: { [weak self] in self?.quickAccess.itemIDs ?? [] },
+        cards: { [weak self] in self?.quickAccess.heldCaptureIDs ?? [] },
         editors: { [weak self] in self?.annotations.openCaptureIDs ?? [] },
         recordingWindows: { [weak self] in self?.recordings.openRecordingIDs ?? [] },
         uploads: { [weak self] in self?.uploads.uploadingIDs ?? [] },
@@ -418,12 +418,10 @@ final class CompositionRoot {
         Task { @MainActor [weak self] in self?.offerCommunityInvite() }
     }
 
-    /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         usageTelemetry?.stop()
         onboardingWindow?.preserveProgress()
         quickAccess.dismissFirstCaptureHint()
-        annotations.keepAll()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
         quickAccess.finishTrashingNow()
         textReader.stop()

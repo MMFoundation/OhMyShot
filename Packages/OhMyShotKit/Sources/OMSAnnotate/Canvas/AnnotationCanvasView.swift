@@ -867,12 +867,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     private func updateRedaction(_ layer: MarkLayer) {
         guard case .redaction(let redaction) = layer.mark.shape, redaction.method != .solid else {
-            layer.redacted = nil
+            layer.coverage = nil
             return
         }
-        let source = session.redactionSource
-        layer.redacted = Redactor.image(
-            for: redaction, id: layer.mark.id, base: source?.image ?? session.picture, origin: source?.origin ?? .zero, scale: session.document.scale
+        let source = session.combinedRedactionSource ?? Redactor.Source(base: session.picture)
+        layer.coverage = Redactor.coverage(
+            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale
         )
     }
 

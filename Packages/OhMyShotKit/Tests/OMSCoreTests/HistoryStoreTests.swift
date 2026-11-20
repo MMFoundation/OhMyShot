@@ -170,6 +170,73 @@ struct HistoryStoreTests {
         #expect(left.isEmpty)
     }
 
+    @Test func aFailedTrashKeepsTheCaptureAndAllItsSidecars() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 1, pixelHeight: 1, annotations: Data([3]))
+        try store.setText("indexed", of: marked, readFrom: #require(store.stamp(of: marked)))
+        let project = store.studioURL(for: marked)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+        let asset = project.appending(path: "kept")
+        try Data([4]).write(to: asset)
+        let savedRecord = try #require(store.item(id: marked.id))
+        #expect(throws: CocoaError.self) {
+            try store.moveToTrash(marked) { url in
+                #expect(url == store.fileURL(for: marked))
+                throw CocoaError(.fileWriteNoPermission)
+            }
+        }
+        #expect(store.item(id: marked.id) == savedRecord)
+        #expect(try Data(contentsOf: store.fileURL(for: marked)) == Data([2]))
+        #expect(try Data(contentsOf: store.originalURL(for: marked)) == Data([1]))
+        #expect(try Data(contentsOf: store.annotationsURL(for: marked)) == Data([3]))
+        #expect(store.text(of: marked) == "indexed")
+        #expect(try Data(contentsOf: asset) == Data([4]))
+    }
+
+    @Test(arguments: [false, true])
+    func anUnavailableReplacementLeavesTheLastKeptMovieIntact(studio: Bool) throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let incoming = store.directory.appending(path: "edit.mp4")
+        func replace(_ entry: HistoryItem, duration: Int) throws -> HistoryItem {
+            if studio {
+                return try store.replaceStudioMovie(of: entry, withFileAt: incoming, pixelWidth: 5, pixelHeight: 5, duration: Double(duration), project: Data([UInt8(duration)]))
+            }
+            return try store.replaceRecording(of: entry, withFileAt: incoming, pixelWidth: 5, pixelHeight: 5, duration: Double(duration))
+        }
+        #expect(throws: (any Error).self) { try replace(item, duration: 9) }
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([1]))
+        try Data([2]).write(to: incoming)
+        let prior = try replace(item, duration: 8)
+        let savedRecord = try #require(store.item(id: item.id))
+        #expect(throws: (any Error).self) { try replace(prior, duration: 7) }
+        #expect(store.item(id: item.id) == savedRecord)
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([2]))
+        #expect(try Data(contentsOf: studio ? store.studioSourceURL(for: item) : store.originalURL(for: item)) == Data([1]))
+        if studio { #expect(store.studioMovieProject(of: item) == Data([8])) }
+    }
+
+    @Test func aSidecarFailureLeavesThePreviousMovieAndStudioSettingsIntact() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let incoming = store.directory.appending(path: "edit.mp4")
+        try Data([2]).write(to: incoming)
+        let previous = try store.replaceStudioMovie(of: item, withFileAt: incoming, pixelWidth: 5, pixelHeight: 5, duration: 8, project: Data([8]))
+        let record = store.directory.appending(path: item.fileName + ".json")
+        try FileManager.default.removeItem(at: record)
+        try FileManager.default.createDirectory(at: record, withIntermediateDirectories: false)
+        try Data([3]).write(to: incoming)
+        #expect(throws: (any Error).self) {
+            try store.replaceStudioMovie(of: previous, withFileAt: incoming, pixelWidth: 4, pixelHeight: 4, duration: 7, project: Data([7]))
+        }
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([2]))
+        #expect(store.studioMovieProject(of: item) == Data([8]))
+    }
+
     @Test func restoringTheOriginalForgetsTheMarks() throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }

@@ -2877,6 +2877,40 @@
         }
       }
     },
+    "Edit a Flattened Copy" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar una copia acoplada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier une copie aplatie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注釈を統合したコピーを編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑已合并标注的副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯已合併標註的副本"
+          }
+        }
+      }
+    },
     "Email address" : {
       "localizations" : {
         "es" : {
@@ -7634,6 +7668,40 @@
         }
       }
     },
+    "The saved marks couldn’t be opened." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han podido abrir las anotaciones guardadas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d’ouvrir les annotations enregistrées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存された注釈を開けませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开已保存的标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法打開已儲存的標註。"
+          }
+        }
+      }
+    },
     "The scrolling capture couldn’t start." : {
       "localizations" : {
         "es" : {
@@ -8348,6 +8416,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "視窗"
+          }
+        }
+      }
+    },
+    "You can edit a copy of the picture as it appears in History. Its existing marks can’t be changed. The original capture will be left alone." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes editar una copia de la imagen tal como aparece en el historial. Las anotaciones existentes no se pueden modificar. La captura original se conservará intacta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pouvez modifier une copie de l’image telle qu’elle apparaît dans l’historique. Les annotations existantes ne sont pas modifiables. La capture d’origine restera intacte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "履歴に表示されている画像のコピーを編集できます。既存の注釈は変更できません。元のキャプチャはそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你可以编辑截图历史中所示图像的副本。已有标注无法单独修改，原始截图不会改变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你可以編輯影像在記錄中顯示的副本。現有標註無法修改，原始截圖會保持不變。"
           }
         }
       }
