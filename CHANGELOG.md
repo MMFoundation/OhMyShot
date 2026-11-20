@@ -13,6 +13,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 - Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
 
+### Changed
+
+- All-In-One opens with nothing chosen instead of framing the area it last took, which read as reusing it: Settings › Capture › Selecting › All-In-One remembers the last area is off by default now, and L brings back the last area taken since OhMyShot opened. Turning it on brings the old behavior back, and a choice already made there is kept. (by [@fzlzjerry])
+
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
