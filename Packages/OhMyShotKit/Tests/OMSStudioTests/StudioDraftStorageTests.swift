@@ -1,4 +1,5 @@
 import Foundation
+import OMSCore
 import Testing
 @testable import OMSStudio
 
@@ -86,6 +87,55 @@ struct StudioDraftStorageTests {
         #expect(written.pauses.count == 1)
     }
 
+    @Test func dragReleaseWithoutNewSamplesOrClicksIsCheckpointedAfterInterval() async throws {
+        let root = temporaryFolder()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "draft.telemetry.json")
+
+        nonisolated final class Clock: @unchecked Sendable {
+            private let lock = NSLock()
+            private var current = ContinuousClock.now
+            func now() -> ContinuousClock.Instant { lock.withLock { current } }
+            func advance(by duration: Duration) { lock.withLock { current += duration } }
+        }
+        let clock = Clock()
+        let checkpointer = StudioDraftCheckpointer(minimumInterval: .seconds(10), now: { clock.now() })
+
+        var draft = StudioDraftTelemetry(
+            telemetry: StudioTelemetry(
+                width: 1600, height: 1000, pixelsPerPoint: 2,
+                samples: [.init(time: 10, x: 200, y: 200, cursor: 0), .init(time: 11, x: 500, y: 300, cursor: 0)],
+                clicks: [.init(time: 10, x: 200, y: 200, button: .primary)]
+            ),
+            isRetimed: false, movieStart: 10
+        )
+        await checkpointer.checkpoint(draft, to: url)
+        var written = try JSONDecoder().decode(StudioDraftTelemetry.self, from: Data(contentsOf: url))
+        #expect(written.telemetry.clicks.count == 1)
+        #expect(written.telemetry.clicks[0].releaseTime == nil)
+
+        // Mutate the drag release in place: neither click count nor sample count changes.
+        draft.telemetry.clicks[0].releaseTime = 11.2
+        draft.telemetry.clicks[0].releaseX = 500
+        draft.telemetry.clicks[0].releaseY = 300
+
+        // Within the 10 s readings-only throttle, the checkpoint waits.
+        clock.advance(by: .seconds(1))
+        await checkpointer.checkpoint(draft, to: url)
+        written = try JSONDecoder().decode(StudioDraftTelemetry.self, from: Data(contentsOf: url))
+        #expect(written.telemetry.clicks[0].releaseTime == nil)
+
+        // Once the throttle passes, the release is written to disk.
+        clock.advance(by: .seconds(60))
+        await checkpointer.checkpoint(draft, to: url)
+        written = try JSONDecoder().decode(StudioDraftTelemetry.self, from: Data(contentsOf: url))
+        #expect(written.telemetry.clicks[0].releaseTime == 11.2)
+        #expect(written.telemetry.clicks[0].releaseX == 500)
+        #expect(written.telemetry.clicks[0].releaseY == 300)
+        #expect(written.telemetry.clicks[0].isDrag)
+    }
+
     @Test func studioProjectStorageCopiesCameraAndReportsPartialFailuresWithoutLosingDraft() throws {
         let root = temporaryFolder()
         let draftDir = root.appending(path: "Draft", directoryHint: .isDirectory)
@@ -151,5 +201,137 @@ struct StudioDraftStorageTests {
         )
         #expect(!projectFail.isComplete)
         #expect(projectFail.savedTelemetry && !projectFail.savedProject && projectFail.savedCamera)
+    }
+
+    @Test func partialStudioSaveRecoversMissingAssetsIntoExistingHistoryEntryWithoutDuplicating() async throws {
+        let root = temporaryFolder()
+        let draftDir = root.appending(path: "Draft", directoryHint: .isDirectory)
+        let historyDir = root.appending(path: "History", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: draftDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let history = HistoryStore(directory: historyDir)
+        let finishedMovie = root.appending(path: "recording.mp4")
+        try Data("mp4-bytes".utf8).write(to: finishedMovie)
+        let entry = try history.add(
+            movingFileAt: finishedMovie, name: "Studio Clip", kind: .recording,
+            pixelWidth: 1600, pixelHeight: 1000, appName: "Xcode", duration: 6.0, pixelsPerPoint: 2
+        )
+
+        let draftCamera = draftDir.appending(path: "clip.camera.mov")
+        let draftTelemetryURL = draftDir.appending(path: "clip.telemetry.json")
+        try Data("camera-bytes".utf8).write(to: draftCamera)
+
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2,
+            samples: [.init(time: 0, x: 400, y: 300, cursor: 0)],
+            clicks: [.init(time: 1.0, x: 400, y: 300, button: .primary), .init(time: 1.5, x: 410, y: 305, button: .primary)],
+            camera: .init(start: 0, fills: [], bubble: StudioProject.Camera(corner: .bottomLeft))
+        )
+        let draftTelemetry = StudioDraftTelemetry(
+            telemetry: telemetry, isRetimed: true, movieStart: 100,
+            cameraStart: 100, cameraBubble: StudioProject.Camera(corner: .bottomLeft),
+            cameraWanted: true, showsClicks: true, showsKeystrokes: false
+        )
+        try JSONEncoder().encode(draftTelemetry).write(to: draftTelemetryURL, options: .atomic)
+
+        // Simulate initial partial save: camera copy failed (disk full), telemetry saved with cameraFailed,
+        // project saved, and the user subsequently edited the saved project's zooms.
+        let projectDir = history.studioURL(for: entry)
+        let initialProject = StudioProject(zooms: [.init(start: 1, end: 3, scale: 2, isAutomatic: true)])
+        let partial = StudioProjectStorage.save(
+            telemetry: telemetry, project: initialProject, cameraURL: draftCamera, to: projectDir,
+            copyCamera: { _, _ in throw CocoaError(.fileWriteOutOfSpace) }
+        )
+        #expect(!partial.isComplete)
+        #expect(!partial.savedCamera && partial.savedTelemetry && partial.savedProject)
+
+        var userEditedProject = initialProject
+        userEditedProject.zooms = [.init(start: 2, end: 5, scale: 1.75, isAutomatic: false)]
+        try JSONEncoder().encode(userEditedProject).write(to: projectDir.appending(path: StudioFiles.project), options: .atomic)
+
+        // Recovery retries into the existing History entry: copies camera, updates telemetry with camera
+        // restored, preserves user-edited project.json, and adds no duplicate History item.
+        var copyCount = 0
+        var writtenFiles: [String] = []
+        let outcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) },
+            copyCamera: { source, destination in
+                copyCount += 1
+                try FileManager.default.copyItem(at: source, to: destination)
+            },
+            writeData: { data, destination in
+                writtenFiles.append(destination.lastPathComponent)
+                try data.write(to: destination, options: .atomic)
+            }
+        )
+
+        #expect(history.items().count == 1)
+        #expect(history.items().first?.id == entry.id)
+        guard case .completed(let result) = outcome else {
+            Issue.record("Expected completed recovery, got \(outcome)")
+            return
+        }
+        #expect(result.isComplete)
+        #expect(copyCount == 1)
+        #expect(writtenFiles == [StudioFiles.telemetry])
+        #expect(FileManager.default.fileExists(atPath: projectDir.appending(path: StudioFiles.camera).path(percentEncoded: false)))
+
+        let recoveredTelemetry = try JSONDecoder().decode(
+            StudioTelemetry.self, from: Data(contentsOf: projectDir.appending(path: StudioFiles.telemetry))
+        )
+        #expect(recoveredTelemetry.camera != nil)
+        #expect(recoveredTelemetry.cameraFailed != true)
+
+        let preservedProject = try JSONDecoder().decode(
+            StudioProject.self, from: Data(contentsOf: projectDir.appending(path: StudioFiles.project))
+        )
+        #expect(preservedProject.zooms == userEditedProject.zooms)
+
+        // Second scenario: only project.json failed originally; recovery writes only project.json and
+        // does not re-copy camera.mov or overwrite telemetry.json.
+        try FileManager.default.removeItem(at: projectDir.appending(path: StudioFiles.project))
+        copyCount = 0
+        writtenFiles = []
+        let projectOnlyOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) },
+            copyCamera: { source, destination in
+                copyCount += 1
+                try FileManager.default.copyItem(at: source, to: destination)
+            },
+            writeData: { data, destination in
+                writtenFiles.append(destination.lastPathComponent)
+                try data.write(to: destination, options: .atomic)
+            }
+        )
+        guard case .completed(let projectOnlyResult) = projectOnlyOutcome else {
+            Issue.record("Expected completed project-only recovery, got \(projectOnlyOutcome)")
+            return
+        }
+        #expect(projectOnlyResult.isComplete)
+        #expect(copyCount == 0)
+        #expect(writtenFiles == [StudioFiles.project])
+        #expect(history.items().count == 1)
+
+        // Third scenario: if the user deleted the history entry before next launch, recovery discards
+        // the orphaned draft cleanly without creating any History entry.
+        history.delete(entry)
+        let deletedOutcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: entry.id,
+            telemetryURL: draftTelemetryURL,
+            cameraURL: draftCamera,
+            in: history,
+            hasReadableVideo: { url in FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
+        )
+        #expect(deletedOutcome == .discarded)
+        #expect(history.items().isEmpty)
     }
 }

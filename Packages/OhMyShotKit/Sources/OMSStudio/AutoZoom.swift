@@ -63,6 +63,9 @@ nonisolated public enum AutoZoom {
     /// path is too wide to frame is left out so automatic zooms don't split it in two. Shortcuts are ignored, and
     /// typing that continues a recent click stays anchored to that click even if the pointer moves out of the way.
     static func events(in telemetry: StudioTelemetry, skipWideDrags: Bool = false) -> [Event] {
+        func contains(_ event: Event) -> Bool {
+            event.x >= 0 && event.x <= telemetry.width && event.y >= 0 && event.y <= telemetry.height
+        }
         var clicks: [Event] = []
         for click in telemetry.clicks {
             let press: Event = (time: click.time, x: click.x, y: click.y, isKey: false)
@@ -86,7 +89,7 @@ nonisolated public enum AutoZoom {
                 clicks += along
             }
         }
-        clicks.sort { $0.time < $1.time }
+        clicks = clicks.filter(contains).sorted { $0.time < $1.time }
         let typingKeys = telemetry.keys.filter { !$0.isRepeat && $0.isTyping }.sorted { $0.time < $1.time }
         var events: [Event] = []
         events.reserveCapacity(clicks.count + typingKeys.count)
@@ -109,7 +112,7 @@ nonisolated public enum AutoZoom {
             }
         }
         if clickIndex < clicks.count { events += clicks[clickIndex...] }
-        return events.filter { $0.x >= 0 && $0.x <= telemetry.width && $0.y >= 0 && $0.y <= telemetry.height }
+        return events.filter(contains)
     }
 
     /// Whether the recording holds a click or a key to follow at all, whether or not it places a zoom.

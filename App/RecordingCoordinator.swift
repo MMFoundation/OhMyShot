@@ -410,6 +410,10 @@ final class RecordingCoordinator {
                 plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now, telemetry: telemetry,
                 checkpointer: checkpointer, camera: cameraRecorder, cameraWanted: cameraWanted
             ))
+            if let failure = recorder.takePendingWriterFailure() {
+                writerFailed(failure)
+                return
+            }
             checkpointTelemetry()
             // Stop came while it started: kept as a recording stopped now is.
             if stops { return stop() }
@@ -794,7 +798,7 @@ final class RecordingCoordinator {
             if resolvedTelemetry == nil, output == .studio,
                let data = try? Data(contentsOf: draft.telemetryURL),
                let savedDraft = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data) {
-                let hasCamera = await Self.hasReadableVideo(at: draft.cameraURL)
+                let hasCamera = await RecordingDrafts.hasReadableVideo(at: draft.cameraURL)
                 resolvedTelemetry = savedDraft.resolvedTelemetry(movieDuration: file.duration, hasCameraFile: hasCamera)
                 recoveredDraftTelemetry = savedDraft
             }
@@ -805,16 +809,37 @@ final class RecordingCoordinator {
                     kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight, appName: draft.info?.appName ?? plan?.appName,
                     duration: file.duration, pixelsPerPoint: draft.info?.pixelsPerPoint
                 )
+                var keptDraft = draft
+                do {
+                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id)
+                } catch {
+                    Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                }
                 var project = StudioProject(zooms: AutoZoom.zooms(for: resolvedTelemetry, duration: file.duration))
                 project.cursor.showsClicks = plan?.choices.showsClicks ?? recoveredDraftTelemetry?.showsClicks ?? true
                 project.showsKeys = plan?.choices.showsKeystrokes ?? recoveredDraftTelemetry?.showsKeystrokes ?? true
                 project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
                 project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
-                let saveResult = saveStudioProject(resolvedTelemetry, project: project, camera: draft.cameraURL, for: entry)
+                let saveResult = saveStudioProject(resolvedTelemetry, project: project, camera: keptDraft.cameraURL, for: entry)
                 if saveResult.isComplete {
-                    drafts.remove(draft)
+                    drafts.remove(keptDraft)
                 } else {
-                    Log.recording.error("Studio project only partly saved (camera \(saveResult.savedCamera, privacy: .public)/\(saveResult.expectedCamera, privacy: .public), telemetry \(saveResult.savedTelemetry, privacy: .public), project \(saveResult.savedProject, privacy: .public)); keeping draft \(draft.id.uuidString, privacy: .public) for recovery")
+                    let hasRetimedDraft: Bool = {
+                        guard let data = try? Data(contentsOf: keptDraft.telemetryURL),
+                              let existing = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data)
+                        else { return false }
+                        return existing.isRetimed
+                    }()
+                    if !hasRetimedDraft {
+                        let fallback = StudioDraftTelemetry(
+                            telemetry: resolvedTelemetry, isRetimed: true,
+                            cameraBubble: project.camera,
+                            cameraWanted: saveResult.expectedCamera || resolvedTelemetry.cameraFailed == true,
+                            showsClicks: project.cursor.showsClicks, showsKeystrokes: project.showsKeys
+                        )
+                        try? JSONEncoder().encode(fallback).write(to: keptDraft.telemetryURL, options: .atomic)
+                    }
+                    Log.recording.error("Studio project only partly saved (camera \(saveResult.savedCamera, privacy: .public)/\(saveResult.expectedCamera, privacy: .public), telemetry \(saveResult.savedTelemetry, privacy: .public), project \(saveResult.savedProject, privacy: .public)); keeping draft \(keptDraft.id.uuidString, privacy: .public) for recovery into history \(entry.id.uuidString, privacy: .public)")
                 }
                 studioDisplays[entry.id] = displayID
                 if plan != nil { onRecordingCompleted?() }
@@ -875,15 +900,6 @@ final class RecordingCoordinator {
             Log.recording.error("Keeping the Studio project failed: \(result.errorDescription ?? "unknown error", privacy: .public)")
         }
         return result
-    }
-
-    private static func hasReadableVideo(at url: URL) async -> Bool {
-        guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return false }
-        let asset = AVURLAsset(url: url)
-        guard let tracks = try? await asset.loadTracks(withMediaType: .video), !tracks.isEmpty,
-              let duration = try? await asset.load(.duration).seconds, duration > 0
-        else { return false }
-        return true
     }
 
     // MARK: Disk space and interruption alerts
@@ -1054,7 +1070,8 @@ final class RecordingCoordinator {
     }
 
     /// Finishes what a crash or a forced quit left in the drafts folder: each is kept like a stopped
-    /// recording. One that cannot be read is removed once it is a week old.
+    /// recording. A partial Studio draft whose movie is already in History retries only its missing Studio
+    /// assets into that entry. A leftover movie verified as unreadable is removed once it is a week old.
     func recoverLeftovers() {
         let leftovers = drafts.leftovers(excluding: Set([session?.draft.id].compactMap(\.self)))
         guard !leftovers.isEmpty else { return }
@@ -1062,7 +1079,10 @@ final class RecordingCoordinator {
         let displayID = displays.layout.primary?.id ?? 0
         Task {
             for draft in leftovers {
-                let modified = (try? draft.movieURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                if let historyID = draft.info?.keptHistoryID {
+                    await recoverPartialStudioDraft(draft, historyID: historyID)
+                    continue
+                }
                 let makesGIF = draft.info?.output == .gif
                 if makesGIF {
                     makingGIFs += 1
@@ -1070,10 +1090,30 @@ final class RecordingCoordinator {
                 }
                 await keep(draft, plan: nil, displayID: displayID, writer: nil)
                 if makesGIF { madeGIF() }
-                if FileManager.default.fileExists(atPath: draft.movieURL.path(percentEncoded: false)), modified < .now.addingTimeInterval(-7 * 86_400) {
-                    drafts.remove(draft)
+                if await drafts.pruneIfExpiredAndUnreadable(draft) {
+                    Log.recording.notice("Removed unreadable draft \(draft.id.uuidString, privacy: .public) older than a week")
                 }
             }
+        }
+    }
+
+    private func recoverPartialStudioDraft(_ draft: RecordingDrafts.Draft, historyID: UUID) async {
+        let outcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: historyID,
+            telemetryURL: draft.telemetryURL,
+            cameraURL: draft.cameraURL,
+            in: history,
+            hasReadableVideo: RecordingDrafts.hasReadableVideo(at:)
+        )
+        switch outcome {
+        case .completed:
+            drafts.remove(draft)
+            Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
+        case .incomplete(let result):
+            Log.recording.error("Recovering Studio assets for history \(historyID.uuidString, privacy: .public) still incomplete: \(result.errorDescription ?? "unknown error", privacy: .public)")
+        case .discarded:
+            drafts.remove(draft)
+            Log.recording.notice("Removed orphaned Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public)")
         }
     }
 

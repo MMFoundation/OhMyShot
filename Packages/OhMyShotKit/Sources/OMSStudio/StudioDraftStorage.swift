@@ -120,6 +120,7 @@ public actor StudioDraftCheckpointer {
     private struct Version: Equatable {
         let samples: Int
         let clicks: Int
+        let releasedClicks: Int
         let keys: Int
         let cursors: Int
         let movieStart: Double?
@@ -139,6 +140,7 @@ public actor StudioDraftCheckpointer {
     private var lastVersion: Version?
     private var isStopped = false
     private let minimumInterval: Duration
+    private let now: @Sendable () -> ContinuousClock.Instant
     private var nextWrite: ContinuousClock.Instant?
 
     /// Each checkpoint writes everything recorded so far, so one that only adds readings waits at least
@@ -146,14 +148,24 @@ public actor StudioDraftCheckpointer {
     /// checkpoints to a small share of a core.
     public init(minimumInterval: Duration = .seconds(10)) {
         self.minimumInterval = minimumInterval
+        self.now = { ContinuousClock.now }
+    }
+
+    init(minimumInterval: Duration = .seconds(10), now: @escaping @Sendable () -> ContinuousClock.Instant) {
+        self.minimumInterval = minimumInterval
+        self.now = now
     }
 
     /// Writes an incremental checkpoint atomically to `url` when the recording's telemetry state changed.
     public func checkpoint(_ draft: StudioDraftTelemetry, to url: URL) {
         guard !isStopped else { return }
+        let releasedClicks = draft.telemetry.clicks.reduce(into: 0) { count, click in
+            if click.releaseTime != nil { count += 1 }
+        }
         let version = Version(
             samples: draft.telemetry.samples.count,
             clicks: draft.telemetry.clicks.count,
+            releasedClicks: releasedClicks,
             keys: draft.telemetry.keys.count,
             cursors: draft.telemetry.cursors.count,
             movieStart: draft.movieStart,
@@ -163,9 +175,9 @@ public actor StudioDraftCheckpointer {
             cameraFills: draft.cameraFills.count
         )
         guard version != lastVersion else { return }
-        let clock = ContinuousClock()
-        if let lastVersion, version.hasTimeline(of: lastVersion), let nextWrite, clock.now < nextWrite { return }
-        let began = clock.now
+        let current = now()
+        if let lastVersion, version.hasTimeline(of: lastVersion), let nextWrite, current < nextWrite { return }
+        let began = ContinuousClock.now
         var normalized = draft
         if !normalized.isRetimed {
             normalized.telemetry = TelemetryRecorder.ordered(normalized.telemetry)
@@ -173,7 +185,8 @@ public actor StudioDraftCheckpointer {
         do {
             try JSONEncoder().encode(normalized).write(to: url, options: .atomic)
             lastVersion = version
-            nextWrite = clock.now + max(minimumInterval, began.duration(to: clock.now) * 50)
+            let elapsed = began.duration(to: ContinuousClock.now)
+            nextWrite = now() + max(minimumInterval, elapsed * 50)
         } catch {
             Log.studio.error("Writing Studio telemetry checkpoint failed: \(String(describing: error), privacy: .public)")
         }
@@ -222,6 +235,16 @@ nonisolated public struct StudioProjectSaveResult: Equatable, Sendable {
     }
 }
 
+/// Outcome of retrying missing Studio sidecar assets for a draft whose movie is already in History.
+nonisolated public enum StudioRecoveryOutcome: Equatable, Sendable {
+    /// Every expected Studio asset is now present in the history entry's Studio folder; the draft can be removed.
+    case completed(StudioProjectSaveResult)
+    /// At least one Studio asset still could not be saved; keep the draft for a later retry.
+    case incomplete(StudioProjectSaveResult)
+    /// The linked history entry is gone or the draft has no recoverable Studio telemetry; safe to discard the draft.
+    case discarded
+}
+
 /// Persists Studio sidecar assets (`camera.mov`, `telemetry.json`, `project.json`) non-destructively so
 /// the caller only deletes the source draft when every expected asset landed cleanly.
 nonisolated public enum StudioProjectStorage {
@@ -230,6 +253,8 @@ nonisolated public enum StudioProjectStorage {
         project: StudioProject,
         cameraURL: URL?,
         to folder: URL,
+        preservingExisting: Bool = false,
+        existingCameraReady: Bool? = nil,
         copyCamera: (URL, URL) throws -> Void = { source, destination in
             if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
                 try FileManager.default.removeItem(at: destination)
@@ -240,7 +265,14 @@ nonisolated public enum StudioProjectStorage {
             try data.write(to: destination, options: .atomic)
         }
     ) -> StudioProjectSaveResult {
-        let expectsCamera = telemetry.camera != nil && cameraURL != nil
+        let cameraDestination = folder.appending(path: StudioFiles.camera)
+        let cameraAlreadyPresent: Bool = {
+            guard preservingExisting else { return false }
+            if let existingCameraReady { return existingCameraReady }
+            let size = (try? cameraDestination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            return size > 0
+        }()
+        let expectsCamera = telemetry.camera != nil && (cameraURL != nil || cameraAlreadyPresent)
         var result = StudioProjectSaveResult(
             savedTelemetry: false, savedProject: false, expectedCamera: expectsCamera, savedCamera: false
         )
@@ -253,36 +285,117 @@ nonisolated public enum StudioProjectStorage {
         }
 
         var writtenTelemetry = telemetry
-        if expectsCamera, let cameraURL {
-            do {
-                try copyCamera(cameraURL, folder.appending(path: StudioFiles.camera))
+        if expectsCamera {
+            if cameraAlreadyPresent {
                 result.savedCamera = true
-            } catch {
-                errors.append(error.localizedDescription)
-                writtenTelemetry.camera = nil
-                writtenTelemetry.cameraFailed = true
+            } else if let cameraURL {
+                do {
+                    try copyCamera(cameraURL, cameraDestination)
+                    result.savedCamera = true
+                } catch {
+                    errors.append(error.localizedDescription)
+                    writtenTelemetry.camera = nil
+                    writtenTelemetry.cameraFailed = true
+                }
             }
         }
 
-        do {
-            let data = try JSONEncoder().encode(writtenTelemetry)
-            try writeData(data, folder.appending(path: StudioFiles.telemetry))
+        let telemetryDestination = folder.appending(path: StudioFiles.telemetry)
+        let existingTelemetryReady: Bool = {
+            guard preservingExisting,
+                  let data = try? Data(contentsOf: telemetryDestination),
+                  let existing = try? JSONDecoder().decode(StudioTelemetry.self, from: data)
+            else { return false }
+            if expectsCamera && result.savedCamera && existing.camera == nil {
+                return false
+            }
+            return true
+        }()
+        if existingTelemetryReady {
             result.savedTelemetry = true
-        } catch {
-            errors.append(error.localizedDescription)
+        } else {
+            do {
+                let data = try JSONEncoder().encode(writtenTelemetry)
+                try writeData(data, telemetryDestination)
+                result.savedTelemetry = true
+            } catch {
+                errors.append(error.localizedDescription)
+            }
         }
 
-        do {
-            let data = try JSONEncoder().encode(project)
-            try writeData(data, folder.appending(path: StudioFiles.project))
+        let projectDestination = folder.appending(path: StudioFiles.project)
+        let existingProjectReady: Bool = {
+            guard preservingExisting,
+                  let data = try? Data(contentsOf: projectDestination),
+                  (try? JSONDecoder().decode(StudioProject.self, from: data)) != nil
+            else { return false }
+            return true
+        }()
+        if existingProjectReady {
             result.savedProject = true
-        } catch {
-            errors.append(error.localizedDescription)
+        } else {
+            do {
+                let data = try JSONEncoder().encode(project)
+                try writeData(data, projectDestination)
+                result.savedProject = true
+            } catch {
+                errors.append(error.localizedDescription)
+            }
         }
 
         if !errors.isEmpty {
             result.errorDescription = errors.joined(separator: "; ")
         }
         return result
+    }
+
+    /// Retries only the missing Studio sidecar assets for an existing history entry without creating a new
+    /// history item or overwriting valid assets that already saved.
+    public static func recoverMissingAssets(
+        forHistoryID historyID: UUID,
+        telemetryURL: URL,
+        cameraURL: URL,
+        in history: HistoryStore,
+        hasReadableVideo: (URL) async -> Bool,
+        copyCamera: (URL, URL) throws -> Void = { source, destination in
+            if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: source, to: destination)
+        },
+        writeData: (Data, URL) throws -> Void = { data, destination in
+            try data.write(to: destination, options: .atomic)
+        }
+    ) async -> StudioRecoveryOutcome {
+        guard let entry = history.item(id: historyID) else { return .discarded }
+        guard let data = try? Data(contentsOf: telemetryURL),
+              let savedDraft = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data)
+        else { return .discarded }
+
+        let folder = history.studioURL(for: entry)
+        let existingCameraURL = folder.appending(path: StudioFiles.camera)
+        let hasExistingCamera = await hasReadableVideo(existingCameraURL)
+        let hasDraftCamera = await hasReadableVideo(cameraURL)
+        let hasCamera = hasExistingCamera || hasDraftCamera
+        let duration = entry.duration ?? 0
+        let resolvedTelemetry = savedDraft.resolvedTelemetry(movieDuration: duration, hasCameraFile: hasCamera)
+
+        var project = StudioProject(zooms: AutoZoom.zooms(for: resolvedTelemetry, duration: duration))
+        project.cursor.showsClicks = savedDraft.showsClicks
+        project.showsKeys = savedDraft.showsKeystrokes
+        project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
+        project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
+
+        let result = save(
+            telemetry: resolvedTelemetry,
+            project: project,
+            cameraURL: hasDraftCamera ? cameraURL : nil,
+            to: folder,
+            preservingExisting: true,
+            existingCameraReady: hasExistingCamera,
+            copyCamera: copyCamera,
+            writeData: writeData
+        )
+        return result.isComplete ? .completed(result) : .incomplete(result)
     }
 }

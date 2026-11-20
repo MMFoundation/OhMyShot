@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import OMSCore
 
@@ -16,12 +17,19 @@ public struct RecordingDrafts: Sendable {
         public var output: RecordingOutput?
         /// The recorded display's pixels per point, which sizes a GIF as things were on screen.
         public var pixelsPerPoint: Double?
+        /// The history entry already created for this draft's movie while Studio sidecar assets still
+        /// remain to be copied or written into it.
+        public var keptHistoryID: UUID?
 
-        public init(startedAt: Date, appName: String?, output: RecordingOutput = .video, pixelsPerPoint: Double? = nil) {
+        public init(
+            startedAt: Date, appName: String?, output: RecordingOutput = .video,
+            pixelsPerPoint: Double? = nil, keptHistoryID: UUID? = nil
+        ) {
             self.startedAt = startedAt
             self.appName = appName
             self.output = output
             self.pixelsPerPoint = pixelsPerPoint
+            self.keptHistoryID = keptHistoryID
         }
     }
 
@@ -29,6 +37,8 @@ public struct RecordingDrafts: Sendable {
     public static let minimumFreeBytesToStart: Int64 = 500 * 1_024 * 1_024
     /// Minimum free space kept while recording; dropping below this stops early so finishing still has room (250 MiB).
     public static let minimumFreeBytesWhileRecording: Int64 = 250 * 1_024 * 1_024
+    /// How long an unreadable leftover movie draft stays on disk before launch recovery discards it (7 days).
+    public static let unreadableDraftRetention: TimeInterval = 7 * 86_400
 
     public enum DiskSpaceStatus: Equatable, Sendable {
         case sufficient(availableBytes: Int64?)
@@ -102,6 +112,64 @@ public struct RecordingDrafts: Sendable {
         return draft
     }
 
+    /// Records that this draft's movie is already in History as `historyID` and removes the draft's screen
+    /// movie so launch recovery only retries missing Studio sidecar assets into that entry.
+    @discardableResult
+    public func markKeptInHistory(_ draft: Draft, historyID: UUID) throws -> Draft {
+        var info = draft.info ?? Info(startedAt: .now, appName: nil, output: .studio)
+        info.keptHistoryID = historyID
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONEncoder.drafts.encode(info)
+        let url = infoURL(for: draft.id)
+        do {
+            try data.write(to: url, options: .atomic)
+            try? FileManager.default.removeItem(at: draft.movieURL)
+        } catch {
+            try? FileManager.default.removeItem(at: draft.movieURL)
+            try data.write(to: url, options: .atomic)
+        }
+        return Draft(id: draft.id, movieURL: draft.movieURL, info: info)
+    }
+
+    /// Whether `url` holds a video track with positive duration that AVFoundation can open for reading.
+    public static func hasReadableVideo(at url: URL) async -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return false }
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let duration = try? await asset.load(.duration).seconds, duration.isFinite, duration > 0
+        else { return false }
+        guard let reader = try? AVAssetReader(asset: asset) else { return false }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        guard reader.canAdd(output) else { return false }
+        reader.add(output)
+        guard reader.startReading() else { return false }
+        reader.cancelReading()
+        return true
+    }
+
+    /// Removes `draft` only when it is not a partial Studio draft linked to a History entry, its movie file
+    /// still sits on disk older than `unreadableDraftRetention`, and that movie is verified unreadable.
+    @discardableResult
+    public func pruneIfExpiredAndUnreadable(
+        _ draft: Draft,
+        now: Date = .now,
+        isReadable: (URL) async -> Bool = Self.hasReadableVideo(at:)
+    ) async -> Bool {
+        if draft.info?.keptHistoryID != nil { return false }
+        if let latest = FileManager.default.contents(atPath: infoURL(for: draft.id).path(percentEncoded: false))
+            .flatMap({ try? JSONDecoder.records.decode(Info.self, from: $0) }),
+           latest.keptHistoryID != nil {
+            return false
+        }
+        guard FileManager.default.fileExists(atPath: draft.movieURL.path(percentEncoded: false)),
+              let modified = (try? draft.movieURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate),
+              modified < now.addingTimeInterval(-Self.unreadableDraftRetention)
+        else { return false }
+        guard !(await isReadable(draft.movieURL)) else { return false }
+        remove(draft)
+        return true
+    }
+
     /// Removes a draft, its movies, its telemetry checkpoint, and its record.
     public func remove(_ draft: Draft) {
         try? FileManager.default.removeItem(at: draft.movieURL)
@@ -111,7 +179,8 @@ public struct RecordingDrafts: Sendable {
     }
 
     /// The drafts on disk except `excluding` (those still recording), oldest first. A record whose movie never
-    /// got written is removed on the way.
+    /// got written is removed on the way, unless it already points to a kept History entry whose Studio assets
+    /// still need recovery.
     public func leftovers(excluding: Set<UUID> = []) -> [Draft] {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) else { return [] }
         var drafts: [Draft] = []
@@ -120,7 +189,7 @@ public struct RecordingDrafts: Sendable {
             let movie = directory.appending(path: "\(id.uuidString).mov")
             let info = FileManager.default.contents(atPath: infoURL(for: id).path(percentEncoded: false))
                 .flatMap { try? JSONDecoder.records.decode(Info.self, from: $0) }
-            guard FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)) else {
+            guard FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)) || info?.keptHistoryID != nil else {
                 try? FileManager.default.removeItem(at: infoURL(for: id))
                 continue
             }

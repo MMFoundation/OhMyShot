@@ -165,4 +165,29 @@ struct StudioAutoZoomRegressionTests {
         #expect(split[1].start >= 5.5 - 1e-9)
         #expect(split.allSatisfy { auto in !short.contains { $0.start < auto.end && auto.start < $0.end } })
     }
+
+    @Test func offAreaClickDoesNotSwallowTypingZooms() throws {
+        let samples = (0...600).map { index -> StudioTelemetry.Sample in
+            let time = Double(index) / 60
+            return .init(time: time, x: -120, y: 200, cursor: 0)
+        }
+        let keys = (0..<25).map { key(3.0 + Double($0) * 0.1) }
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 1,
+            samples: samples,
+            clicks: [
+                .init(time: 2.0, x: 300, y: 200, button: .primary),
+                .init(time: 2.5, x: -120, y: 200, button: .primary),
+            ],
+            keys: keys
+        )
+        let zooms = AutoZoom.zooms(for: telemetry, duration: 10)
+        #expect(zooms.count == 1)
+        let zoom = try #require(zooms.first)
+        #expect(zoom.scale == AutoZoom.standardScale)
+        let track = StudioTrack(telemetry: telemetry, project: StudioProject(zooms: zooms), duration: 10)
+        let midTyping = track.frame(at: 4.5)
+        #expect(abs(midTyping.centerX - 400) < 1)
+        #expect(abs(midTyping.centerY - 250) < 1)
+    }
 }
