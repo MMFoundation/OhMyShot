@@ -60,7 +60,8 @@ enum PieceMerge {
     }
 
     /// The lines, once each: a later line that repeats an earlier one lying over it goes. (Two pieces that read
-    /// one line a pixel apart can each own it, when their boxes' middles fall either side of a cut.)
+    /// one line a pixel apart can each own it, when their boxes' middles fall either side of a cut.) So does a
+    /// fragment of a line that was read whole as well (`isFragment`), whichever of the two comes first.
     private static func withoutRepeats(_ lines: [OCRLine]) -> [OCRLine] {
         let order = lines.indices.sorted { lines[$0].box.minY < lines[$1].box.minY }
         var dropped = Set<Int>()
@@ -68,13 +69,26 @@ enum PieceMerge {
         for index in order {
             let line = lines[index]
             active.removeAll { lines[$0].box.maxY <= line.box.minY }
-            if active.contains(where: { overlap(lines[$0].box, line.box) > 0.5 && lines[$0].repeats(line) }) {
+            if active.contains(where: { overlap(lines[$0].box, line.box) > 0.5 && lines[$0].repeats(line) || isFragment(line, of: lines[$0]) }) {
                 dropped.insert(index)
-            } else {
-                active.append(index)
+                continue
             }
+            let fragments = active.filter { isFragment(lines[$0], of: line) }
+            dropped.formUnion(fragments)
+            active.removeAll(where: fragments.contains)
+            active.append(index)
         }
         return lines.indices.filter { !dropped.contains($0) }.map { lines[$0] }
+    }
+
+    /// Whether `fragment` is a part of `line` read a second time, as the passes over a dense piece can leave one
+    /// ("21. The quiet l" over "21. The quiet harbor crosses …"): on the line's row, nearly all of it within the
+    /// line's width, and less than half as long.
+    static func isFragment(_ fragment: OCRLine, of line: OCRLine) -> Bool {
+        func count(_ text: String) -> Int { text.filter { !$0.isWhitespace }.count }
+        let shared = min(fragment.box.maxX, line.box.maxX) - max(fragment.box.minX, line.box.minX)
+        return count(fragment.text) * 2 < count(line.text) && shared > fragment.box.width * 0.7
+            && ReadingOrder.verticalOverlap(fragment.box, line.box) > 0.5
     }
 
     /// The lines that are pieces of one line a column cut went through, each group left to right.
@@ -117,6 +131,34 @@ enum PieceMerge {
         return groups.values
             .map { $0.sorted { lines[$0].box.minX < lines[$1].box.minX } }
             .sorted { $0[0] < $1[0] }
+    }
+
+    /// The lines a column cut went through that the column beyond it read no part of: `crossings` pairs the two
+    /// pieces of a cut line, and such a line has one. Each comes with the stretch of its row to read again: the line
+    /// and what lies past the cut, up to the next line on the row or that column's far edge, and no wider than a
+    /// column in all, which is what Vision reads without shrinking it.
+    static func loneCuts(in lines: [OCRLine], pieces: [CGRect]) -> [(line: Int, stretch: CGRect)] {
+        let paired = Set(crossings(in: lines, pieces: pieces).joined())
+        var stretches: [Int: CGRect] = [:]
+        for left in pieces {
+            for right in pieces where right.minY == left.minY && right.height == left.height
+                && right.minX == left.maxX - CGFloat(PictureText.overlap) {
+                for index in lines.indices where !paired.contains(index) && lines[index].box.midY >= left.minY && lines[index].box.midY < left.maxY {
+                    let box = lines[index].box
+                    let slack = max(8, box.height / 4)
+                    let others = lines.indices.filter { $0 != index && ReadingOrder.verticalOverlap(lines[$0].box, box) > 0.5 }.map { lines[$0].box }
+                    var (start, end) = (stretches[index]?.minX ?? box.minX, stretches[index]?.maxX ?? box.maxX)
+                    if box.maxX >= left.maxX - slack, box.maxX <= left.maxX + 1 {
+                        end = min(others.filter { $0.minX >= box.maxX }.map(\.minX).min() ?? right.maxX, right.maxX, start + left.width)
+                    }
+                    if box.minX <= right.minX + slack, box.minX >= right.minX - 1 {
+                        start = max(others.filter { $0.maxX <= box.minX }.map(\.maxX).max() ?? left.minX, left.minX, end - left.width)
+                    }
+                    if end - start > box.width { stretches[index] = CGRect(x: start, y: box.minY, width: end - start, height: box.height) }
+                }
+            }
+        }
+        return stretches.sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
     }
 
     /// Whether `text` reads as the whole of the line that `parts` (left to right, each over the next) are cut

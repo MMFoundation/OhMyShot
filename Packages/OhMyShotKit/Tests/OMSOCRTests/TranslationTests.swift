@@ -23,6 +23,19 @@ struct TranslationUnitTests {
         #expect(units.map(\.skip) == [nil, nil, .figures])
     }
 
+    @Test func theFieldsOfARowStayUnitsOfTheirOwn() {
+        // A settings list: the text has a row a line (`TextAssembler.rowPieces`), and the overlay still draws each
+        // label and each value in its own box.
+        let fields = [("General", 20.0, 0.0), ("Open at login", 620.0, 0.0), ("Appearance", 20.0, 60.0), ("Match the system", 600.0, 60.0)]
+        let lines = fields.map { OCRLine(text: $0.0, box: CGRect(x: $0.1, y: $0.2, width: Double($0.0.count) * 10, height: 20), confidence: 1) }
+        #expect(TextAssembler.assemble(lines) == "General Open at login\nAppearance Match the system")
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.lines) == [[0], [1], [2], [3]])
+        #expect(units.map(\.text) == fields.map(\.0))
+        #expect(units.map(\.box) == lines.map(\.box))
+        #expect(units.allSatisfy { $0.skip == nil })
+    }
+
     @Test func figuresWithAnAbbreviationAreLeftAlone() {
         for figures in ["12:30", "$20", "5 GB", "100 GB", "iOS 26", "2:30 PM", "Q4 2026", "1080p"] {
             #expect(TranslationUnits.isFigures(figures), "\(figures)")
@@ -71,6 +84,55 @@ struct TranslationUnitTests {
         #expect(TranslationUnits.group(code).allSatisfy { $0.skip == .code })
         let vertical = OCRLine(text: "竖排文字", box: CGRect(x: 0, y: 0, width: 20, height: 80), confidence: 1)
         #expect(TranslationUnits.group([vertical])[0].skip == .vertical)
+    }
+
+    @Test func theSentencesAroundAListingsCodeAreTranslated() {
+        // A tutorial: its two lines of code make the page a listing (two lines in five), and the three sentences
+        // explaining them are still translated.
+        let lines = [
+            line("let image = try await read(url)", y: 0),
+            line("let text = try await recognize(image)", y: 24),
+            line("The first line reads the picture from disk.", y: 72),
+            line("The second line hands it to the recognizer.", y: 96),
+            line("Both calls throw when the file is missing.", y: 120),
+        ]
+        #expect(TextAssembler.isCodeListing(lines))
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.lines) == [[0], [1], [2], [3], [4]])
+        #expect(units.map(\.skip) == [.code, .code, nil, nil, nil])
+    }
+
+    @Test func aParagraphBetweenTwoPiecesOfCodeIsOneUnit() {
+        // The paragraph wraps as on any page, its last words ("is missing.") no sentence alone; the code keeps its lines.
+        let lines = [
+            line("let image = try await read(url)", y: 0, wraps: nil),
+            line("guard let image else { return }", y: 24, wraps: nil),
+            line("The reader returns the picture, or nothing when the file", y: 72, wraps: nil),
+            line("is missing.", y: 96, width: 110, wraps: nil),
+            line("let text = try await recognize(image)", y: 144, wraps: nil),
+            line("然后把读到的文字交给翻译。", y: 192, width: 260, wraps: nil),
+        ]
+        #expect(TextAssembler.isCodeListing(lines))
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.lines) == [[0], [1], [2, 3], [4], [5]])
+        #expect(units[2].text == "The reader returns the picture, or nothing when the file is missing.")
+        #expect(units.map(\.skip) == [.code, .code, nil, .code, nil])
+    }
+
+    @Test func whatOnlyAListingMakesCodeStaysCode() {
+        // Lines that read as no code alone, and are no sentences either: each stays with the listing.
+        let listing = ["func mean(_ values: [Double]) -> Double {", "    # the sum of the values over their count", "    total = count if ready else zero",
+                       "    print(\"Hello to you all\")", "    break", "    return total / Double(values.count)", "}"]
+            .enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TranslationUnits.group(listing).allSatisfy { $0.skip == .code })
+        for sentence in ["The first line reads the picture from disk.", "Call read(url) to load the image.", "Step 2: wait for the reply, then read it.",
+                         "然后把读到的文字交给翻译。", "调用 read(url) 读取这张图片。"] {
+            #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
+        }
+        for code in ["total = count if ready else zero", "print(\"Hello to you all\")", "# the sum of the values over their count", "\"\"\"",
+                     "break", "x + y", "\"Hello to you all, and welcome\"", "print(\"你好世界欢迎回来\")", "名字 = 读取到的文字内容"] {
+            #expect(!TranslationUnits.isSentence(code), "\(code)")
+        }
     }
 
     @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {

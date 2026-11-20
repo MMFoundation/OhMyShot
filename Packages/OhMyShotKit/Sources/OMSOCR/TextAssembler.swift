@@ -39,8 +39,8 @@ public enum TextAssembler {
         guard !lines.isEmpty else { return Assembly() }
         let isCode = isCodeListing(lines)
         // In code, a piece on the same row as the line before continues it: Vision sometimes returns one
-        // line of code as two pieces side by side.
-        let continuations: [Int?] = isCode ? rowContinuations(lines) : lines.map { _ in nil }
+        // line of code as two pieces side by side. Elsewhere the pieces are the fields of a row (`rowPieces`).
+        let continuations: [Int?] = isCode ? rowContinuations(lines) : rowPieces(lines)
         let starts = lines.indices.filter { continuations[$0] == nil }
         var indents = Array(repeating: 0, count: lines.count)
         if isCode {
@@ -76,6 +76,33 @@ public enum TextAssembler {
             guard abs(box.midY - previous.midY) < min(box.height, previous.height) / 2,
                   box.minX >= previous.maxX - characterWidth else { return nil }
             return max(1, Int(((box.minX - previous.maxX) / characterWidth).rounded()))
+        }
+    }
+
+    /// Outside code, a space for each line that continues the row of the line before, or nil when it starts a row.
+    /// Vision returns a row field by field (the columns of `ls -l`, a table's cells, a setting's label and its
+    /// value), and a field a line loses which fields belonged together. One space whatever the gap: spaces counted
+    /// from the gap put a window's width of them between a label and its value. A table's row and a formula are
+    /// whole already, and vertical text has no rows.
+    ///
+    /// Captions under a row of pictures share a row as well, and each belongs to its picture. There the text above
+    /// and below is a picture away, so pieces are joined only where text is stacked as lines are, another line
+    /// within three line heights above or below them, or where the row is all the text there is (one row of a
+    /// listing, captured alone).
+    static func rowPieces(_ lines: [OCRLine]) -> [Int?] {
+        let continuations = rowContinuations(lines)
+        let isOneRow = continuations.dropFirst().allSatisfy { $0 != nil }
+        return lines.indices.map { index in
+            guard continuations[index] != nil else { return nil }
+            let line = lines[index], previous = lines[index - 1]
+            guard !line.isTableRow, !previous.isTableRow, line.math == nil, previous.math == nil,
+                  !ReadingOrder.isVertical(line), !ReadingOrder.isVertical(previous) else { return nil }
+            let row = previous.box.union(line.box)
+            let isStacked = lines.contains { other in
+                let gap = max(other.box.minY - row.maxY, row.minY - other.box.maxY)
+                return gap > -row.height / 2 && gap < row.height * 3 && other.box.maxX > row.minX && other.box.minX < row.maxX
+            }
+            return isOneRow || isStacked ? 1 : nil
         }
     }
 

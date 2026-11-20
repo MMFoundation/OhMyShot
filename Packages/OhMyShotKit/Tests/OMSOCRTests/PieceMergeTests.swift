@@ -107,6 +107,45 @@ struct PieceMergeTests {
         #expect(PieceMerge.crossings(in: [left, line("Below", x: 2623, y: 1300, width: 982, height: 59)], pieces: pieces).isEmpty)
     }
 
+    @Test func aLineCutWithNothingBeyondTheCutIsReadOnPastIt() {
+        let pieces = PictureText.pieces(width: 10_989, height: 2880)
+        // The second column read the end of a line from its left edge (2624), and the first read nothing of it.
+        let end = line("es the narrow orchard near the old mill", x: 2624, y: 1045, width: 900, height: 24)
+        let above = line("Another row", x: 300, y: 900, width: 400, height: 24)
+        var cuts = PieceMerge.loneCuts(in: [above, end], pieces: pieces)
+        // As much of the row as makes a column's width with the line (2880).
+        #expect(cuts.map(\.line) == [1])
+        #expect(cuts[0].stretch == CGRect(x: 644, y: 1045, width: 2880, height: 24))
+        // Up to a line the first column did read on that row, further left.
+        let before = line("Margin", x: 700, y: 1047, width: 200, height: 24)
+        cuts = PieceMerge.loneCuts(in: [above, end, before], pieces: pieces)
+        #expect(cuts.map(\.line) == [1])
+        #expect(cuts[0].stretch == CGRect(x: 900, y: 1045, width: 2624, height: 24))
+        // The start of a line, cut at the first column's right edge (2880) with nothing after it.
+        let start = line("28. The gentle lantern cross", x: 2300, y: 1045, width: 578, height: 24)
+        cuts = PieceMerge.loneCuts(in: [start, above], pieces: pieces)
+        #expect(cuts.map(\.line) == [0])
+        #expect(cuts[0].stretch == CGRect(x: 2300, y: 1045, width: 2880, height: 24))
+        // The two pieces of a line read on both sides of the cut are joined as before, and a line clear of the cut is whole.
+        let left = line("A line that runs", x: 2278, y: 1045, width: 597, height: 59)
+        let right = line("runs on across the cut", x: 2623, y: 1045, width: 982, height: 59)
+        #expect(PieceMerge.loneCuts(in: [left, right, above], pieces: pieces).isEmpty)
+    }
+
+    @Test func aFragmentOfALineReadWholeIsDropped() {
+        // A piece's passes left the start of a line a second time, over the line itself.
+        let whole = line("21. The quiet harbor crosses the plain compass near the old mill", x: 1100, y: 820, width: 946)
+        let fragment = line("21. The quiet l", x: 1092, y: 821, width: 114)
+        #expect(merge([[fragment, whole], [], []], width: 2000, height: 4000) == [whole])
+        #expect(merge([[whole, fragment], [], []], width: 2000, height: 4000) == [whole])
+        // A short line beside a long one, or on another row, is a line of its own; so is one about as long.
+        let beside = line("Page 21", x: 100, y: 820, width: 90)
+        let below = line("21. The quiet l", x: 1092, y: 850, width: 114)
+        let other = line("An altogether different reading of that same row", x: 1100, y: 821, width: 900)
+        #expect(merge([[whole, beside, below], [], []], width: 2000, height: 4000).count == 3)
+        #expect(merge([[whole, other], [], []], width: 2000, height: 4000).count == 2)
+    }
+
     @Test func aLineAcrossTwoCutsIsOneGroup() {
         let pieces = PictureText.pieces(width: 10_989, height: 2880)
         let first = line("first", x: 2000, y: 400, width: 875, height: 40)

@@ -16,6 +16,7 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+- Capture Text reads a row of separate pieces (a terminal's `ls -l`, a settings list, a table's row) as one line; braces in code read as `1`, `子`, or `J` come back as braces; a dense ultrawide screen read in bands no longer drops or repeats lines; the explanations around a few lines of code are translated; and the words beside a formula stay when reading them again comes back empty.
 
 ## [0.2.0] - 2026-11-19
 
