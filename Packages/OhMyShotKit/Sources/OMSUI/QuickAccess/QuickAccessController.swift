@@ -99,6 +99,7 @@ public final class QuickAccessController {
     public var maximumCards = 5
 
     private let actions: Actions
+    private let history: HistoryStore?
     lazy var showTrashFailure: (String) -> Void = {
         let notice = CopiedHUD()
         return { notice.show($0, near: NSEvent.mouseLocation) }
@@ -166,6 +167,13 @@ public final class QuickAccessController {
     private let saves = SingleFlight<UUID, URL?>()
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [(item: QuickAccessItem, evicted: Bool)] = []
+    private static let hiddenThumbnail: CGImage = {
+        let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.clear(CGRect(x: 0, y: 0, width: 1, height: 1))
+        return context.makeImage()!
+    }()
+    private var thumbnailUpdates: [UUID: Task<Void, Never>] = [:]
     /// Cards moved to the Trash and waiting to go, oldest first, each with the task that sends it on. A card stays
     /// `trashDelay` under Undo, still in `items`, and only then is its capture moved to the Trash, which takes its
     /// record, marks, and text with it: Undo, ⌘Z, and Restore Recently Closed bring it back until then.
@@ -184,8 +192,9 @@ public final class QuickAccessController {
     /// keyboard, and let go when the keys go to another card.
     private var selectedID: UUID?
 
-    public init(actions: Actions) {
+    public init(actions: Actions, history: HistoryStore? = nil) {
         self.actions = actions
+        self.history = history
     }
 
     public var isEmpty: Bool { items.isEmpty }
@@ -205,8 +214,32 @@ public final class QuickAccessController {
         items.first { $0.id == id }
     }
 
+    private func visibleOrRecentlyClosedItem(_ id: UUID) -> QuickAccessItem? {
+        item(id) ?? recentlyClosed.first { $0.item.id == id }?.item
+    }
+
     public var canRestoreRecentlyClosed: Bool {
-        !trashing.isEmpty || recentlyClosed.contains { FileManager.default.fileExists(atPath: $0.item.fileURL.path(percentEncoded: false)) }
+        !trashing.isEmpty || recentlyClosed.reversed().contains { canRestore($0.item) }
+    }
+
+    private func canRestore(_ item: QuickAccessItem) -> Bool {
+        history?.item(forFileAt: item.fileURL)?.id == item.id
+    }
+
+    /// History may have finished loading before the file was replaced. Check its record before showing
+    /// anything, and register a new card before decoding so a subsequent edit supersedes that decoding.
+    public func restore(_ entry: HistoryItem, on displayID: CGDirectDisplayID) {
+        guard let history else { return }
+        let url = history.fileURL(for: entry)
+        guard let current = history.item(forFileAt: url), current.id == entry.id else { return }
+        if let card = visibleOrRecentlyClosedItem(entry.id) {
+            add(card)
+        } else {
+            add(QuickAccessItem(current, fileURL: url, thumbnail: Self.hiddenThumbnail, displayID: displayID))
+            pictureChanged(current, savedCopyIsStale: false) {
+                await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels)
+            }
+        }
     }
 
     private func isTrashing(_ id: UUID) -> Bool {
@@ -255,9 +288,15 @@ public final class QuickAccessController {
     /// Shows a capture's new picture (marked up, or put back as taken) on its card, where it is. The copy
     /// saved from the card stays the card's, unless `keepsSaved` is false: it is of the picture as it was, and
     /// the card offers Save again.
-    public func update(_ item: QuickAccessItem, keepsSaved: Bool = true) {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+    private func update(_ item: QuickAccessItem, keepsSaved: Bool = true) {
         var item = item
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else {
+            if let closed = recentlyClosed.firstIndex(where: { $0.item.id == item.id }) {
+                item.savedURL = keepsSaved ? item.savedURL ?? recentlyClosed[closed].item.savedURL : nil
+                recentlyClosed[closed].item = item
+            }
+            return
+        }
         if keepsSaved {
             item.savedURL = item.savedURL ?? items[index].savedURL
         } else {
@@ -273,6 +312,23 @@ public final class QuickAccessController {
         }
         // The preview, if it shows this card, shows the new picture.
         if selectedID == item.id { stack?.quickLook.replace(with: item.fileURL) }
+    }
+
+    /// The old pixels must not be restored while the edited thumbnail is decoding, even if decoding fails.
+    @discardableResult
+    public func pictureChanged(_ entry: HistoryItem, savedCopyIsStale: Bool, thumbnail: @escaping () async -> CGImage?) -> Task<Void, Never>? {
+        guard let card = visibleOrRecentlyClosedItem(entry.id) else { return nil }
+        update(QuickAccessItem(entry, fileURL: card.fileURL, thumbnail: Self.hiddenThumbnail, displayID: card.displayID), keepsSaved: !savedCopyIsStale)
+        thumbnailUpdates[entry.id]?.cancel()
+        let task = Task { [weak self] in
+            let image = await thumbnail()
+            guard !Task.isCancelled, let self else { return }
+            thumbnailUpdates[entry.id] = nil
+            guard let image, let current = visibleOrRecentlyClosedItem(entry.id) else { return }
+            update(QuickAccessItem(entry, fileURL: current.fileURL, thumbnail: image, displayID: current.displayID))
+        }
+        thumbnailUpdates[entry.id] = task
+        return task
     }
 
     /// Marks a capture saved elsewhere (from the editor) as saved on its card.
@@ -394,6 +450,7 @@ public final class QuickAccessController {
     /// Removes a capture that was deleted elsewhere: its card goes without the closed callback, and it
     /// can no longer be restored.
     public func remove(_ id: UUID) {
+        thumbnailUpdates.removeValue(forKey: id)?.cancel()
         if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         completing[id] = nil
         recentlyClosed.removeAll { $0.item.id == id }
@@ -420,7 +477,7 @@ public final class QuickAccessController {
 
     func takeRecentlyClosed() -> QuickAccessItem? {
         while let entry = recentlyClosed.popLast() {
-            if FileManager.default.fileExists(atPath: entry.item.fileURL.path(percentEncoded: false)) {
+            if canRestore(entry.item) {
                 return entry.item
             }
             if entry.evicted { actions.closed(entry.item) }

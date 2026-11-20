@@ -26,7 +26,7 @@ nonisolated public enum AnnotationRenderer {
 
     static func draw(
         _ item: Annotation, in context: CGContext, scale: CGFloat, coverage: Redactor.Coverage?,
-        ground: HighlightGround, flippedBacking: Bool = false
+        ground: HighlightGround, flippedBacking: Bool = false, underlay: BackdropPainter.Underlay? = nil
     ) {
         let color = item.style.color.cgColor
         context.saveGState()
@@ -39,7 +39,7 @@ nonisolated public enum AnnotationRenderer {
             context.translateBy(x: center.x, y: center.y)
             context.rotate(by: item.angle)
             context.translateBy(x: -center.x, y: -center.y)
-            draw(upright, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flippedBacking)
+            draw(upright, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flippedBacking, underlay: underlay)
             return
         }
         switch item.shape {
@@ -111,7 +111,13 @@ nonisolated public enum AnnotationRenderer {
                 switch coverage {
                 case let .filtered(image, rect):
                     context.clip(to: rect)
-                    context.setBlendMode(.copy)
+                    if let underlay {
+                        context.clear(rect)
+                        underlay.paint(in: context)
+                        underlay.clipToPicture(in: context)
+                    } else {
+                        context.setBlendMode(.copy)
+                    }
                     context.interpolationQuality = redaction.method == .pixelate ? .none : .high
                     drawImage(image, in: rect, context: context)
                 case .opaque(let rect):
@@ -184,11 +190,12 @@ nonisolated public enum AnnotationRenderer {
     ) -> CGImage? {
         guard let base = document.picture(from: base) else { return nil }
         let canvas = document.canvas.standardized.integral
-        let layout = document.backdrop == nil ? nil : document.backdropLayout(edges: EdgeAnalysis.of(base, canvas: canvas))
+        let needsEdges = document.backdrop != nil || document.canvasReachesPastCapture
+        let edges = needsEdges ? EdgeAnalysis.of(base, canvas: canvas) : nil
+        let layout = edges.flatMap { document.backdropLayout(edges: $0) }
         let output = (layout?.output ?? canvas).integral
-        let width = Int(output.width)
-        let height = Int(output.height)
-        guard width > 0, height > 0 else { return nil }
+        guard let width = Int(exactly: output.width), let height = Int(exactly: output.height), width > 0, height > 0,
+              document.fitsOutputBudget(output, sourceSize: CGSize(width: base.width, height: base.height)) else { return nil }
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
@@ -199,19 +206,26 @@ nonisolated public enum AnnotationRenderer {
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -output.minX, y: -output.minY)
-        if let layout, let backdrop = document.backdrop {
-            let blur = backdrop.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas) : nil
-            BackdropPainter.paint(backdrop.fill, in: output, context: context, blur: blur)
-            BackdropPainter.drawCardShadow(layout, shadow: CardShadow(backdrop, scale: document.scale), context: context)
-            drawCard(layout, base: base, document: document, space: space, in: context)
-        } else {
-            if document.canvasReachesPastCapture, let matte = document.canvasMatte(edges: EdgeAnalysis.of(base, canvas: canvas)) {
-                context.setFillColor(matte.cgColor(in: space))
-                context.fill(canvas)
-            }
-            drawPicture(document, base: base, in: context)
-            drawSpotlight(document.spots, canvas: canvas, in: context)
+        let surface = layout.flatMap { layout in
+            document.backdrop.map { BackdropPainter.Surface(fill: $0.fill, layout: layout, shadow: CardShadow($0, scale: document.scale)) }
         }
+        let matte = layout?.matte ?? edges.flatMap { document.canvasMatte(edges: $0) }
+        let underlay = BackdropPainter.Underlay(
+            surface: surface, blur: surface?.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas) : nil,
+            matte: matte?.cgColor(in: space), canvas: canvas
+        )
+        underlay.paint(in: context)
+        context.saveGState()
+        underlay.clipToPicture(in: context)
+        drawPicture(document, base: base, in: context)
+        context.restoreGState()
+        context.saveGState()
+        if let layout, !layout.isBare {
+            context.addPath(CGPath(roundedRect: layout.card, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
+            context.clip()
+        }
+        drawSpotlight(document.spots, canvas: layout?.card ?? canvas, in: context)
+        context.restoreGState()
         // Blurs and pixelations show what lies under them, and highlights take to it, images included.
         let readsPicture = document.items.contains { item in
             if case .redaction(let redaction) = item.shape { return redaction.method != .solid }
@@ -230,7 +244,7 @@ nonisolated public enum AnnotationRenderer {
                 let picture = source.picture ?? (base, .zero)
                 ground = HighlightGround.under(item, in: picture.image, origin: picture.origin, scale: document.scale)
             }
-            draw(item, in: context, scale: document.scale, coverage: coverage, ground: ground)
+            draw(item, in: context, scale: document.scale, coverage: coverage, ground: ground, underlay: surface == nil && matte == nil ? nil : underlay)
         }
         // Over every mark, across the canvas, inside the card's corners on a background.
         if let watermark = document.watermark {
@@ -269,26 +283,6 @@ nonisolated public enum AnnotationRenderer {
         context.translateBy(x: -area.minX, y: -area.minY)
         drawPicture(document, base: base, in: context)
         return context.makeImage()
-    }
-
-    /// The capture on its card: the card's room in the capture's edge color, the kept part of the
-    /// capture, and the spotlight over the card, all within the card's rounded corners.
-    static func drawCard(_ layout: BackdropLayout, base: CGImage, document: AnnotationDocument, space: CGColorSpace, in context: CGContext) {
-        context.saveGState()
-        if !layout.isBare {
-            context.addPath(CGPath(roundedRect: layout.card, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
-            context.clip()
-            if let matte = layout.matte {
-                context.setFillColor(matte.cgColor(in: space))
-                context.fill(layout.card)
-            }
-        }
-        context.saveGState()
-        context.clip(to: layout.picture)
-        drawPicture(document, base: base, in: context)
-        context.restoreGState()
-        drawSpotlight(document.spots, canvas: layout.isBare ? layout.picture : layout.card, in: context)
-        context.restoreGState()
     }
 
     /// Draws an image upright into `rect` of a y-down user space.

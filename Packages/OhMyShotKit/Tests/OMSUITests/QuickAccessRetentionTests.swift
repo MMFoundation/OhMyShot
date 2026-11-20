@@ -8,8 +8,8 @@ import Testing
 struct QuickAccessRetentionTests {
     private func fixture(
         configure: (inout QuickAccessController.Actions) -> Void = { _ in },
-        _ run: (QuickAccessController, () throws -> QuickAccessItem) throws -> Void
-    ) throws {
+        _ run: (QuickAccessController, () throws -> QuickAccessItem) async throws -> Void
+    ) async throws {
         let folder = URL.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -18,6 +18,7 @@ struct QuickAccessRetentionTests {
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ))
         let thumbnail = try #require(context.makeImage())
+        let history = HistoryStore(directory: folder)
         var actions = QuickAccessController.Actions(
             copy: { _ in false }, save: { _, _ in nil }, saveAs: { _ in nil },
             open: { _ in }, annotate: { _ in }, reveal: { _ in }, recognizeText: { _ in },
@@ -26,16 +27,16 @@ struct QuickAccessRetentionTests {
             }
         )
         configure(&actions)
-        try run(QuickAccessController(actions: actions)) {
-            let id = UUID(), url = folder.appending(path: id.uuidString)
-            try Data().write(to: url)
-            return QuickAccessItem(id: id, fileURL: url, thumbnail: thumbnail, pixelWidth: 1, pixelHeight: 1, displayID: 0)
+        try await run(QuickAccessController(actions: actions, history: history)) {
+            let entry = try history.add(data: Data([0]), name: UUID().uuidString, fileExtension: "png", kind: .screenshot,
+                                        pixelWidth: 1, pixelHeight: 1, appName: nil)
+            return QuickAccessItem(entry, fileURL: history.fileURL(for: entry), thumbnail: thumbnail, displayID: 0)
         }
     }
 
     @Test(arguments: [false, true])
-    func displacedCardRestoresUntilExplicitlyClosed(byHeight: Bool) throws {
-        try fixture { cards, make in
+    func displacedCardRestoresUntilExplicitlyClosed(byHeight: Bool) async throws {
+        try await fixture { cards, make in
             let first = try make(), second = try make()
             cards.maximumCards = byHeight ? 2 : 1
             cards.insertIntoStack(first)
@@ -54,8 +55,8 @@ struct QuickAccessRetentionTests {
         }
     }
 
-    @Test func overflowAndTerminationReleaseDisplacedCardsButNotVisibleOnes() throws {
-        try fixture { cards, make in
+    @Test func overflowAndTerminationReleaseDisplacedCardsButNotVisibleOnes() async throws {
+        try await fixture { cards, make in
             cards.maximumCards = 1
             let items = try (0..<22).map { _ in try make() }
             items.forEach(cards.insertIntoStack)
@@ -69,8 +70,8 @@ struct QuickAccessRetentionTests {
         }
     }
 
-    @Test func readdingOrRemovingADisplacedCardForgetsItsRestoreHold() throws {
-        try fixture { cards, make in
+    @Test func readdingOrRemovingADisplacedCardForgetsItsRestoreHold() async throws {
+        try await fixture { cards, make in
             cards.maximumCards = 1
             let first = try make(), second = try make()
             cards.insertIntoStack(first)
@@ -85,9 +86,9 @@ struct QuickAccessRetentionTests {
         }
     }
 
-    @Test func failedTrashKeepsItsCardPastTheAutoCloseDeadline() throws {
+    @Test func failedTrashKeepsItsCardPastTheAutoCloseDeadline() async throws {
         var closed: [UUID] = []
-        try fixture(configure: { actions in
+        try await fixture(configure: { actions in
             actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .close) }
             actions.moveToTrash = { _ in throw CocoaError(.fileWriteNoPermission) }
             actions.closed = { closed.append($0.id) }
@@ -104,9 +105,9 @@ struct QuickAccessRetentionTests {
         }
     }
 
-    @Test func restoredCardUsesTheExportSavedWhileDisplacedForRevealAndTrash() throws {
+    @Test func restoredCardUsesTheExportSavedWhileDisplacedForRevealAndTrash() async throws {
         var revealed: URL?, trashedCopy: URL?
-        try fixture(configure: { actions in
+        try await fixture(configure: { actions in
             actions.reveal = { revealed = $0.savedURL ?? $0.fileURL }
             actions.moveToTrash = { trashedCopy = $0.savedURL }
         }) { cards, make in
@@ -127,10 +128,11 @@ struct QuickAccessRetentionTests {
         }
     }
 
-    @Test func timedHistoryExpiresADisplacedCaptureThatNeverWouldKeep() throws {
-        try fixture { cards, make in
+    @Test func timedHistoryExpiresADisplacedCaptureThatNeverWouldKeep() async throws {
+        try await fixture { cards, make in
             let seed = try make()
-            let store = HistoryStore(directory: seed.fileURL.deletingLastPathComponent().appending(path: "history"))
+            let store = HistoryStore(directory: seed.fileURL.deletingLastPathComponent())
+            store.delete(try #require(store.item(forFileAt: seed.fileURL)))
             let now = Date.now, old = now.addingTimeInterval(-2 * 86_400)
             let entries = try ["displaced", "visible"].map { name in
                 try store.add(data: Data([0]), name: name, fileExtension: "png", kind: .screenshot,
@@ -144,6 +146,73 @@ struct QuickAccessRetentionTests {
             #expect(store.removeExpired(retention: .oneDay, keeping: cards.heldCaptureIDs(for: .oneDay), now: now) == 1)
             #expect(store.items().map(\.id) == [entries[1].id])
             #expect(!cards.canRestoreRecentlyClosed)
+        }
+    }
+
+    @Test func reusedHistoryFilenameCannotRestoreThePreviousCapture() async throws {
+        var released: [UUID] = []
+        try await fixture(configure: { $0.closed = { released.append($0.id) } }) { cards, make in
+            let first = try make(), other = try make()
+            let store = HistoryStore(directory: first.fileURL.deletingLastPathComponent())
+            let entry = try #require(store.item(forFileAt: first.fileURL))
+            cards.maximumCards = 1
+            cards.insertIntoStack(first)
+            cards.insertIntoStack(other)
+            #expect(cards.canRestoreRecentlyClosed)
+            store.delete(entry)
+            let new = try store.add(data: Data([1]), name: first.fileURL.deletingPathExtension().lastPathComponent, fileExtension: "png",
+                                    kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+            #expect(new.id != entry.id)
+            #expect(store.fileURL(for: new) == first.fileURL)
+            #expect(!cards.canRestoreRecentlyClosed)
+            #expect(cards.takeRecentlyClosed() == nil)
+            #expect(released == [entry.id])
+            #expect(store.item(id: new.id) != nil)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func editedRecentlyClosedCardNeverRestoresItsOldPixels(restoreDuringDecode: Bool) async throws {
+        try await fixture(configure: { $0.closed = { _ in } }) { cards, make in
+            let first = try make(), other = try make()
+            let store = HistoryStore(directory: first.fileURL.deletingLastPathComponent())
+            let entry = try #require(store.item(forFileAt: first.fileURL))
+            cards.maximumCards = 1
+            cards.insertIntoStack(first)
+            if restoreDuringDecode { cards.insertIntoStack(other) } else { cards.dismiss(first.id) }
+            var release: CheckedContinuation<CGImage?, Never>?
+            let (began, beganDecoding) = AsyncStream<Void>.makeStream()
+            let oldUpdate = try #require(cards.pictureChanged(entry, savedCopyIsStale: true) {
+                await withCheckedContinuation { continuation in
+                    release = continuation
+                    beganDecoding.finish()
+                }
+            })
+            for await _ in began {}
+            let context = try #require(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+                                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(gray: 0, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+            let redacted = try #require(context.makeImage())
+            let png = try ImageExporter.encoded(redacted, as: .png)
+            let changed = try store.replaceImage(of: entry, with: png, pixelWidth: 4, pixelHeight: 4, annotations: Data())
+            let update = try #require(cards.pictureChanged(changed, savedCopyIsStale: true) {
+                await HistoryStore.cardThumbnail(of: png, maxPixels: QuickAccessItem.thumbnailPixels)
+            })
+            if restoreDuringDecode {
+                let pending = try #require(cards.takeRecentlyClosed())
+                #expect(pending.thumbnail !== first.thumbnail)
+                cards.insertIntoStack(pending)
+            }
+            let saved = first.fileURL.deletingLastPathComponent().appending(path: "redacted.png")
+            cards.markSaved(entry.id, at: saved)
+            await update.value
+            release?.resume(returning: first.thumbnail)
+            await oldUpdate.value
+            let current = try #require(restoreDuringDecode ? cards.item(entry.id) : cards.takeRecentlyClosed())
+            #expect(current.thumbnail.width == 4 && current.thumbnail.height == 4)
+            #expect(current.pixelWidth == 4 && current.pixelHeight == 4)
+            #expect(current.savedURL == saved)
         }
     }
 }

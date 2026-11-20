@@ -62,6 +62,28 @@ func makeBase(width: Int = 200, height: Int = 100) -> CGImage {
 }
 
 struct AnnotationRenderingTests {
+    @Test func aBackdropCannotExpandOutputBeyondThePixelBudget() {
+        let base = makeBase(width: 64, height: 40)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 64, height: 40), scale: 1)
+        document.backdrop = Backdrop(fill: .color(.black), padding: 0, shadow: 0, ratio: .init(500, 1))
+        #expect(AnnotationRenderer.flatten(document, base: base) == nil)
+    }
+
+    @Test func outputTooWideForAnIntegerDoesNotRender() {
+        let base = makeBase(width: 64, height: 40)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 64, height: 40), scale: 1)
+        document.canvas = CGRect(x: 0, y: 0, width: 1e30, height: 40)
+        #expect(AnnotationRenderer.flatten(document, base: base) == nil)
+    }
+
+    @Test func anUnresizedLongCaptureCanStillExportAtItsNativeSize() throws {
+        let width = AnnotationDocument.maxPictureSide + 1
+        let base = makeBase(width: width, height: 2)
+        let document = AnnotationDocument(pixelSize: CGSize(width: width, height: 2), scale: 1)
+        let image = try #require(AnnotationRenderer.flatten(document, base: base))
+        #expect(image.width == width && image.height == 2)
+    }
+
     private func render(_ items: [Annotation], scale: CGFloat = 1, canvas: CGRect? = nil, base: CGImage = makeBase()) -> Pixels {
         var document = AnnotationDocument(pixelSize: CGSize(width: base.width, height: base.height), scale: scale, items: items)
         if let canvas { document.canvas = canvas }

@@ -10,8 +10,7 @@ struct AnnotationCaptureSourceTests {
         let item: HistoryItem
         var document: AnnotationDocument
 
-        init() throws {
-            let base = makeBase()
+        init(base: CGImage = makeBase()) throws {
             let size = CGSize(width: base.width, height: base.height)
             let mark = Annotation(shape: .redaction(Redaction(rect: CGRect(x: 10, y: 10, width: 20, height: 20))), style: Style(color: .black))
             document = AnnotationDocument(pixelSize: size, scale: 1, items: [mark])
@@ -74,6 +73,50 @@ struct AnnotationCaptureSourceTests {
         #expect(try Data(contentsOf: history.fileURL(for: item)) == shown)
         #expect(try Data(contentsOf: history.originalURL(for: item)) == original)
         #expect(try Data(contentsOf: history.annotationsURL(for: item)) == badMarks)
+    }
+
+    @Test(arguments: [
+        CGRect(x: 0, y: 0, width: 1e30, height: 40),
+        CGRect(x: 0, y: 0, width: 64, height: AnnotationDocument.maxPictureSide + 1),
+        CGRect(x: 0.5, y: 0, width: CGFloat(AnnotationDocument.maxPictureSide), height: 2),
+        CGRect(x: 0, y: 0, width: 10_001, height: 10_000)
+    ])
+    func oversizedCanvasOnlyOpensTheFlattenedRendition(canvas: CGRect) async throws {
+        var fixture = try Fixture()
+        let history = fixture.history, item = fixture.item
+        defer { try? FileManager.default.removeItem(at: history.directory) }
+        fixture.document.canvas = canvas
+        let sidecar = try JSONEncoder().encode(fixture.document)
+        try sidecar.write(to: history.annotationsURL(for: item))
+
+        let loaded = try #require(await AnnotationCaptureSource.load(item, from: history))
+        #expect(loaded.requiresFlattenedCopy && loaded.document == nil)
+        #expect(Pixels(loaded.image)[20, 20].r == 0)
+        #expect(try Data(contentsOf: history.annotationsURL(for: item)) == sidecar)
+        #expect(history.items().map(\.id) == [item.id])
+    }
+
+    @Test(arguments: [
+        CGRect(x: 10, y: 10, width: 64, height: 40),
+        CGRect(x: -10, y: -20, width: AnnotationDocument.maxPictureSide, height: 40),
+        CGRect(x: -10, y: -20, width: 10_000, height: 10_000)
+    ])
+    func inBudgetCropsAndExpandedCanvasesStayEditable(canvas: CGRect) async throws {
+        var fixture = try Fixture()
+        let history = fixture.history, item = fixture.item
+        defer { try? FileManager.default.removeItem(at: history.directory) }
+        fixture.document.canvas = canvas
+        try JSONEncoder().encode(fixture.document).write(to: history.annotationsURL(for: item))
+
+        let loaded = try #require(await AnnotationCaptureSource.load(item, from: history))
+        #expect(!loaded.requiresFlattenedCopy && loaded.document == fixture.document)
+    }
+
+    @Test func aLongNativeCaptureRemainsEditableWithoutResizing() async throws {
+        let fixture = try Fixture(base: makeBase(width: 2, height: AnnotationDocument.maxPictureSide + 1))
+        defer { try? FileManager.default.removeItem(at: fixture.history.directory) }
+        let loaded = try #require(await AnnotationCaptureSource.load(fixture.item, from: fixture.history))
+        #expect(!loaded.requiresFlattenedCopy && loaded.document == fixture.document)
     }
 
     @Test func aValidPairKeepsItsOriginalAndEditableMarks() async throws {

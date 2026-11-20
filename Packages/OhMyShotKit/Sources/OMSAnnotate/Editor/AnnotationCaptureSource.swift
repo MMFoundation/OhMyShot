@@ -31,12 +31,9 @@ nonisolated public struct AnnotationCaptureSource: Sendable {
             rect.size.width > 0 && rect.size.height > 0 && rect.maxX.isFinite && rect.maxY.isFinite
         }
         guard !document.isEmpty, document.scale.isFinite, document.scale > 0, valid(document.canvas), valid(document.imageBounds),
+              document.fitsOutputBudget(document.canvas.integral, sourceSize: document.pixelSize),
               Set(document.items.map(\.id)).count == document.items.count else { return false }
-        if let size = document.transform?.size,
-           size.width < 1 || size.height < 1 || size.width > CGFloat(AnnotationDocument.maxPictureSide)
-           || size.height > CGFloat(AnnotationDocument.maxPictureSide) || size.width * size.height > CGFloat(AnnotationDocument.maxPictureArea) {
-            return false
-        }
+        if let size = document.transform?.size, !AnnotationDocument.fitsPixelBudget(size) { return false }
         return document.items.allSatisfy {
             if case .redaction(let redaction) = $0.shape { return valid(redaction.rect.standardized) }
             return true
@@ -51,5 +48,16 @@ nonisolated public struct AnnotationCaptureSource: Sendable {
             pixelWidth: image.width, pixelHeight: image.height, appName: item.appName, pixelsPerPoint: item.pixelsPerPoint,
             windowTitle: item.windowTitle
         )
+    }
+}
+
+nonisolated extension AnnotationDocument {
+    static func fitsPixelBudget(_ size: CGSize) -> Bool {
+        (1...CGFloat(maxPictureSide)).contains(size.width) && (1...CGFloat(maxPictureSide)).contains(size.height)
+            && size.width * size.height <= CGFloat(maxPictureArea)
+    }
+
+    func fitsOutputBudget(_ pixels: CGRect, sourceSize: CGSize) -> Bool {
+        Self.fitsPixelBudget(pixels.size) || (transform == nil && CGRect(origin: .zero, size: sourceSize).contains(pixels))
     }
 }

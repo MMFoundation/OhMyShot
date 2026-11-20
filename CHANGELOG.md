@@ -21,7 +21,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - With Keep Captures set to Never, a card pushed out of Quick Access by newer ones can still be brought back with Restore Recently Closed; only a card you close yourself is deleted at once.
 - The editor stays open until its edits are saved. When saving fails it offers Retry, Save a Copy as Project…, and Discard Edits, and quitting waits for the same choice. A capture open in the editor can't be moved to the Trash from its card or from History.
 - Marking up in place, Escape with marks drawn asks for a second Escape before throwing them away.
-- Blur and Pixelate grow stronger with the size of what they cover, so large text under them can no longer be read back. A redaction that can't be worked out covers its area in solid black instead of leaving it bare, and a capture whose saved marks can't be read opens with its marks flattened, never as the original without them.
+- Blur and Pixelate are stronger on larger areas. For anything that must stay secret, use a solid fill and share the flattened image, not the editable project. If a redaction can't be rendered, its area is covered in solid black. If saved marks can't be read, the editor offers a flattened copy rather than the unmarked original.
 - Copying a recording no longer starts a clipboard check every 3 seconds unless Keep Captures is Never, and Capture Text no longer holds on to the last picture it read.
 
 ## [0.2.0] - 2026-11-19

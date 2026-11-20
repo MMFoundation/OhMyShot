@@ -20,7 +20,7 @@ final class CaptureRetention {
     /// The captures being uploaded.
     private let uploads: () -> Set<UUID>
     /// Captures were removed from the history: Capture History shows it.
-    private let historyChanged: () -> Void
+    private let historyChanged: ([UUID]) -> Void
     private var pictureSweep: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
     private lazy var clipboard = RecordingClipboardHold(
@@ -30,7 +30,7 @@ final class CaptureRetention {
 
     init(
         settings: SettingsStore, history: HistoryStore, cards: @escaping (HistoryRetention) -> Set<UUID>, editors: @escaping () -> Set<UUID>,
-        recordingWindows: @escaping () -> Set<UUID>, uploads: @escaping () -> Set<UUID>, historyChanged: @escaping () -> Void
+        recordingWindows: @escaping () -> Set<UUID>, uploads: @escaping () -> Set<UUID>, historyChanged: @escaping ([UUID]) -> Void
     ) {
         self.settings = settings
         self.history = history
@@ -55,7 +55,7 @@ final class CaptureRetention {
     func releaseIfUnheld(_ id: UUID) {
         guard settings.historyRetention == .never, !heldCaptureIDs(for: .never).contains(id), let entry = history.item(id: id) else { return }
         history.delete(entry)
-        historyChanged()
+        historyChanged([id])
         sweepWallpaperPictures()
     }
 
@@ -78,12 +78,14 @@ final class CaptureRetention {
             // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, and one
             // a card, an editor, or the clipboard took up since is held now; neither goes. With history off, that is
             // every capture but the ones still in use.
-            let removable = HistoryStore.removable(expired, held: heldCaptureIDs(for: retention), checkedAt: now)
+            let removable = HistoryStore.removable(expired, held: heldCaptureIDs(for: retention), checkedAt: now).filter {
+                history.item(forFileAt: history.fileURL(for: $0))?.id == $0.id
+            }
             removable.forEach(history.delete)
             if !removable.isEmpty {
                 Log.capture.notice("Removed \(removable.count, privacy: .public) expired capture(s) from the history")
             }
-            historyChanged()
+            historyChanged(removable.map(\.id))
             sweepWallpaperPictures()
         }
     }
