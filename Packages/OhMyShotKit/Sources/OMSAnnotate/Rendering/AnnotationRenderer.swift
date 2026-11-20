@@ -184,6 +184,23 @@ nonisolated public enum AnnotationRenderer {
 
     typealias Composite = (AnnotationDocument, CGImage, CGRect) -> CGImage?
 
+    static func bitmapDimensions(for size: CGSize) -> (width: Int, height: Int)? {
+        let maxSide = 262_144
+        let maxBytes = 1 << 30
+        guard let width = Int(exactly: size.width), let height = Int(exactly: size.height),
+              (1...maxSide).contains(width), (1...maxSide).contains(height),
+              width * height * 4 <= maxBytes else { return nil }
+        return (width, height)
+    }
+
+    private static func bitmapContext(for size: CGSize, space: CGColorSpace) -> CGContext? {
+        guard let (width, height) = bitmapDimensions(for: size) else { return nil }
+        return CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        )
+    }
+
     static func flatten(
         _ document: AnnotationDocument, base: CGImage,
         redactionFilter: Redactor.Filter = Redactor.apply, composite: Composite = combinedPicture
@@ -194,16 +211,11 @@ nonisolated public enum AnnotationRenderer {
         let edges = needsEdges ? EdgeAnalysis.of(base, canvas: canvas) : nil
         let layout = edges.flatMap { document.backdropLayout(edges: $0) }
         let output = (layout?.output ?? canvas).integral
-        guard let width = Int(exactly: output.width), let height = Int(exactly: output.height), width > 0, height > 0,
-              document.fitsOutputBudget(output, sourceSize: CGSize(width: base.width, height: base.height)) else { return nil }
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
+        guard let context = bitmapContext(for: output.size, space: space) else { return nil }
         context.interpolationQuality = .high
         // y down, with the picture's corner at the origin.
-        context.translateBy(x: 0, y: CGFloat(height))
+        context.translateBy(x: 0, y: output.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -output.minX, y: -output.minY)
         let surface = layout.flatMap { layout in
@@ -273,10 +285,7 @@ nonisolated public enum AnnotationRenderer {
 
     private static func combinedPicture(_ document: AnnotationDocument, base: CGImage, area: CGRect) -> CGImage? {
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(
-            data: nil, width: Int(area.width), height: Int(area.height), bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
+        guard let context = bitmapContext(for: area.size, space: space) else { return nil }
         context.interpolationQuality = .high
         context.translateBy(x: 0, y: area.height)
         context.scaleBy(x: 1, y: -1)
@@ -313,18 +322,12 @@ nonisolated public enum AnnotationRenderer {
 
     /// `base` held as `orientation` says and scaled to `size` pixels, or nil when no such picture can be made.
     static func picture(from base: CGImage, orientation: Orientation, size: CGSize) -> CGImage? {
-        let width = Int(size.width)
-        let height = Int(size.height)
-        guard width > 0, height > 0 else { return nil }
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
+        guard let context = bitmapContext(for: size, space: space) else { return nil }
         let held = orientation.size(of: CGSize(width: base.width, height: base.height))
         // Turning and flipping move whole pixels; only a change of size blends them.
         context.interpolationQuality = held == size ? .none : .high
-        context.translateBy(x: 0, y: CGFloat(height))
+        context.translateBy(x: 0, y: size.height)
         context.scaleBy(x: 1, y: -1)
         drawImage(base, in: CGRect(origin: .zero, size: size), orientation: orientation, context: context)
         return context.makeImage()

@@ -102,6 +102,17 @@ struct AnnotationCombineTests {
         #expect(gap.alpha == 255 && gap.red == 255 && gap.blue == 255)
     }
 
+    @Test func aCombinedImageBesideALongCaptureFlattens() throws {
+        let base = swatch(16, 20_000, red: 1, green: 1, blue: 1)
+        let name = try PictureStore.shared.add(swatch(16, 16, red: 0, green: 0, blue: 1))
+        var document = AnnotationDocument(pixelSize: CGSize(width: 16, height: 20_000), scale: 1)
+        document.items = [image(CGRect(x: 16, y: 0, width: 16, height: 16), name: name)]
+        document.canvas.size.width = 32
+        let output = try #require(AnnotationRenderer.flatten(document, base: base))
+        #expect(output.width == 32 && output.height == 20_000)
+        #expect(pixel(output, 24, 8) == (0, 0, 255, 255))
+    }
+
     @Test func blursShowTheCombinedImagesUnderThem() throws {
         let name = try PictureStore.shared.add(swatch(60, 60, red: 0, green: 0.8, blue: 0))
         var document = AnnotationDocument(pixelSize: CGSize(width: 100, height: 100), scale: 1)

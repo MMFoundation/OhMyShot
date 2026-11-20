@@ -31,7 +31,7 @@ nonisolated public struct AnnotationCaptureSource: Sendable {
             rect.size.width > 0 && rect.size.height > 0 && rect.maxX.isFinite && rect.maxY.isFinite
         }
         guard !document.isEmpty, document.scale.isFinite, document.scale > 0, valid(document.canvas), valid(document.imageBounds),
-              document.fitsOutputBudget(document.canvas.integral, sourceSize: document.pixelSize),
+              AnnotationRenderer.bitmapDimensions(for: document.canvas.integral.size) != nil,
               Set(document.items.map(\.id)).count == document.items.count else { return false }
         if let size = document.transform?.size, !AnnotationDocument.fitsPixelBudget(size) { return false }
         return document.items.allSatisfy {
@@ -55,9 +55,5 @@ nonisolated extension AnnotationDocument {
     static func fitsPixelBudget(_ size: CGSize) -> Bool {
         (1...CGFloat(maxPictureSide)).contains(size.width) && (1...CGFloat(maxPictureSide)).contains(size.height)
             && size.width * size.height <= CGFloat(maxPictureArea)
-    }
-
-    func fitsOutputBudget(_ pixels: CGRect, sourceSize: CGSize) -> Bool {
-        Self.fitsPixelBudget(pixels.size) || (transform == nil && CGRect(origin: .zero, size: sourceSize).contains(pixels))
     }
 }

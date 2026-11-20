@@ -77,9 +77,9 @@ struct AnnotationCaptureSourceTests {
 
     @Test(arguments: [
         CGRect(x: 0, y: 0, width: 1e30, height: 40),
-        CGRect(x: 0, y: 0, width: 64, height: AnnotationDocument.maxPictureSide + 1),
-        CGRect(x: 0.5, y: 0, width: CGFloat(AnnotationDocument.maxPictureSide), height: 2),
-        CGRect(x: 0, y: 0, width: 10_001, height: 10_000)
+        CGRect(x: 0, y: 0, width: 64, height: 262_145),
+        CGRect(x: 0.5, y: 0, width: 262_144, height: 2),
+        CGRect(x: 0, y: 0, width: 16_385, height: 16_384)
     ])
     func oversizedCanvasOnlyOpensTheFlattenedRendition(canvas: CGRect) async throws {
         var fixture = try Fixture()
@@ -117,6 +117,16 @@ struct AnnotationCaptureSourceTests {
         defer { try? FileManager.default.removeItem(at: fixture.history.directory) }
         let loaded = try #require(await AnnotationCaptureSource.load(fixture.item, from: fixture.history))
         #expect(!loaded.requiresFlattenedCopy && loaded.document == fixture.document)
+    }
+
+    @Test(arguments: [PictureOperation.rotateRight, .flipHorizontally])
+    func orientationOnlyEditsToLongCapturesReopenWithTheirMarks(operation: PictureOperation) async throws {
+        let fixture = try Fixture(base: makeBase(width: 16, height: 18_000))
+        defer { try? FileManager.default.removeItem(at: fixture.history.directory) }
+        let document = try #require(fixture.document.applying(operation))
+        try JSONEncoder().encode(document).write(to: fixture.history.annotationsURL(for: fixture.item))
+        let loaded = try #require(await AnnotationCaptureSource.load(fixture.item, from: fixture.history))
+        #expect(!loaded.requiresFlattenedCopy && loaded.document == document)
     }
 
     @Test func aValidPairKeepsItsOriginalAndEditableMarks() async throws {
