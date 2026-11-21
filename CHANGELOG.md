@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- The system log no longer shows the names of captures and files, where they are kept, or the text of errors about them, so a file name made from a window's title or typed in Save As no longer turns up in a log collected for a bug report. Each error's domain and code still show, so the log still says what went wrong.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

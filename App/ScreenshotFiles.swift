@@ -48,7 +48,7 @@ final class ScreenshotFiles {
             do {
                 _ = try await ExportedFiles.fileOffMain(for: url, pixelsPerPoint: scale, output: output)
             } catch {
-                Log.capture.notice("Converting \(url.lastPathComponent, privacy: .public) ahead of a drag failed: \(error.localizedDescription, privacy: .public)")
+                Log.capture.notice("Converting \(url.lastPathComponent, privacy: .private) ahead of a drag failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             }
         }
     }
@@ -145,10 +145,10 @@ final class ScreenshotFiles {
             let name = url.deletingPathExtension().lastPathComponent
             let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: url.pathExtension)
             try FileManager.default.copyItem(at: url, to: destination)
-            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
+            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .private)")
             return destination
         } catch {
-            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Saving failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
             return nil
         }
@@ -203,10 +203,10 @@ final class ScreenshotFiles {
             } else {
                 try ImageExporter.write(try await Self.encoded(source, scale: scale, output: output).data, to: destination)
             }
-            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
+            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .private)")
             return destination
         } catch {
-            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Saving failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
             return nil
         }
@@ -252,10 +252,10 @@ final class ScreenshotFiles {
             } else {
                 try ImageExporter.write(try await Self.encoded(source, scale: scale, output: output).data, to: chosen)
             }
-            Log.capture.notice("Saved \(chosen.lastPathComponent, privacy: .public) with Save As")
+            Log.capture.notice("Saved \(chosen.lastPathComponent, privacy: .private) with Save As")
             return chosen
         } catch {
-            Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Save As failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
             return nil
         }
@@ -272,7 +272,7 @@ final class ScreenshotFiles {
             try FileManager.default.copyItem(at: file, to: url)
             return url
         } catch {
-            Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Save As failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
             return nil
         }
@@ -290,7 +290,7 @@ final class ScreenshotFiles {
             defer { sweepConvertedCopies() }
             return try ExportedFiles.file(for: url, pixelsPerPoint: scale ?? history.item(forFileAt: url)?.pixelsPerPoint, output: output)
         } catch {
-            Log.capture.error("Converting \(url.lastPathComponent, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Converting \(url.lastPathComponent, privacy: .private) failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             return url
         }
     }
@@ -304,7 +304,7 @@ final class ScreenshotFiles {
             defer { sweepConvertedCopies() }
             return try await ExportedFiles.fileOffMain(forPicture: loaded, named: name, pixelsPerPoint: scale, output: output)
         } catch {
-            Log.capture.error("Converting \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Converting \(name, privacy: .private) failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             return nil
         }
     }
@@ -348,7 +348,7 @@ final class ScreenshotFiles {
                 let source = CGImageSourceCreateWithData(data as CFData, nil),
                 let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
             else {
-                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
+                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to copy it")
                 return false
             }
             return PasteboardWriter.write(png: data, image: image)
@@ -360,7 +360,7 @@ final class ScreenshotFiles {
     func copyToClipboard(fileAt url: URL) async -> Bool {
         if let copied = copyImmediately(fileAt: url) { return copied }
         guard let loaded = await Self.load(url) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to copy it")
             return false
         }
         return await copy(Picture(loaded.image), png: loaded.data, name: url.deletingPathExtension().lastPathComponent, scale: history.item(forFileAt: url)?.pixelsPerPoint, historyFile: url)
