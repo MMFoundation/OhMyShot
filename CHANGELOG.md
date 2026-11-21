@@ -20,6 +20,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - **Favorites in Capture History.** Add a capture to Favorites from its menu, with the period key, or with VoiceOver, and find it under Show › Favorites. A favorite stays in History until you take it out, however long Keep captures is.
 - Option-clicking a Quick Access card's Copy, or pressing ⌥⌘C while the card has the keyboard, copies the capture, says "Copied", and keeps the card open. A plain Copy still closes it.
 - Copy Text on Quick Access cards (⇧⌘C, under Recognize Text… in the card's menu, and in its VoiceOver actions) and in Capture History's menu copies a screenshot's text without opening the OCR panel. The picture is read on this Mac as Capture Text reads it, with Settings' line breaks, never by the cloud model; the card says "Copied 42 characters" or "No text found" and stays open, and History says it by the pointer. A reading that ends after something else was copied leaves the clipboard alone.
+- On a frozen screen, B fits a framed area to the edges of what it holds, as Measure fits a box, so a rough drag around a card, a button, or a picture lands on it. It works in All-In-One's framed area and in Capture Area's size control (Tab), and it keeps the shape the area keeps. Press B again, or Command-Z, to put the area back.
 
 ### Changed
 
