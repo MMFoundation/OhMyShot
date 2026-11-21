@@ -52,6 +52,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - All-In-One's Area, Window, and Screen tooltips name their keys (A, W, and F), as Text, Scrolling, Record, and Measure do.
 - Make GIF makes a movie shown turned or mirrored, such as a phone's held upright, as it is shown; it used to come out on its side or the wrong way round.
 - A file opened with OhMyShot that it can't open now beeps and says so by the pointer, where it used to be passed over without a word.
+- A Shortcuts capture action hands its screenshot to the next action with Keep Captures at Never and Quick Access off, where the capture used to be deleted before the shortcut could read it. Nothing is kept once it has been handed on, but for a pinned capture, which is left as Capture Area and Pin leaves it.
 
 ## [0.3.0] - 2026-11-21
 
