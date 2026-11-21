@@ -35,9 +35,11 @@ selected content and tolerance; this feature does not infer semantic objects.
 
 In All-In-One's framed area and in Capture Area's or Annotate Area's size control (Tab), **B** fits the
 area to the edges of what it holds on the frozen screen, with the same detector at the Edge tolerance
-set for Measure. The area only closes in on its content, keeps any shape it keeps, and is never smaller
-than 16 points either way. **B** again, or **Command-Z**, puts back the area as drawn, until something
-else moves or resizes it. Areas above 250,000 physical pixels are looked at in the background, reading
+set for Measure, read from Settings each time a capture opens. The area only closes in on its content,
+staying inside the area framed, keeps any shape it keeps, and is never smaller than 16 points either
+way; where that can't fit inside the area framed, it stays as drawn. **B** again, or **Command-Z**,
+puts back the area as drawn, until something else moves or resizes it, even back to where the fit
+left it. Areas above 250,000 physical pixels are looked at in the background, reading
 only that part of the frozen frame and a 16-pixel margin; moving the area or closing the overlay drops
 the work. A live screen (Freeze off) has no frame to read, so B does nothing there.
 

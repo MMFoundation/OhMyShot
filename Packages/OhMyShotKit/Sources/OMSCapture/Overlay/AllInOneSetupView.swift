@@ -64,7 +64,6 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             window?.makeFirstResponder(self)
         }
         setAccessibilityLabel(String(localized: "Capture area", bundle: .module))
-        setAccessibilityHelp(instructions)
         update()
     }
 
@@ -87,9 +86,11 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
     }
 
+    /// Every key as things stand: B's from the moment the frozen frame under the area arrives.
+    override func accessibilityHelp() -> String? { instructions }
+
     /// Says what to do next: on the overlay by now, so B is named where the screen is frozen.
     override func begin() {
-        setAccessibilityHelp(instructions)
         VoiceOver.announce(instructions, from: self)
     }
 

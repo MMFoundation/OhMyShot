@@ -113,6 +113,7 @@ class AreaSetupView<Bar: NSView>: NSView {
     func setArea(_ rect: CGRect) -> Bool {
         guard let kept = AreaFrame.fitted(rect, in: bounds) else { return false }
         cancelFit()
+        fit = nil
         areaAdjusted(AreaFrame.global(AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint), on: display))
         // Moved by the keys or a typed size, the area is looked at again once the keys rest; a drag looks once it ends.
         if adjustment == nil { refreshCodes(after: .milliseconds(250)) } else { clearCodes() }
@@ -203,9 +204,12 @@ class AreaSetupView<Bar: NSView>: NSView {
         }
     }
 
-    /// Takes `content` (global points), the edges found in `drawn`, as the area.
+    /// Takes the least area holding `content` (global points), the edges found in `drawn`, as the area: inside `drawn`,
+    /// so nothing that wasn't framed comes in, and not at all when the smallest area or the shape kept can't fit there.
     private func applyFit(_ content: CGRect?, to drawn: CGRect) {
-        guard let content, setArea(AreaFrame.holding(AreaFrame.local(content, on: display), keeping: keptRatio, in: bounds)),
+        let framed = AreaFrame.local(drawn, on: display).intersection(bounds)
+        guard let content, case let held = AreaFrame.holding(AreaFrame.local(content, on: display), keeping: keptRatio, in: framed),
+              held.width <= framed.width, held.height <= framed.height, setArea(held),
               let fitted = adjustableArea, fitted != drawn else {
             NSSound.beep()
             VoiceOver.announce(String(localized: "No edges to fit to inside the area", bundle: .module), from: self, priority: .medium)
