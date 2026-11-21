@@ -431,6 +431,8 @@ public final class QuickAccessController {
         stack?.setTrashing(false, for: pending.id)
         // Brought back, it starts its time again, as a card restored from Recently Closed does.
         schedule.restart(pending.id)
+        // The Trash let its holds go; a Copy Text still reading holds it again.
+        if readingText[pending.id] != nil { hold(.reading, for: pending.id, if: true) }
         updateCountdowns()
         return true
     }

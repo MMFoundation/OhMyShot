@@ -106,4 +106,28 @@ struct QuickAccessCopyTextTests {
         controller.closeDueCards(at: .greatestFiniteMagnitude)
         #expect(controller.item(capture.id) == nil)
     }
+
+    /// Moved to the Trash and brought back while its text is read, a card is held again until the reading ends, and
+    /// then says what it copied.
+    @Test func aCardBroughtBackFromTheTrashWaitsForItsReading() async throws {
+        var actions = actions()
+        var resume: CheckedContinuation<TextCopy, Never>?
+        actions.copyText = { _ in await withCheckedContinuation { resume = $0 } }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .close) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(.copyText, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        #expect(controller.undoTrash(capture.id))
+        controller.closeDueCards(at: .greatestFiniteMagnitude)
+        #expect(controller.item(capture.id) != nil)
+        try #require(resume).resume(returning: .copied(characters: 1))
+        for _ in 0..<20 { await Task.yield() }
+        #expect(try card(of: controller).notice == TextCopy.copied(characters: 1).message)
+        controller.closeDueCards(at: .greatestFiniteMagnitude)
+        #expect(controller.item(capture.id) == nil)
+    }
 }
