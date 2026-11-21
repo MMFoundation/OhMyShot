@@ -18,12 +18,14 @@ Each entry links its implementation commits or merged pull request and credits v
 - Magnifier (Z), a mark in the editor and in Annotate Area: a round lens that shows part of the picture at 2×, 3×, or 4×, chosen in its capsule. Click to put it over a spot, or drag from the spot to where the lens should stand, and a thin line joins it to a ring around what it magnifies. It has the capture loupe's white ring and soft shadow, and it shows redactions as they are drawn, so it never reveals what one hides. Projects with a magnifier open only in this version or later.
 - **Favorites in Capture History.** Add a capture to Favorites from its menu, with the period key, or with VoiceOver, and find it under Show › Favorites. A favorite stays in History until you take it out, however long Keep captures is.
 - Option-clicking a Quick Access card's Copy, or pressing ⌥⌘C while the card has the keyboard, copies the capture, says "Copied", and keeps the card open. A plain Copy still closes it.
+- Copy Text on Quick Access cards (⇧⌘C, under Recognize Text… in the card's menu, and in its VoiceOver actions) and in Capture History's menu copies a screenshot's text without opening the OCR panel. The picture is read on this Mac as Capture Text reads it, with Settings' line breaks, never by the cloud model; the card says "Copied 42 characters" or "No text found" and stays open, and History says it by the pointer. A reading that ends after something else was copied leaves the clipboard alone.
 
 ### Fixed
 
 - Capture Text, Capture Formula, and Translate Area read only the windows picked with Shift, also when Option opens them in the OCR panel. What lies between or around the windows is no longer read, copied, or sent to a cloud model.
 - A screenshot of several windows on displays with different scales keeps each window at its size, instead of drawing the one from the lower-scale display too small.
 - Settings' search finds Find QR codes and barcodes and Add a watermark by their names.
+- When the Math Formulas or VLM pack can't read a picture's formulas or tables, Copy Text and the Recognize Text in Image shortcut still give the text Vision read, instead of finding none.
 
 ## [0.3.0] - 2026-11-21
 
