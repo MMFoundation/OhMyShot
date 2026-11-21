@@ -60,6 +60,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - A Shortcuts capture action hands its screenshot to the next action with Keep Captures at Never and Quick Access off, where the capture used to be deleted before the shortcut could read it. Nothing is kept once it has been handed on, but for a pinned capture, which is left as Capture Area and Pin leaves it.
 - Copy Link on a capture's card or in Capture History no longer copies a link that has expired, or one whose upload was deleted from its storage. It copies the link of the capture's newest upload that still works, and when none does, Copy Link leaves the menu, as it already did in Settings › Sharing.
 - Two projects with the same name from different folders, open at once, no longer share one picture: dragging out or saving a copy from either editor hands over its own.
+- A copy in another format, made ahead of a drag as a card appears, can no longer arrive late and stand in for the picture as it is now: a drag, Share…, or upload after you mark up or redact a capture hands over the marked-up picture, never the one from before.
 
 ## [0.3.0] - 2026-11-21
 
