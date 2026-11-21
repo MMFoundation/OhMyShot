@@ -225,8 +225,8 @@ final class TextCaptureCoordinator {
                 let frame = try await capturer.captureWindows(targets, shadow: false, layout: displays.layout)
                 try Task.checkCancellation()
                 await recognize(
-                    frame.image, selection: area, place: Self.place(of: frame, window: targets.count == 1 ? targets[0] : nil), joinLines: joinLines,
-                    copiesToClipboard: true, allowsCloud: allowsCloud, done: done
+                    frame.image, selection: area, place: Self.place(of: frame, windows: targets), joinLines: joinLines, copiesToClipboard: true,
+                    allowsCloud: allowsCloud, done: done
                 )
             } catch {
                 guard !Task.isCancelled else { done?(nil); return }
@@ -473,6 +473,15 @@ final class TextCaptureCoordinator {
         let owner = window.flatMap { WindowCatalog.owner(of: $0.id) }
         if window != nil, owner == nil || owner == ProcessInfo.processInfo.processIdentifier { return nil }
         return AppTextPlace(frame: frame.frame, scale: scale(of: frame), pid: owner)
+    }
+
+    /// Picked windows' place: their app's, when they all belong to one. Windows of several apps ask no app for its text,
+    /// since the app in front at a line could be one whose window wasn't picked.
+    private static func place(of frame: CapturedFrame, windows targets: [WindowTarget]) -> AppTextPlace? {
+        guard let first = targets.first else { return nil }
+        let owner = WindowCatalog.owner(of: first.id)
+        guard targets.dropFirst().allSatisfy({ WindowCatalog.owner(of: $0.id) == owner }) else { return nil }
+        return place(of: frame, window: first)
     }
 
     /// The apps' text at the lines' places (L0), being read for `budget` at most; nil while Settings leaves it off (no
@@ -943,11 +952,10 @@ final class TextCaptureCoordinator {
     private func openPanel(windows targets: [WindowTarget]) async {
         do {
             let frame = try await capturer.captureWindows(targets, shadow: false, layout: displays.layout)
-            let window = targets.count == 1 ? targets[0] : nil
-            let title = window?.title.flatMap { $0.isEmpty ? nil : $0 }
+            let title = targets.count == 1 ? targets[0].title.flatMap { $0.isEmpty ? nil : $0 } : nil
             openPanel(
                 image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(targets.ownerNames) – \($0)" } ?? targets.ownerNames,
-                place: Self.place(of: frame, window: window)
+                place: Self.place(of: frame, windows: targets)
             )
         } catch {
             Log.capture.error("Capture Text failed to capture the windows: \(error.localizedDescription, privacy: .public)")
