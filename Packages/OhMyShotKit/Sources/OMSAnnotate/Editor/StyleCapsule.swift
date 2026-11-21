@@ -317,7 +317,7 @@ final class StyleCapsule: NSView {
 
     static func usesColor(_ kind: AnnotationTool, settings: ToolSettings) -> Bool {
         switch kind {
-        case .spotlight, .crop, .select, .background: false
+        case .spotlight, .magnifier, .crop, .select, .background: false
         case .redact: settings.redaction == .solid
         case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox, .text, .counter: true
         }
@@ -328,7 +328,7 @@ final class StyleCapsule: NSView {
         case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter: true
         // Selected marks show the select kind only when they belong to no tool: combined images.
         case .select: hasSelection
-        case .highlighter, .highlightBox, .redact, .spotlight, .crop, .background: false
+        case .highlighter, .highlightBox, .redact, .spotlight, .magnifier, .crop, .background: false
         }
     }
 
@@ -517,7 +517,7 @@ final class StyleCapsule: NSView {
                 chip.toolTip = String(localized: "\(Int(size)) pt", bundle: .module) + "\n" + keys
                 return chip
             }
-        case .redact, .spotlight, .highlightBox, .crop, .select, .background:
+        case .redact, .spotlight, .magnifier, .highlightBox, .crop, .select, .background:
             return []
         case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .counter:
             let widths = Self.sizes(for: kind)
@@ -597,6 +597,7 @@ final class StyleCapsule: NSView {
                 case .solid: "rectangle.fill"
                 case .blur: "aqi.medium"
                 case .pixelate: "checkerboard.rectangle"
+                case .erase: "eraser"
                 }
                 return symbolChip(symbol, name: Self.name(of: method), selected: settings.redaction == method) { [weak self] in
                     self?.change(String(localized: "Redaction", bundle: .module)) { $0.redaction = method }
@@ -607,6 +608,17 @@ final class StyleCapsule: NSView {
                 symbolChip(oval ? "oval" : "rectangle", name: oval ? String(localized: "Oval", bundle: .module) : String(localized: "Rectangle", bundle: .module), selected: settings.oval == oval) { [weak self] in
                     self?.change(String(localized: "Spotlight Shape", bundle: .module)) { $0.oval = oval }
                 }
+            }
+        case .magnifier:
+            return Magnifier.Zoom.allCases.map { zoom in
+                let chip = CapsuleChip(image: Self.glyph("\(zoom.rawValue)×")) { [weak self] in
+                    self?.change(String(localized: "Magnification", bundle: .module)) { $0.zoom = zoom }
+                }
+                let name = String(localized: "\(zoom.rawValue)× Magnification", bundle: .module)
+                chip.isSelected = settings.zoom == zoom
+                chip.setAccessibilityLabel(name)
+                chip.toolTip = name
+                return chip
             }
         case .select, .pen, .highlighter, .highlightBox, .crop, .background:
             return []
@@ -1115,6 +1127,7 @@ final class StyleCapsule: NSView {
         case .solid: String(localized: "Solid", bundle: .module)
         case .blur: String(localized: "Blur", bundle: .module)
         case .pixelate: String(localized: "Pixelate", bundle: .module)
+        case .erase: String(localized: "Erase", bundle: .module)
         }
     }
 }
