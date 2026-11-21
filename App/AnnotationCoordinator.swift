@@ -31,6 +31,13 @@ final class AnnotationCoordinator {
     var fileToHandOver: ((URL, Double?) -> URL)?
     /// Puts an editor's picture on the clipboard and reports success: the picture, its PNG, its name, and its scale (nil when unknown).
     var copyPicture: ((CGImage, Data, String, Double?) async -> Bool)?
+    /// Pins an editor's picture as it looks now: the picture, its pixels per point, and the capture it is (nil for a project's).
+    var pinPicture: ((CGImage, CGFloat, HistoryItem?) -> Void)?
+    /// What an editor offers for uploading: the destinations as cards list them.
+    var uploadMenu: (() -> UploadMenu)?
+    /// Uploads an editor's picture file as a card's Upload does: the upload's identity (the capture's, or one of the
+    /// project's editor), the file, the destination (nil for the default), and its scale (nil when unknown).
+    var uploadFile: ((UUID, URL, UUID?, Double?) -> Void)?
 
     init(history: HistoryStore) {
         self.history = history
@@ -97,7 +104,7 @@ final class AnnotationCoordinator {
                     return await self.saveCopy?(entry, file)
                 },
                 coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint },
-                entry: { [weak self] in self?.history.item(id: id) }
+                entry: { [weak self] in self?.history.item(id: id) }, uploadID: id
             )
         )
         editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
@@ -109,10 +116,11 @@ final class AnnotationCoordinator {
         editor.show()
     }
 
-    /// The editor's actions: keeping and saving as given, and dragging out and copying as the file settings say.
+    /// The editor's actions: keeping and saving as given, and dragging out, copying, pinning, and uploading as a card
+    /// does them. `uploadID` names the editor's uploads: the capture's own, or one a project's editor keeps.
     private static func editorActions(
         keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?,
-        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?
+        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?, uploadID: UUID
     ) -> AnnotationEditorWindowController.Actions {
         var actions = AnnotationEditorWindowController.Actions(keep: keep, save: save)
         actions.saveAs = { [weak coordinator] file in await coordinator?.saveAs?(file, entry(), scale()) }
@@ -124,6 +132,9 @@ final class AnnotationCoordinator {
                 return PasteboardWriter.write(png: png, image: image)
             }
         }
+        actions.pin = { [weak coordinator] image, pixelsPerPoint in coordinator?.pinPicture?(image, pixelsPerPoint, entry()) }
+        actions.uploadMenu = { [weak coordinator] in coordinator?.uploadMenu?() ?? .hidden }
+        actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID, file, destination, scale()) }
         return actions
     }
 
@@ -187,7 +198,8 @@ final class AnnotationCoordinator {
                         }
                     },
                     save: { [weak self] picture in await self?.saveFile?(picture, projectScale) },
-                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }
+                    // A project is in no history, so its uploads go under an identity of their own.
+                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: UUID()
                 )
             )
             editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in

@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- The annotation editor pins, shares, and uploads the marked-up picture: Save Options (the chevron beside Save) holds Pin to Screen, Share…, and, once a destination is set up, Upload and Upload To, and the File menu has them with a card's keys (⇧⌘P pins, ⇧⌘U uploads). Each keeps the edits in the capture first, as Copy does, and the window stays open. A project opened from Finder pins, shares, and uploads too. With no card up, the upload shows by the pointer as an upload from Capture History does.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
