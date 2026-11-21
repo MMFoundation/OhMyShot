@@ -168,14 +168,24 @@ struct StudioCameraBackgroundTests {
     }
 
     @Test func visionsOneChannelMatteKeepsThePerson() throws {
-        for background in [StudioProject.Camera.Background.cutout, .blur] {
-            let (image, renderer) = try Self.frame(of: Self.project(.sideBySide, background: background), segmenter: { _, _ in Self.visionLeftHalf() })
-            let pane = try #require(renderer.layout.camera)
-            #expect(Self.isRed(try Self.color(of: image, x: pane.minX + pane.width * 0.2, y: pane.midY)), "\(background)")
-        }
         let (cut, renderer) = try Self.frame(of: Self.project(.sideBySide, background: .cutout), segmenter: { _, _ in Self.visionLeftHalf() })
         let pane = try #require(renderer.layout.camera)
+        #expect(Self.isRed(try Self.color(of: cut, x: pane.minX + pane.width * 0.2, y: pane.midY)))
         #expect(Self.isBlue(try Self.color(of: cut, x: pane.minX + pane.width * 0.8, y: pane.midY)))
+        // Blurred around them, in a frame with edges to blur: the person stays sharp, the room runs together.
+        let extent = CGRect(x: 0, y: 0, width: 64, height: 48)
+        let checks = CIFilter(name: "CICheckerboardGenerator", parameters: [
+            "inputColor0": CIColor(red: 1, green: 0, blue: 0), "inputColor1": CIColor(red: 0, green: 0, blue: 1), "inputWidth": 2,
+        ])
+        let frame = try #require(checks?.outputImage).cropped(to: extent)
+        let matte = try #require(StudioCameraMatte(quality: .preview) { _, _ in Self.visionLeftHalf() }.matte(for: frame, at: 0))
+        let original = try #require(Self.context.createCGImage(frame, from: extent))
+        let blurred = try #require(Self.context.createCGImage(StudioRenderer.treated(frame, background: .blur, matte: matte), from: extent))
+        for x in [5.0, 10, 21] {
+            #expect(try Self.color(of: blurred, x: x, y: 24) == Self.color(of: original, x: x, y: 24))
+        }
+        let soft = try Self.color(of: blurred, x: 50, y: 24)
+        #expect(soft[0] > 60 && soft[2] > 60 && soft[3] > 250, "blurred: \(soft)")
     }
 
     // MARK: Matte
