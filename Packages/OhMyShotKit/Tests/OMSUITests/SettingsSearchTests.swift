@@ -46,6 +46,7 @@ struct SettingsSearchTests {
         ("OCR", SettingsTab.text, "Capture Text"),
         ("hotkey", .shortcuts, nil),
         ("retention", .general, "Keep captures"),
+        ("retention ", .general, "Keep captures"),
         ("delay", .capture, "Self-Timer"),
         ("JPG", .screenshots, "Format"),
         ("HEIC", .screenshots, "Format"),
@@ -65,6 +66,13 @@ struct SettingsSearchTests {
     func whatPeopleTypeReachesTheRowTheyMean(query: String, tab: SettingsTab, row: String?) {
         #expect(SettingsTab.found(query).first?.tab == tab, "\(query) opens \(String(describing: SettingsTab.found(query).first?.tab))")
         #expect(tab.row(matching: query) == row)
+    }
+
+    /// Settings have no auto zoom (Studio zooms in each project), so a search for it finds nothing, and Recording has
+    /// no row for zoom.
+    @Test func autoZoomFindsNothing() {
+        #expect(SettingsTab.found("auto zoom").isEmpty)
+        #expect(SettingsTab.recording.row(matching: "zoom") == nil)
     }
 
     /// The two controls that were missing are found by their own names.

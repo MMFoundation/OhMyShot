@@ -24824,37 +24824,37 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "auto zoom, zoom, editor"
+            "value" : "keystrokes, key presses, record keys"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "zoom automático, zoom, editor"
+            "value" : "pulsaciones de teclas, teclas pulsadas, grabar teclas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "zoom automatique, zoom, éditeur"
+            "value" : "frappes au clavier, touches pressées, enregistrer les touches"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自動ズーム, ズーム, エディタ"
+            "value" : "キー入力, 押したキー, キーを記録"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动缩放, 缩放, 编辑器"
+            "value" : "按键, 按下的键, 记录按键"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自動縮放, 縮放, 編輯器"
+            "value" : "按鍵, 按下的鍵, 記錄按鍵"
           }
         }
       }

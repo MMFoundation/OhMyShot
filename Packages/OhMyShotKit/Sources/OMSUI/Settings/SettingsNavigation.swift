@@ -152,7 +152,7 @@ extension SettingsTab {
                 ], keywords: String(localized: "SEARCH_KEYWORDS_KEYSTROKES", defaultValue: "keyboard, typing, key presses, show keys", bundle: .module)),
                 SettingsSearchRow(String(localized: "Studio", bundle: .module), terms: [
                     String(localized: "Keep the keys pressed", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_STUDIO", defaultValue: "auto zoom, zoom, editor", bundle: .module)),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_STUDIO", defaultValue: "keystrokes, key presses, record keys", bundle: .module)),
                 SettingsSearchRow(String(localized: "Frame rate", bundle: .module), keywords: String(localized: "SEARCH_KEYWORDS_FRAME_RATE", defaultValue: "fps, frames per second, smooth", bundle: .module)),
                 SettingsSearchRow(String(localized: "Video format", bundle: .module), terms: [
                     String(localized: "HEVC", bundle: .module),
@@ -282,8 +282,9 @@ extension SettingsTab {
     /// The panes a search finds, with the rows it found in each: first those it found by their title or a word the
     /// pane is known by ("text" lists Text before Capture's "Snap the selection to text"), then those with a row that
     /// shows what was typed, then those found only by a word a row is known by; each in the sidebar's order. Return
-    /// opens the first.
-    static func found(_ query: String) -> [(tab: SettingsTab, rows: [String])] {
+    /// opens the first. Spaces around what was typed don't count, as the sidebar leaves them out.
+    static func found(_ typed: String) -> [(tab: SettingsTab, rows: [String])] {
+        let query = typed.trimmingCharacters(in: .whitespaces)
         let found = allCases.compactMap { tab in tab.matches(query).map { (tab: tab, rows: $0) } }
         func tier(_ tab: SettingsTab) -> Int {
             tab.isNamed(by: query) ? 0 : tab.rowsShowing(query).isEmpty ? 2 : 1
@@ -292,9 +293,10 @@ extension SettingsTab {
     }
 
     /// The title of the row opening the pane from a search lands on: the first that shows what was typed, else the
-    /// first known by it.
-    func row(matching query: String) -> String? {
-        (rowsShowing(query).first ?? rowsKnownBy(query).first)?.title
+    /// first known by it. Spaces around what was typed don't count.
+    func row(matching typed: String) -> String? {
+        let query = typed.trimmingCharacters(in: .whitespaces)
+        return (rowsShowing(query).first ?? rowsKnownBy(query).first)?.title
     }
 }
 
