@@ -153,6 +153,14 @@ final class HistoryModel {
         return files
     }
 
+    /// What Share… on the card of the capture `id` hands the share sheet: the files a drag from it would take, made together
+    /// off the main actor, so a large selection does not stop the window. None when one of them could not be made.
+    func filesToShare(from id: UUID) async -> [URL] {
+        guard let filesToHandOver = actions.filesToHandOver else { return filesToHandOver(from: id).map(\.url) }
+        guard let item = items.first(where: { $0.id == id }) else { return [] }
+        return await filesToHandOver(itemsActedOn(from: item)) ?? []
+    }
+
     /// The capture's file for another app: a copy in the format Settings choose, made when it is asked for, or the
     /// capture's own; nil when that copy could not be made, and then nothing goes.
     func fileToHandOver(_ item: HistoryItem) -> URL? {
