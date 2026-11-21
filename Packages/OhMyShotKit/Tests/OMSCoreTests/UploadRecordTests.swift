@@ -9,11 +9,12 @@ struct UploadRecordTests {
     }
 
     private func record(
-        capture: UUID? = UUID(), date: Date = .now, expires: Date? = nil, key: String? = "a/b.png", deletion: URL? = nil
+        capture: UUID? = UUID(), date: Date = .now, expires: Date? = nil, key: String? = "a/b.png", deletion: URL? = nil,
+        link: String = "https://x.test/b.png"
     ) -> UploadRecord {
         UploadRecord(
             captureID: capture, date: date, fileName: "b.png", destination: destination(),
-            result: UploadResult(link: URL(string: "https://x.test/b.png")!, deletionURL: deletion, fileName: "b.png", expiresAt: expires, remoteKey: key)
+            result: UploadResult(link: URL(string: link)!, deletionURL: deletion, fileName: "b.png", expiresAt: expires, remoteKey: key)
         )
     }
 
@@ -63,6 +64,21 @@ struct UploadRecordTests {
         store.add(record(capture: capture, expires: .now.addingTimeInterval(60)))
         #expect(store.link(for: capture) != nil)
         #expect(store.link(for: capture, at: .now.addingTimeInterval(120)) == nil)
+    }
+
+    @Test func deletingTheNewestUploadOffersTheOneBeforeUntilItExpires() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let store = UploadRecordStore(fileURL: nil)
+        let capture = UUID()
+        let older = record(capture: capture, date: now.addingTimeInterval(-120), expires: now.addingTimeInterval(3600), link: "https://x.test/older.png")
+        let newest = record(capture: capture, date: now.addingTimeInterval(-60), link: "https://x.test/newest.png")
+        store.add(older)
+        store.add(newest)
+        #expect(store.link(for: capture, at: now) == newest.link)
+        store.forget(id: newest.id)
+        #expect(store.link(for: capture, at: now) == older.link)
+        #expect(store.link(for: capture, at: now.addingTimeInterval(3599)) == older.link)
+        #expect(store.link(for: capture, at: now.addingTimeInterval(3600)) == nil)
     }
 
     @Test func removalIsASignedRequestOrTheServersAddress() {

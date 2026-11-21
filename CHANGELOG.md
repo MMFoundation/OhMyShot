@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Copy Link on a capture's card or in Capture History no longer copies a link that has expired, or one whose upload was deleted from its storage. It copies the link of the capture's newest upload that still works, and when none does, Copy Link leaves the menu, as it already did in Settings › Sharing.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
