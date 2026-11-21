@@ -35,6 +35,9 @@ struct HistoryCard: View {
                         .fill(.black.opacity(0.28))
                     hoverActions
                 }
+                if item.isFavorite {
+                    favoriteBadge
+                }
             }
             .frame(height: 150)
             .frame(maxWidth: .infinity)
@@ -56,8 +59,8 @@ struct HistoryCard: View {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade)) { hovering = inside }
             }
             // Dragged out as the file, as from a Quick Access card: copied wherever it lands, never moved out
-            // of the history.
-            .onDrag { NSItemProvider(object: fileToHandOver as NSURL) }
+            // of the history. A card in the selection takes the whole selection with it (the grid's drag container).
+            .draggable(containerItemID: item.id)
             .dragConfiguration(DragConfiguration(operationsOutsideApp: .init(allowCopy: true, allowMove: false, allowDelete: false)))
             // Opens the capture in the annotation editor, a recording in the recording window, as in CleanShot;
             // Return and the hover button restore it to Quick Access.
@@ -95,16 +98,18 @@ struct HistoryCard: View {
         .accessibilityAction(named: Text("Copy", bundle: .module)) { model.actions.copy(item) }
         .accessibilityAction(named: Text("Save", bundle: .module)) { model.actions.save(item) }
         .accessibilityAction(named: Text("Quick Look", bundle: .module)) { model.quickLook(item) }
+        .accessibilityAction(named: favoriteTitle) { model.toggleFavorite([item]) }
         .accessibilityActions {
             if item.kind == .screenshot {
                 Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
+                Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
-            Button { Self.share(fileToHandOver) } label: { Text("Share", bundle: .module) }
+            Button { share() } label: { Text("Share", bundle: .module) }
             if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
-                Button { EmailSharing.send(fileToHandOver) } label: { Text("Send by Email", bundle: .module) }
+                Button { if let file = model.fileToHandOver(item) { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
             }
             ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
                 if case .uploadTo(let targets) = entry {
@@ -141,23 +146,23 @@ struct HistoryCard: View {
         }
     }
 
-    /// The capture's file for another app, shared or dragged out: a copy in the format Settings choose, made when it is
-    /// asked for, or the capture's own.
-    private var fileToHandOver: URL {
-        model.actions.fileToHandOver(item) ?? model.store.fileURL(for: item)
-    }
-
-    /// The system share sheet over the window: where the pointer is when the menu's Share… was chosen, else (for
-    /// VoiceOver) the middle. Not a `ShareLink`, which needs its file before the menu opens, so every capture's copy
-    /// would be made then.
-    private static func share(_ file: URL, atPointer: Bool = false) {
+    /// The system share sheet over the window, with the whole selection when the capture is in it, as a drag takes, else
+    /// the capture alone; nothing when one of their copies could not be made. It opens where the pointer was when the
+    /// menu's Share… was chosen, else (for VoiceOver) in the middle, once the copies are made. Not a `ShareLink`, which
+    /// needs its files before the menu opens, so every capture's copy would be made then.
+    private func share(atPointer: Bool = false) {
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let view = window.contentView else { return }
         var anchor = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
         if atPointer {
             let pointer = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
             if view.bounds.contains(pointer) { anchor = pointer }
         }
-        NSSharingServicePicker(items: [file]).show(relativeTo: CGRect(x: anchor.x, y: anchor.y, width: 1, height: 1), of: view, preferredEdge: .minY)
+        let model = model, id = item.id
+        Task {
+            let files = await model.filesToShare(from: id)
+            guard !files.isEmpty, view.window != nil else { return }
+            NSSharingServicePicker(items: files).show(relativeTo: CGRect(x: anchor.x, y: anchor.y, width: 1, height: 1), of: view, preferredEdge: .minY)
+        }
     }
 
     private var excerpt: HistorySearch.Excerpt? {
@@ -172,11 +177,33 @@ struct HistoryCard: View {
         return AttributedString((excerpt.continuesBefore ? "…" : "") + excerpt.before) + found + AttributedString(excerpt.after)
     }
 
-    /// When it was taken, and what the search found in it.
+    /// When it was taken, whether it is a favorite, and what the search found in it.
     private var accessibilityValue: Text {
-        let time = Text(item.createdAt, format: .relative(presentation: .named))
+        let taken = Text(item.createdAt, format: .relative(presentation: .named))
+        let time = item.isFavorite ? Text("\(taken), Favorite", bundle: .module) : taken
         guard let excerpt else { return time }
         return Text("\(time), \(excerpt.before + excerpt.found + excerpt.after)", bundle: .module)
+    }
+
+    /// Add to Favorites, or Remove from Favorites for a capture that is one, for its menu and VoiceOver alike.
+    private var favoriteTitle: Text {
+        item.isFavorite ? Text("Remove from Favorites", bundle: .module) : Text("Add to Favorites", bundle: .module)
+    }
+
+    /// A star in the top-right corner of a favorite, in the length badge's materials and ink.
+    private var favoriteBadge: some View {
+        Image(systemName: "star.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color(nsColor: dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)))
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(Color(cgColor: Theme.Material.capsuleFill(dark: dark))))
+            .overlay {
+                Circle().strokeBorder(Color(cgColor: Theme.Material.edge(dark: dark, contrast: increasedContrast)), lineWidth: Theme.Material.edgeWidth(contrast: increasedContrast))
+            }
+            .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .accessibilityHidden(true)
     }
 
     /// What it is, the app it was taken in, as the card's caption shows, and its size.
@@ -267,6 +294,16 @@ struct HistoryCard: View {
             .keyboardShortcut("c")
         Button { model.actions.save(item) } label: { Text("Save", bundle: .module) }
             .keyboardShortcut("s")
+        // Every capture selected when this is one of them; with History off, dimmed, and why under it.
+        let favorites = model.itemsActedOn(from: item)
+        Button { model.toggleFavorite(favorites) } label: {
+            favorites.allSatisfy(\.isFavorite) ? Text("Remove from Favorites", bundle: .module) : Text("Add to Favorites", bundle: .module)
+        }
+        .keyboardShortcut(".", modifiers: [])
+        .disabled(!model.canFavorite)
+        if !model.canFavorite {
+            Text(HistoryModel.favoritesNeedHistory)
+        }
         Divider()
         Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
             .keyboardShortcut(.space, modifiers: [])
@@ -275,6 +312,7 @@ struct HistoryCard: View {
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
+            Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
             Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
             Button { model.print(item) } label: { Text("Print…", bundle: .module) }
         }
@@ -289,9 +327,9 @@ struct HistoryCard: View {
         }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()
-        Button { Self.share(fileToHandOver, atPointer: true) } label: { Text("Share…", bundle: .module) }
+        Button { share(atPointer: true) } label: { Text("Share…", bundle: .module) }
         if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
-            Button { EmailSharing.send(fileToHandOver) } label: { Text("Send by Email", bundle: .module) }
+            Button { if let file = model.fileToHandOver(item) { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
         }
         ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
             if case .uploadTo(let targets) = entry {

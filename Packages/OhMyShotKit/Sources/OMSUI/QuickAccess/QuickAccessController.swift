@@ -8,18 +8,21 @@ import OMSDesign
 public final class QuickAccessController {
     public struct Actions {
         public var copy: (QuickAccessItem) async -> Bool
-        /// Saves a copy to the export location and returns where it went; nil when it was not saved. Converting a
-        /// large capture takes a while, so a card marks itself saved when this returns. `asks`: whether it may ask for
-        /// the name first, as Settings say; false for a save nobody waits at (Save All, a card closing by itself).
-        public var save: (QuickAccessItem, _ asks: Bool) async -> URL?
-        /// Asks where to save a copy.
-        public var saveAs: (QuickAccessItem) async -> URL?
+        /// Saves a copy to the export location and says how it went: where it went, cancelled, or why it failed, which
+        /// the card then shows. Converting a large capture takes a while, so a card marks itself saved when this returns.
+        /// `asks`: whether it may ask for the name first, as Settings say; false for a save nobody waits at (Save All, a
+        /// card closing by itself).
+        public var save: (QuickAccessItem, _ asks: Bool) async -> SaveOutcome
+        /// Asks where to save a copy, and says how it went.
+        public var saveAs: (QuickAccessItem) async -> SaveOutcome
         public var open: (QuickAccessItem) -> Void
         /// Opens the capture in the annotation editor.
         public var annotate: (QuickAccessItem) -> Void
         public var reveal: (QuickAccessItem) -> Void
         /// Opens the capture in the OCR panel.
         public var recognizeText: (QuickAccessItem) -> Void
+        /// Reads the text in a screenshot and copies it (`TextCopier`).
+        public var copyText: (QuickAccessItem) async -> TextCopy = { _ in .noText }
         /// Keeps the capture on screen as a pin.
         public var pin: (QuickAccessItem) async -> Bool
         /// Prints the capture's picture through the print panel.
@@ -28,8 +31,9 @@ public final class QuickAccessController {
         /// Neither the visible stack nor Recently Closed holds this capture any longer.
         public var closed: (QuickAccessItem) -> Void
         /// The file to hand to another app for a capture, when it is dragged out of its card or shared: the capture
-        /// itself, or a copy in the format Settings choose.
-        public var fileToHandOver: (QuickAccessItem) -> URL = { $0.fileURL }
+        /// itself, or a copy in the format Settings choose; or why that copy could not be made, which the card then
+        /// shows, and nothing goes.
+        public var fileToHandOver: (QuickAccessItem) -> Result<URL, ExportFailure> = { .success($0.fileURL) }
         /// The QR codes and barcodes in a screenshot, looked for once its card shows, which its menu then offers to
         /// open or copy; none when Settings say not to look.
         public var codes: (QuickAccessItem) async -> [FoundCode] = { _ in [] }
@@ -72,8 +76,8 @@ public final class QuickAccessController {
 
         public init(
             copy: @escaping (QuickAccessItem) async -> Bool,
-            save: @escaping (QuickAccessItem, _ asks: Bool) async -> URL?,
-            saveAs: @escaping (QuickAccessItem) async -> URL?,
+            save: @escaping (QuickAccessItem, _ asks: Bool) async -> SaveOutcome,
+            saveAs: @escaping (QuickAccessItem) async -> SaveOutcome,
             open: @escaping (QuickAccessItem) -> Void,
             annotate: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
@@ -104,6 +108,9 @@ public final class QuickAccessController {
         let notice = CopiedHUD()
         return { notice.show($0, near: NSEvent.mouseLocation) }
     }()
+    /// Says by the pointer why a copy to hand over from a card could not be made, while the card itself says why a copy
+    /// could not be saved.
+    lazy var showHandOverFailure: (String) -> Void = { [unowned self] in showTrashFailure($0) }
     private var panel: QuickAccessPanel?
     private var firstCaptureHint: FirstCaptureHintController?
 
@@ -164,7 +171,9 @@ public final class QuickAccessController {
     private var stack: CardStackView?
     /// The saves under way, by capture: a second request for one joins it instead of saving again, so a double ⌘S, or a
     /// card closing by itself under a Save being asked for, saves once and takes one number.
-    private let saves = SingleFlight<UUID, URL?>()
+    private let saves = SingleFlight<UUID, SaveOutcome>()
+    /// Why a copy of a card's capture could not be saved, by capture, while its card says so and is held from closing.
+    private var failures: [UUID: ExportFailure] = [:]
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [(item: QuickAccessItem, evicted: Bool)] = []
     private static let hiddenThumbnail: CGImage = {
@@ -331,11 +340,45 @@ public final class QuickAccessController {
         return task
     }
 
+    /// Shows on capture `id`'s card why a copy of it could not be saved, or made to be dragged out, shared, or uploaded,
+    /// says it to VoiceOver, and holds the card from closing by itself until a copy is saved (or, for one to hand over,
+    /// made) or the card is closed, as a failed upload holds it. False when the capture has no card on screen to say it,
+    /// so the caller can say it elsewhere; so too for a copy to hand over while the card says a copy could not be saved,
+    /// which stays said and held, since making one to hand over saves nothing.
+    @discardableResult
+    public func showFailure(_ failure: ExportFailure, for id: UUID) -> Bool {
+        guard item(id) != nil, !isTrashing(id) else { return false }
+        guard failure.step == .saving || failures[id]?.step != .saving else { return false }
+        failures[id] = failure
+        stack?.setFailure(failure, for: id)
+        hold(.failure, for: id, if: true)
+        return true
+    }
+
+    /// Why capture `id`'s card says a copy of it could not be saved, while it does.
+    func failure(for id: UUID) -> ExportFailure? {
+        failures[id]
+    }
+
+    /// Capture `id`'s card no longer has a failure to show: a copy was saved, or made to hand over, after all.
+    public func clearFailure(for id: UUID) {
+        guard failures.removeValue(forKey: id) != nil else { return }
+        stack?.setFailure(nil, for: id)
+        hold(.failure, for: id, if: false)
+    }
+
+    /// A copy of capture `id` to hand over (dragged out, shared, or uploaded) was made after all: its card no longer says
+    /// one couldn't be. A copy that could not be saved is still said and held.
+    public func clearHandOverFailure(for id: UUID) {
+        if failures[id]?.step == .converting { clearFailure(for: id) }
+    }
+
     /// Marks a capture saved elsewhere (from the editor) as saved on its card.
     public func markSaved(_ id: UUID, at url: URL) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].savedURL = url
             stack?.markSaved(id, at: url)
+            clearFailure(for: id)
         } else if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
             recentlyClosed[index].item.savedURL = url
         }
@@ -427,8 +470,12 @@ public final class QuickAccessController {
         let pending = trashing.remove(at: index)
         pending.sender.cancel()
         stack?.setTrashing(false, for: pending.id)
-        // Brought back, it starts its time again, as a card restored from Recently Closed does.
+        // Brought back, it starts its time again, as a card restored from Recently Closed does; one whose copy could not
+        // be saved is held again, as it was before it went.
         schedule.restart(pending.id)
+        if failures[pending.id] != nil { hold(.failure, for: pending.id, if: true) }
+        // The Trash let its holds go; a Copy Text still reading holds it again.
+        if readingText[pending.id] != nil { hold(.reading, for: pending.id, if: true) }
         updateCountdowns()
         return true
     }
@@ -441,7 +488,7 @@ public final class QuickAccessController {
             for item in saving {
                 await finish(item) { [self] in
                     if item.savedURL != nil { return true }
-                    return await save(item, .quiet) != nil
+                    return await save(item, .quiet).url != nil
                 }
             }
         }
@@ -453,6 +500,7 @@ public final class QuickAccessController {
         thumbnailUpdates.removeValue(forKey: id)?.cancel()
         if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         completing[id] = nil
+        failures[id] = nil
         recentlyClosed.removeAll { $0.item.id == id }
         if let index = trashing.firstIndex(where: { $0.id == id }) { trashing.remove(at: index).sender.cancel() }
         guard items.contains(where: { $0.id == id }) else { return }
@@ -497,6 +545,7 @@ public final class QuickAccessController {
     private func close(_ item: QuickAccessItem, evicted: Bool = false) {
         if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
         completing[item.id] = nil
+        failures[item.id] = nil
         recentlyClosed.append((item, evicted))
         if recentlyClosed.count > 20 {
             let oldest = recentlyClosed.removeFirst()
@@ -581,13 +630,24 @@ public final class QuickAccessController {
     private func makeStack() -> CardStackView {
         let stack = CardStackView()
         stack.onCommand = { [weak self] command, item in self?.perform(command, on: item, keyed: false) }
-        stack.fileToHandOver = { [weak self] item in self?.actions.fileToHandOver(item) ?? item.fileURL }
+        stack.fileToHandOver = { [weak self] item in
+            guard let self else { return nil }
+            switch actions.fileToHandOver(item) {
+            case .success(let file):
+                clearHandOverFailure(for: item.id)
+                return file
+            case .failure(let failure):
+                if !showFailure(failure, for: item.id) { showHandOverFailure(failure.summary) }
+                return nil
+            }
+        }
         stack.findCodes = actions.codes
         let sharing = actions.sharing
         stack.uploadMenu = sharing.menu
         stack.hasLink = sharing.hasLink
         stack.canDeleteFromStorage = sharing.canDeleteFromStorage
         stack.currentUpload = sharing.current
+        stack.currentFailure = { [weak self] item in self?.failure(for: item.id) }
         stack.pictureOffer = actions.pictureChangeOffer
         stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
         stack.onHold = { [weak self] id, hold, on in
@@ -617,19 +677,23 @@ public final class QuickAccessController {
         case quiet
     }
 
-    /// Saves a capture, and marks its card saved once it is; the copy's URL, or nil when none was saved. A second
-    /// request for a capture still being saved waits for the first and has its answer, whatever kind it is, so a
-    /// capture is saved once however many ways ask.
+    /// Saves a capture, and marks its card saved once it is, or has it say why it was not. A second request for a
+    /// capture still being saved waits for the first and has its answer, whatever kind it is, so a capture is saved
+    /// once however many ways ask.
     @discardableResult
-    private func save(_ item: QuickAccessItem, _ kind: SaveKind) async -> URL? {
+    private func save(_ item: QuickAccessItem, _ kind: SaveKind) async -> SaveOutcome {
         await saves.run(item.id) { [self] in
-            let url = switch kind {
+            let outcome = switch kind {
             case .save: await actions.save(item, true)
             case .saveAs: await actions.saveAs(item)
             case .quiet: await actions.save(item, false)
             }
-            if let url { markSaved(item.id, at: url) }
-            return url
+            switch outcome {
+            case .saved(let url): markSaved(item.id, at: url)
+            case .failed(let failure): showFailure(failure, for: item.id)
+            case .cancelled: break
+            }
+            return outcome
         }
     }
 
@@ -678,6 +742,7 @@ public final class QuickAccessController {
             do {
                 try actions.moveToTrash(item)
                 items.removeAll { $0.id == item.id }
+                failures[item.id] = nil
                 return
             } catch {
                 message = String(localized: "Couldn’t Move to Trash", bundle: .module)
@@ -739,7 +804,7 @@ public final class QuickAccessController {
                 Task {
                     let saved = await save(item, .quiet)
                     guard self.item(id) != nil else { return }
-                    guard saved != nil else { return schedule.keepOpen(id) }
+                    guard saved.url != nil else { return schedule.keepOpen(id) }
                     dismiss(id)
                 }
                 continue
@@ -841,11 +906,14 @@ public final class QuickAccessController {
     /// Keep the source alive while an action consumes it. Failure or cancellation leaves the card available.
     private var completing: [UUID: UUID] = [:]
 
-    private func complete(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: @escaping () async -> Bool) {
-        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, action: action) }
+    /// `keepsCard`: the card stays once the action succeeds, as it does after a copy made with Option.
+    private func complete(
+        _ item: QuickAccessItem, showsCopyConfirmation: Bool = false, keepsCard: Bool = false, action: @escaping () async -> Bool
+    ) {
+        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, keepsCard: keepsCard, action: action) }
     }
 
-    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: () async -> Bool) async {
+    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, keepsCard: Bool = false, action: () async -> Bool) async {
         guard self.item(item.id) != nil, !isTrashing(item.id), completing[item.id] == nil else { return }
         let completion = UUID()
         completing[item.id] = completion
@@ -859,7 +927,7 @@ public final class QuickAccessController {
         }
         completing[item.id] = nil
         hold(.action, for: item.id, if: false)
-        if succeeded { dismiss(item.id) }
+        if succeeded, !keepsCard { dismiss(item.id) }
     }
 
     // MARK: Commands
@@ -879,6 +947,8 @@ public final class QuickAccessController {
         case .copy:
             if keyed { endKeyboard() }
             complete(item, showsCopyConfirmation: true) { [self] in await actions.copy(item) }
+        case .copyAndKeep:
+            complete(item, showsCopyConfirmation: true, keepsCard: true) { [self] in await actions.copy(item) }
         case .save:
             if keyed { endKeyboard() }
             complete(item) { [self] in
@@ -886,11 +956,11 @@ public final class QuickAccessController {
                     actions.reveal(item)
                     return true
                 }
-                return await save(item, .save) != nil
+                return await save(item, .save).url != nil
             }
         case .saveAs:
             if keyed { endKeyboard() }
-            complete(item) { [self] in await save(item, .saveAs) != nil }
+            complete(item) { [self] in await save(item, .saveAs).url != nil }
         case .annotate:
             if keyed { endKeyboard() }
             actions.annotate(item)
@@ -902,6 +972,8 @@ public final class QuickAccessController {
         case .recognizeText:
             if keyed { endKeyboard() }
             actions.recognizeText(item)
+        case .copyText:
+            copyText(item)
         case .print:
             if keyed { endKeyboard() }
             complete(item) { [self] in await actions.print(item) }
@@ -949,6 +1021,26 @@ public final class QuickAccessController {
         case .selectNewer:
             move(by: 1)
             refreshPreview()
+        }
+    }
+
+    /// The Copy Text reading going on each card: asked again, the newer one is the one the card waits for.
+    private var readingText: [UUID: UUID] = [:]
+
+    /// Copy Text: the screenshot's text goes to the clipboard and the card says how much, or that it held none, and
+    /// stays, held from closing by itself while it is read. A reading overtaken by a newer copy says nothing.
+    private func copyText(_ item: QuickAccessItem) {
+        guard item.kind == .screenshot else { return }
+        let reading = UUID()
+        readingText[item.id] = reading
+        hold(.reading, for: item.id, if: true)
+        Task {
+            let copy = await actions.copyText(item)
+            guard readingText[item.id] == reading else { return }
+            readingText[item.id] = nil
+            hold(.reading, for: item.id, if: false)
+            guard self.item(item.id) != nil, !isTrashing(item.id) else { return }
+            stack?.showTextCopy(copy, on: item.id)
         }
     }
 

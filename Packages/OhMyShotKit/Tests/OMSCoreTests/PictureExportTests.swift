@@ -76,6 +76,17 @@ struct PictureExportTests {
         }
     }
 
+    /// A capture whose file is gone says so, so a copy that can't be made says the file is missing, not only that it failed.
+    @Test func aMissingFileSaysItIsMissing() {
+        let gone = FileManager.default.temporaryDirectory.appending(path: "PictureExportTests-\(UUID().uuidString).png")
+        do {
+            _ = try PictureExport.encode(fileAt: gone, pixelsPerPoint: nil, output: ScreenshotOutput(format: .jpeg))
+            Issue.record("A file that is not there was encoded")
+        } catch {
+            #expect(ExportFailure.saving(error, into: nil).cause == .sourceMissing)
+        }
+    }
+
     @Test func aLowerQualityMakesASmallerFile() throws {
         // Noise, which a lossy format has to work at.
         var generator = SystemRandomNumberGenerator()
@@ -377,6 +388,34 @@ struct PictureExportTests {
 
     /// How long a drag waits for the converted copy when Settings change the file (Docs/perf.md › Main-thread work after
     /// a capture): a drag converts on the main actor, between two frames. Opt-in: OMS_EXPORT_SPEED=1.
+    @Test func aCopyThatCannotBeMadeIsNeverHandedOverAsTheCaptureItself() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "Shot.png")
+        try writePNG(try picture(10, 10), to: file)
+        let output = ScreenshotOutput(format: .jpeg)
+        // The caches cannot be written: a file stands where their folder would be.
+        let blocked = folder.appending(path: "Blocked")
+        try Data([1]).write(to: blocked)
+        let failure = try #require(throws: ExportFailure.self) {
+            try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: output, in: blocked).get()
+        }
+        #expect(failure.step == .converting)
+        #expect(!failure.summary.isEmpty)
+        // Several at once: none goes when one cannot be made, though the others could.
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let gone = folder.appending(path: "Gone.png")
+        let several = await ExportedFiles.handOver([(file, 1), (gone, 1)], output: output, in: cache)
+        #expect(throws: ExportFailure.self) { try several.get() }
+        // An upload's bytes that are no picture.
+        let upload = await ExportedFiles.handOver(pictureData: Data("no picture".utf8), named: "Shot", pixelsPerPoint: 1, output: output, in: cache)
+        #expect(throws: ExportFailure.self) { try upload.get() }
+        // Nothing asked of it, the capture goes as it is.
+        #expect(try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: ScreenshotOutput(), in: blocked).get() == file)
+        let converted = try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: output, in: cache).get()
+        #expect(converted.pathExtension == "jpg")
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["OMS_EXPORT_SPEED"] != nil))
     func convertingAFullScreenCaptureForADrag() throws {
         let folder = try makeFolder()
