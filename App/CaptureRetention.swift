@@ -94,6 +94,11 @@ final class CaptureRetention {
         history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).count
     }
 
+    /// How many of those are favorites, which only turning History off deletes.
+    func expiredFavoriteCount(for retention: HistoryRetention) -> Int {
+        history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).filter(\.isFavorite).count
+    }
+
     /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's
     /// marks in the history (the Trash keeps a capture's picture, not its marks), no saved background, not the
     /// last picture chosen for one. Never while an editor is open, as its Undo may bring a background back.

@@ -77,18 +77,20 @@ final class HistoryModel {
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored let actions: HistoryActions
     @ObservationIgnored let expiredCount: (HistoryRetention) -> Int
+    @ObservationIgnored let expiredFavoriteCount: (HistoryRetention) -> Int
     /// The history window, for the print panel to come down from.
     @ObservationIgnored weak var window: NSWindow?
 
     init(
         store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int,
-        textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
+        expiredFavoriteCount: @escaping (HistoryRetention) -> Int = { _ in 0 }, textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
         searchDelay: Duration = .milliseconds(100), thumbnailLoader: ThumbnailLoader? = nil
     ) {
         self.store = store
         self.settings = settings
         self.actions = actions
         self.expiredCount = expiredCount
+        self.expiredFavoriteCount = expiredFavoriteCount
         self.textLoader = textLoader ?? { items, store in await Self.entries(of: items, in: store) }
         self.itemsLoader = itemsLoader ?? { store in await store.loadItems() }
         self.searcher = searcher ?? { query, generations, index in try await index.search(query, generations: generations) }

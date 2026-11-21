@@ -206,7 +206,7 @@ struct HistoryView: View {
             } label: {
                 Text(retentionLabel)
             }
-            .help(Text("How long captures stay in the history. Favorites stay until you take them out of Favorites.", bundle: .module))
+            .help(Text("How long captures stay in the history. Favorites stay until you take them out, unless History is off.", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
             // Every capture shown: under the Show filter or a search, only those.
@@ -227,7 +227,9 @@ struct HistoryView: View {
     }
 
     private var retention: Binding<HistoryRetention> {
-        retentionSelection(settings: model.settings, expiredCount: model.expiredCount, request: $model.retentionRequest)
+        retentionSelection(
+            settings: model.settings, expiredCount: model.expiredCount, expiredFavoriteCount: model.expiredFavoriteCount, request: $model.retentionRequest
+        )
     }
 
     private var retentionLabel: String {

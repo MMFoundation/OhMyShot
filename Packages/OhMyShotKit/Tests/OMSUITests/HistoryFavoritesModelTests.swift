@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OMSCore
+import SwiftUI
 import Testing
 @testable import OMSUI
 
@@ -55,6 +56,22 @@ struct HistoryFavoritesModelTests {
         #expect(model.store.item(id: items[0].id)?.isFavorite == false)
     }
 
+    /// Turning History off deletes the favorites with the rest, and the confirmation it asks for knows how many.
+    @Test func turningHistoryOffCountsTheFavoritesItDeletes() throws {
+        let defaults = try #require(UserDefaults(suiteName: "OMSUITests-\(UUID().uuidString)"))
+        let settings = SettingsStore(defaults: defaults)
+        settings.historyRetention = .oneWeek
+        let asked = Asked()
+        let retention = retentionSelection(
+            settings: settings, expiredCount: { $0 == .never ? 5 : 0 }, expiredFavoriteCount: { $0 == .never ? 2 : 0 },
+            request: Binding(get: { asked.request }, set: { asked.request = $0 })
+        )
+        retention.wrappedValue = .never
+        #expect(asked.request?.count == 5)
+        #expect(asked.request?.favorites == 2)
+        #expect(settings.historyRetention == .oneWeek)
+    }
+
     /// Starring changes neither the picture nor its text: the card keeps its thumbnail.
     @Test func starringKeepsTheThumbnail() throws {
         let (model, items) = try model(count: 1)
@@ -75,4 +92,9 @@ struct HistoryFavoritesModelTests {
         #expect(request.items.count == 3)
         #expect(request.favoriteCount == 2)
     }
+}
+
+@MainActor
+private final class Asked {
+    var request: RetentionChangeRequest?
 }
