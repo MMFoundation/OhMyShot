@@ -354,16 +354,6 @@ nonisolated public struct Magnifier: Codable, Sendable, Equatable {
     public var lensRect: CGRect {
         CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
     }
-
-    /// The lens shrunk to fit inside `area`, though never below `smallest`, and moved into it, still magnifying the
-    /// same spot.
-    func fitted(in area: CGRect, smallest: CGFloat) -> Magnifier {
-        var fitted = self
-        fitted.radius = min(radius, max(smallest, min(area.width, area.height) / 2))
-        fitted.center.x = min(max(center.x, area.minX + fitted.radius), area.maxX - fitted.radius)
-        fitted.center.y = min(max(center.y, area.minY + fitted.radius), area.maxY - fitted.radius)
-        return fitted
-    }
 }
 
 nonisolated public struct Spot: Codable, Sendable, Equatable {

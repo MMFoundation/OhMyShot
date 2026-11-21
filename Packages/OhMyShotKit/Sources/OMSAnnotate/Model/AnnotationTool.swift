@@ -185,9 +185,11 @@ nonisolated extension AnnotationTool {
     /// The mark this tool draws when dragged from `start` to `end` (pixels), or nil for tools that do not
     /// draw by dragging. `constrained` (Shift) makes squares and circles and snaps lines to 45°. A magnifier
     /// magnifies `start` with its lens at `end`, over `start` until the drag leaves what it shows; it is
-    /// `Magnifier.lensRadius` points across at `scale` pixels per point.
+    /// `Magnifier.lensRadius` points across at `scale` pixels per point, or smaller to lie inside `room` (pixels)
+    /// where it stands, though never below `Magnifier.smallestRadius`.
     public func mark(
-        from start: CGPoint, to end: CGPoint, constrained: Bool, settings: ToolSettings, id: UUID = UUID(), scale: CGFloat = 1
+        from start: CGPoint, to end: CGPoint, constrained: Bool, settings: ToolSettings, id: UUID = UUID(), scale: CGFloat = 1,
+        room: CGRect? = nil
     ) -> Annotation? {
         let style = settings.style
         let shape: Shape
@@ -207,9 +209,18 @@ nonisolated extension AnnotationTool {
         case .spotlight:
             shape = .spotlight(Spot(rect: Geometry.rect(from: start, to: end, square: constrained), oval: settings.oval))
         case .magnifier:
-            var magnifier = Magnifier(source: start, radius: Magnifier.lensRadius * scale, zoom: settings.zoom)
+            func radius(at center: CGPoint) -> CGFloat {
+                let largest = Magnifier.lensRadius * scale
+                guard let room else { return largest }
+                let space = min(center.x - room.minX, room.maxX - center.x, center.y - room.minY, room.maxY - center.y)
+                return min(largest, max(Magnifier.smallestRadius * scale, space))
+            }
+            var magnifier = Magnifier(source: start, radius: radius(at: start), zoom: settings.zoom)
             let lens = constrained ? Geometry.snapped(end, from: start) : end
-            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius { magnifier.center = lens }
+            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius {
+                magnifier.center = lens
+                magnifier.radius = radius(at: lens)
+            }
             shape = .magnifier(magnifier)
         case .select, .pen, .highlighter, .text, .counter, .crop, .background:
             return nil

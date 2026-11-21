@@ -1401,8 +1401,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 if tool == .redact { updateSuggestions() }
             }
             guard let mark = tool.mark(
-                from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id, scale: document.scale
-            ).map(keptInCanvas) else { return }
+                from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id, scale: document.scale, room: lensRoom
+            ) else { return }
             if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
             session.updateLive(document, selecting: [])
         case .drawing(let id):
@@ -1503,16 +1503,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
-    /// A new mark as it is put down. On a canvas that cannot grow, such as Annotate Area's selection, a lens is kept
-    /// inside it with room for its handles all round, so it is never cut off and can always be resized.
-    private func keptInCanvas(_ mark: Annotation) -> Annotation {
-        guard !session.growsCanvas, case .magnifier(let magnifier) = mark.shape else { return mark }
+    /// Where a new lens fits, handles and all: on a canvas that cannot grow, such as Annotate Area's selection, the
+    /// canvas less its handles' reach, so a lens is not cut off and can be resized. Nil where the canvas grows.
+    private var lensRoom: CGRect? {
+        guard !session.growsCanvas else { return nil }
         let reach = (SelectionLayer.handleSize / 2 + 4) / zoom
-        var kept = mark
-        kept.shape = .magnifier(magnifier.fitted(
-            in: session.document.canvas.insetBy(dx: reach, dy: reach), smallest: Magnifier.smallestRadius * session.document.scale
-        ))
-        return kept
+        return session.document.canvas.insetBy(dx: reach, dy: reach)
     }
 
     public override func mouseUp(with event: NSEvent) {
@@ -1531,8 +1527,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let startView = viewPoint(start)
             let clicked = hypot(location.x - startView.x, location.y - startView.y) < 4
             if clicked, tool == .magnifier,
-               let mark = tool.mark(from: start, to: start, constrained: false, settings: session.settings(for: tool), id: id, scale: session.document.scale)
-                .map(keptInCanvas) {
+               let mark = tool.mark(
+                   from: start, to: start, constrained: false, settings: session.settings(for: tool), id: id, scale: session.document.scale, room: lensRoom
+               ) {
                 // A click puts the lens over what was clicked.
                 var document = session.document
                 if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }

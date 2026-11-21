@@ -302,6 +302,30 @@ struct MagnifierTests {
     }
 
     @MainActor
+    /// Given room to fit in, a lens takes the size that fits where it stands, never below the smallest and never moved
+    /// from where it was put, and a drag takes it clear by that size.
+    @Test func aLensGivenRoomFitsWhereItStands() throws {
+        let settings = ToolSettings()
+        // A selection 200 × 48 less the handles' reach.
+        let room = CGRect(x: 8.5, y: 8.5, width: 183, height: 31)
+        let start = CGPoint(x: 70, y: 24), end = CGPoint(x: 97, y: 24)
+        guard case .magnifier(let dragged) = AnnotationTool.magnifier.mark(from: start, to: end, constrained: false, settings: settings, room: room)?.shape
+        else { Issue.record("No magnifier"); return }
+        #expect(dragged.source == start && dragged.center == end)
+        #expect(dragged.radius == 15.5)
+        #expect(dragged.isDetached)
+        // At full size the same drag is still within what the lens shows.
+        guard case .magnifier(let full) = AnnotationTool.magnifier.mark(from: start, to: end, constrained: false, settings: settings)?.shape
+        else { Issue.record("No magnifier"); return }
+        #expect(full.center == start && full.radius == Magnifier.lensRadius)
+        // Too short a selection for the smallest lens: it stays over the spot clicked, at its smallest.
+        let short = CGRect(x: 8.5, y: 8.5, width: 283, height: 1)
+        guard case .magnifier(let clicked) = AnnotationTool.magnifier.mark(
+            from: CGPoint(x: 150, y: 9), to: CGPoint(x: 150, y: 9), constrained: false, settings: settings, scale: 2, room: short
+        )?.shape else { Issue.record("No magnifier"); return }
+        #expect(clicked.center == CGPoint(x: 150, y: 9) && clicked.radius == Magnifier.smallestRadius * 2)
+    }
+
     @Test func clickingOrDraggingWithTheToolMakesALens() throws {
         let (canvas, session, window) = try makeCanvas(base: noise(width: 400, height: 200), tool: .magnifier)
         defer { window.close() }
@@ -321,8 +345,9 @@ struct MagnifierTests {
         #expect(session.document.items.count == 2)
     }
 
-    /// On a canvas that cannot grow, as Annotate Area's selection is, a new lens fits inside it with room for its
-    /// handles all round, still magnifying the spot clicked, so it can be resized; one by an edge moves in from it.
+    /// On a canvas that cannot grow, as Annotate Area's selection is, a new lens is made small enough to fit inside it
+    /// with room for its handles all round, over the spot clicked, so it can be resized; by an edge it stays over the
+    /// spot at its smallest rather than move off it.
     @MainActor
     @Test func onACanvasThatCannotGrowALensFitsInsideWithItsHandles() throws {
         let (canvas, session, window) = try makeCanvas(base: noise(width: 400, height: 200), tool: .magnifier)
@@ -334,13 +359,17 @@ struct MagnifierTests {
         canvas.layoutSubtreeIfNeeded()
         let reach = (SelectionLayer.handleSize / 2 + 4) / canvas.zoom
         let room = document.canvas.insetBy(dx: reach, dy: reach)
-        for spot in [CGPoint(x: 200, y: 100), CGPoint(x: 160, y: 76)] {
-            session.tool = .magnifier
-            try press(canvas, in: window, from: spot)
-            guard case .magnifier(let lens) = session.document.items.last?.shape else { Issue.record("No magnifier at \(spot)"); return }
-            #expect(lens.source == spot)
-            #expect(room.insetBy(dx: -0.01, dy: -0.01).contains(lens.lensRect), "\(lens.lensRect) is not inside \(room)")
-        }
+        try press(canvas, in: window, from: CGPoint(x: 200, y: 100))
+        guard case .magnifier(let middle) = session.document.items.last?.shape else { Issue.record("No magnifier made"); return }
+        #expect(middle.center == middle.source && middle.source == CGPoint(x: 200, y: 100))
+        #expect(middle.radius < Magnifier.lensRadius)
+        #expect(room.insetBy(dx: -0.01, dy: -0.01).contains(middle.lensRect), "\(middle.lensRect) is not inside \(room)")
+
+        session.tool = .magnifier
+        try press(canvas, in: window, from: CGPoint(x: 160, y: 76))
+        guard case .magnifier(let edge) = session.document.items.last?.shape else { Issue.record("No magnifier made by the edge"); return }
+        #expect(edge.center == edge.source && edge.source == CGPoint(x: 160, y: 76))
+        #expect(edge.radius == Magnifier.smallestRadius)
         #expect(session.document.items.count == 2)
     }
 
