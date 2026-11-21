@@ -9,6 +9,14 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Settings' search finds a row by the words people type for it as well as by what the pane shows, in every language: "OCR" finds Capture Text, "hotkey" the Shortcuts pane, "retention" Keep captures, "delay" Self-Timer and Countdown, "JPG" Format, "webcam" Camera, "S3" Destinations. The words themselves are never listed; the row they found is, by its title, after the rows that show what was typed.
+
+### Fixed
+
+- Settings' search finds Find QR codes and barcodes and Add a watermark by their names.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
