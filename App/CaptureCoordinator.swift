@@ -522,11 +522,15 @@ final class CaptureCoordinator {
     }
 
     /// A window chosen to be captured closed before it was, as one can while Self-Timer counts down: nothing is captured,
-    /// since the screen where it was is not what was chosen, and that is said by where it was.
+    /// since the screen where it was is not what was chosen, and that is said by where it was, on the part of it a display
+    /// showed, or by the pointer when none did.
     private func tellWindowClosed(at frame: CGRect) {
         Log.capture.notice("Window capture skipped: a chosen window was closed")
         NSSound.beep()
-        notice.show(String(localized: "A window you chose was closed, so nothing was captured."), near: CGPoint(x: frame.midX, y: frame.midY))
+        notice.show(
+            String(localized: "A window you chose was closed, so nothing was captured."),
+            near: displays.layout.visibleCenter(of: frame) ?? NSEvent.mouseLocation
+        )
     }
 
     /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. Rounded
