@@ -59,7 +59,7 @@ final class ScreenshotFiles {
         let output = output
         guard !output.isUnchanged else { return .success(captures.map(\.url)) }
         defer { sweepConvertedCopies() }
-        return Self.logged(await ExportedFiles.handOver(captures.map { ($0.url, $0.scale) }, output: output, in: ExportedFiles.standardFolder), "Converting captures")
+        return Self.logged(await ExportedFiles.handOver(captures.map { ($0.url, $0.scale) }, output: output, in: ExportedFiles.standardFolder), "Converting captures", captures.map(\.url.lastPathComponent).joined(separator: ", "))
     }
 
     /// A picture in memory, and the extended-range copy of it when the capture has one.
