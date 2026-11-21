@@ -342,6 +342,29 @@ struct PictureEditingTests {
         #expect(session.cropRatio == .free)
     }
 
+    /// Escape leaves Crop once there is nothing to put back, as it leaves Background, and crops nothing.
+    @Test func escapeLeavesCropWhenTheFrameIsUntouched() throws {
+        let session = makeSession()
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        let canvasBefore = session.document.canvas
+        session.tool = .crop
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53
+        ))
+        canvas.keyDown(with: escape)
+        #expect(session.tool != .crop && !session.tool.isPictureMode)
+        #expect(session.document.canvas == canvasBefore && !session.undoManager.canUndo)
+        // A changed frame is put back first, and the next Escape leaves.
+        session.tool = .crop
+        canvas.chooseCropRatio(.fixed(1, 1))
+        canvas.keyDown(with: escape)
+        #expect(session.tool == .crop && canvas.pendingCrop == session.document.canvas)
+        canvas.keyDown(with: escape)
+        #expect(session.tool != .crop && session.document.canvas == canvasBefore && !session.undoManager.canUndo)
+    }
+
     @Test func settingTheRatioTellsTheCapsuleOnce() {
         let session = makeSession()
         var heard: [AnnotationSession.Event] = []

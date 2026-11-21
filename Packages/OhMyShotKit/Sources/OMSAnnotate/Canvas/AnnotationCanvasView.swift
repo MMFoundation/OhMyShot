@@ -1871,8 +1871,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 selectionLayer.alignmentGuides = []
                 session.cancelLiveChange()
             } else if session.tool == .crop {
-                session.setCropRatio(.free)
-                cropRect = session.document.canvas
+                // A frame and shape left as they began have nothing to put back: Escape leaves Crop, cropping
+                // nothing, as it leaves Background. Otherwise it puts them back first.
+                if cropRect == session.document.canvas, session.cropRatio == .free {
+                    session.leavePictureMode()
+                } else {
+                    session.setCropRatio(.free)
+                    cropRect = session.document.canvas
+                }
             } else if session.tool == .background {
                 session.leavePictureMode()
             } else if !session.selection.isEmpty {

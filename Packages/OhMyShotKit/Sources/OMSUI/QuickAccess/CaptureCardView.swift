@@ -702,7 +702,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             let offset = towardEdge ? swipeDistance : swipeDistance * 0.35
             setSwipeOffset(offset, animated: false)
         case .ended:
-            let shouldClose = abs(swipeDistance) > 50
+            // Only a swipe toward the card's own edge closes it; one the other way springs back.
+            let shouldClose = slidesFromLeft ? swipeDistance < -50 : swipeDistance > 50
             swipeDistance = 0
             if shouldClose {
                 onCommand?(.close)

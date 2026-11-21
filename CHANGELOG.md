@@ -9,6 +9,15 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Changed
+
+- In the editor, Escape in Crop leaves Crop when the frame and its shape are as they began, as Escape leaves Background; a frame that was changed is put back first, as before.
+- A two-finger swipe closes a Quick Access card only toward the card's own edge of the screen; a swipe the other way puts it back.
+
+### Fixed
+
+- All-In-One's Area, Window, and Screen tooltips name their keys (A, W, and F), as Text, Scrolling, Record, and Measure do.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
