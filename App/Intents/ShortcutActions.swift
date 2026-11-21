@@ -85,6 +85,11 @@ final class ShortcutActions {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
             throw ShortcutFailure.unreadableImage
         }
+        // Without the text reader in the app, read it here from memory, as nothing then needs it in a file.
+        guard packs.helper != nil else {
+            guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutFailure.unreadableImage }
+            return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
+        }
         let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")
         try data.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
