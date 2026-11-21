@@ -641,9 +641,9 @@ public final class InPlaceAnnotationView: NSView {
         }
     }
 
-    /// ⇧⌘P pins and ⇧⌘U uploads, as on a card; the tools keep their plain letters (P is the Pen).
+    /// ⇧⌘P pins and ⇧⌘U uploads, as on a card, Caps Lock on or off; the tools keep their plain letters (P is the Pen).
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
+        guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "p" where actions.pin != nil:
             perform(.pin)

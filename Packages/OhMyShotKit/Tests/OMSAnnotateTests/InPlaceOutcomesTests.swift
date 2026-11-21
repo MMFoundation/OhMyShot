@@ -29,9 +29,9 @@ struct InPlaceOutcomesTests {
         )
     }
 
-    private func key(_ character: String, keyCode: UInt16) throws -> NSEvent {
+    private func key(_ character: String, keyCode: UInt16, also: NSEvent.ModifierFlags = []) throws -> NSEvent {
         try #require(NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0, windowNumber: 0, context: nil,
+            with: .keyDown, location: .zero, modifierFlags: also.union([.command, .shift]), timestamp: 0, windowNumber: 0, context: nil,
             characters: character.uppercased(), charactersIgnoringModifiers: character.uppercased(), isARepeat: false, keyCode: keyCode
         ))
     }
@@ -82,6 +82,15 @@ struct InPlaceOutcomesTests {
         #expect(!uploading.performKeyEquivalent(with: try key("p", keyCode: 35)))
         #expect(uploading.performKeyEquivalent(with: try key("u", keyCode: 32)))
         #expect(uploads == 1)
+    }
+
+    /// Caps Lock leaves the keys as they are, as on a card; Option or Control makes them other keys.
+    @Test func capsLockLeavesPinAndUploadKeys() throws {
+        var pins = 0, uploads = 0
+        #expect(view(pin: { _ in pins += 1 }).performKeyEquivalent(with: try key("p", keyCode: 35, also: .capsLock)))
+        #expect(view(upload: { _ in uploads += 1 }).performKeyEquivalent(with: try key("u", keyCode: 32, also: .capsLock)))
+        #expect(!view(pin: { _ in pins += 1 }).performKeyEquivalent(with: try key("p", keyCode: 35, also: .option)))
+        #expect(pins == 1 && uploads == 1)
     }
 
     /// A pin over the area shows what was drawn there, a redaction included, at the capture's own size: never the
