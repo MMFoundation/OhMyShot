@@ -495,7 +495,7 @@ final class StyleCapsule: NSView {
         case .highlighter: [10, 18, 28]
         case .counter: [2, 4, 7]
         case .arrow, .line, .rectangle, .ellipse, .pen: [2, 4, 6, 10]
-        case .redact, .spotlight, .highlightBox, .crop, .select, .background: []
+        case .redact, .spotlight, .magnifier, .highlightBox, .crop, .select, .background: []
         }
     }
 

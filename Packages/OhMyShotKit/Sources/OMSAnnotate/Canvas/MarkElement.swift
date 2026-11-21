@@ -71,7 +71,7 @@ nonisolated final class MarkElement: NSAccessibilityElement, @unchecked Sendable
             return String(localized: "Counter \(counter.label)", bundle: .module, comment: "A counter mark for VoiceOver, with what it shows: 3, C, or III.")
         case .redaction:
             return String(localized: "Redaction", bundle: .module)
-        case .spotlight:
+        case .spotlight, .magnifier:
             return kind
         case .image:
             return String(localized: "Picture", bundle: .module)
