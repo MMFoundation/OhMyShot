@@ -282,7 +282,7 @@ public final class HistoryStore: Sendable {
         try add(
             name: name, fileExtension: source.pathExtension, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
             appName: appName, duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed, date: date
-        ) { try FileManager.default.moveItem(at: source, to: $0) } undoWrite: { try? FileManager.default.moveItem(at: $0, to: source) }
+        ) { try FileManager.default.moveItem(at: source, to: $0) } undoWrite: { try FileManager.default.moveItem(at: $0, to: source) }
     }
 
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
@@ -360,11 +360,11 @@ public final class HistoryStore: Sendable {
     /// An empty sidecar claims a name exclusively, but isn't a readable record until its capture has been written.
     /// A capture whose record cannot be written leaves the folder again, by `undoWrite` (a file moved in goes back
     /// where it came from; one written or copied is removed): with no record nothing would show it, and no retention
-    /// would ever remove it.
+    /// would ever remove it. A capture that cannot leave again either is logged, being nowhere else to be found.
     private func add(
         name: String, fileExtension: String, kind: HistoryItem.Kind, pixelWidth: Int, pixelHeight: Int, appName: String?,
         duration: TimeInterval?, pixelsPerPoint: Double? = nil, windowTitle: String? = nil, isTemplateNamed: Bool? = nil,
-        date: Date, writeFile: (URL) throws -> Void, undoWrite: (URL) -> Void = { try? FileManager.default.removeItem(at: $0) }
+        date: Date, writeFile: (URL) throws -> Void, undoWrite: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
     ) throws -> HistoryItem {
         let manager = FileManager.default
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -397,7 +397,11 @@ public final class HistoryStore: Sendable {
                 try writeRecord(item)
                 return item
             } catch {
-                undoWrite(url)
+                do {
+                    try undoWrite(url)
+                } catch let undo {
+                    Log.history.error("\(url.lastPathComponent, privacy: .public) stays in History without a record: \(undo.localizedDescription, privacy: .public)")
+                }
                 try? manager.removeItem(at: record)
                 throw error
             }
