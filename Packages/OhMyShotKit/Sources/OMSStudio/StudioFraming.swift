@@ -11,7 +11,8 @@ import Foundation
 /// and Hogan 1985), arriving `arriveEarly` before the next shot's first event. A stretch with nothing happening
 /// in it is framed on the cursor as the zoom has fully come in. A zoom aimed at a spot (`StudioProject.Zoom.target`)
 /// is a shot of its own, from its start to its end, held on that spot at its own scale: what happens in it, the
-/// cursor, and a stronger zoom beside it never move the camera off it.
+/// cursor, and a stronger zoom beside it never move the camera off it. Beside one, a zoom following the pointer with
+/// nothing happening in it is a shot of the cursor where it has fully come in, not left on the aimed zoom's spot.
 ///
 /// While a zoom is fully in and the cursor shows, the cursor is kept `margin` inside what the camera shows:
 /// wherever it would come nearer the edge, the camera moves by the least that keeps it there, that move widened
@@ -138,6 +139,17 @@ nonisolated enum StudioFraming {
         }
         shots += Self.shots(run[...], half: half)
         shots += aimed[nextAimed...].map(aimedShot)
+        if !aimed.isEmpty {
+            for zoom in zooms where zoom.target == nil && zoom.scale > 1 && zoom.start <= end && zoom.end >= start
+                && !events[eventRange(events, from: zoom.start, to: zoom.end)].contains(where: { !isAimed($0.time) }) {
+                let lower = max(range.lowerBound, Int((zoom.start * rate).rounded(.up)))
+                let upper = min(range.upperBound, Int((zoom.end * rate).rounded(.down)))
+                guard lower <= upper, let settled = (lower...upper).first(where: { steady[$0] && !held[$0 - range.lowerBound] }) else { continue }
+                let time = Double(settled) / rate
+                let shot = Shot(first: time, last: time, x: frames[settled].cursorX, y: frames[settled].cursorY)
+                shots.insert(shot, at: shots.firstIndex { $0.first > time } ?? shots.endIndex)
+            }
+        }
         var holds = shots.map { inside((($0.minX + $0.maxX) / 2, ($0.minY + $0.maxY) / 2)) }
         if holds.isEmpty {
             let settled = range.first { steady[$0] } ?? (range.lowerBound + range.upperBound) / 2
@@ -222,9 +234,14 @@ nonisolated enum StudioFraming {
 
         // An aimed zoom fully in looks at its spot at the scale it is at, inside the recording. Coming in, going
         // out, and from it to the zoom beside it, the camera zooms about the one point that takes it from where it
-        // looked to where it looks next, so a spot held by both ends is held all the way.
+        // looked to where it looks next, so a spot held by both ends is held all the way; from one aimed zoom to the
+        // next at the same scale, which no zoom takes it between, it pans over `quickestMove` across the handover.
         guard !aimed.isEmpty else { return }
-        for offset in 0..<count where held[offset] && steady[range.lowerBound + offset] {
+        var settled = range.map { steady[$0] }
+        for (before, after) in zip(aimed, aimed.dropFirst()) where abs(before.end - after.start) < 1e-6 && before.target != after.target {
+            for offset in 0..<count where abs(Double(range.lowerBound + offset) / rate - before.end) <= quickestMove / 2 { settled[offset] = false }
+        }
+        for offset in 0..<count where held[offset] && settled[offset] {
             let index = range.lowerBound + offset
             let time = Double(index) / rate
             guard let target = aimed.last(where: { time >= $0.start && time <= $0.end })?.target else { continue }
@@ -234,23 +251,27 @@ nonisolated enum StudioFraming {
         }
         var first = 0
         while first < count {
-            guard !steady[range.lowerBound + first] else {
+            guard !settled[first] else {
                 first += 1
                 continue
             }
             var last = first
-            while last + 1 < count, !steady[range.lowerBound + last + 1] { last += 1 }
+            while last + 1 < count, !settled[last + 1] { last += 1 }
             let before = first > 0 ? first - 1 : nil, after = last + 1 < count ? last + 1 : nil
             if before.map({ held[$0] }) == true || after.map({ held[$0] }) == true {
                 let a = before.map { frames[range.lowerBound + $0] }, b = after.map { frames[range.lowerBound + $0] }
                 let from = (x: a?.centerX ?? width / 2, y: a?.centerY ?? height / 2, level: a?.zoom ?? 1)
                 let to = (x: b?.centerX ?? width / 2, y: b?.centerY ?? height / 2, level: b?.zoom ?? 1)
                 let lower = Double(before ?? first - 1), upper = Double(after ?? last + 1)
+                // Kept inside the recording at the zoom it is at, which two zooms overlapping can dip below both ends.
                 for offset in first...last {
                     let index = range.lowerBound + offset
                     let share = (Double(offset) - lower) / (upper - lower)
-                    frames[index].centerX = through((from.x, from.level), (to.x, to.level), zoom: frames[index].zoom, share: share)
-                    frames[index].centerY = through((from.y, from.level), (to.y, to.level), zoom: frames[index].zoom, share: share)
+                    let zoom = frames[index].zoom
+                    let x = through((from.x, from.level), (to.x, to.level), zoom: zoom, share: share)
+                    let y = through((from.y, from.level), (to.y, to.level), zoom: zoom, share: share)
+                    frames[index].centerX = min(max(x, width / zoom / 2), width - width / zoom / 2)
+                    frames[index].centerY = min(max(y, height / zoom / 2), height - height / zoom / 2)
                 }
             }
             first = last + 1
@@ -260,10 +281,13 @@ nonisolated enum StudioFraming {
     /// Where the camera looks at `zoom` along one side, zooming about one point from looking at `from.look` at
     /// `from.level` to `to.look` at `to.level`: the point q drawn at the same place at every zoom, the camera
     /// looking at q − k / zoom, which is each end at its level. Between two looks at one level, which no zoom
-    /// takes it between, it pans `share` of the way.
+    /// takes it between, it pans `share` of the way in time, easing in and out as a hand reaches (minimum jerk).
     static func through(_ from: (look: Double, level: Double), _ to: (look: Double, level: Double), zoom: Double, share: Double) -> Double {
         let span = 1 / to.level - 1 / from.level
-        guard abs(span) > 1e-9 else { return from.look + (to.look - from.look) * share }
+        guard abs(span) > 1e-9 else {
+            let eased = share * share * share * (10 - 15 * share + 6 * share * share)
+            return from.look + (to.look - from.look) * eased
+        }
         let k = (from.look - to.look) / span
         return from.look + k / from.level - k / zoom
     }

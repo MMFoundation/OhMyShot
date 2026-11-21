@@ -416,16 +416,27 @@ public final class StudioDocument {
         updateZoom(id) { $0.target = target?.clamped }
     }
 
-    /// Where a zoom looks as the movie is now: its spot, or, following the pointer, where the camera looks at the
-    /// playhead while the zoom is fully in there, else halfway through it, which is fully in; the middle of the
-    /// recording until a movie is made.
+    /// Where a zoom looks as the movie is now: its spot, or, following the pointer, where the camera looks in the
+    /// frame the preview shows while the zoom is fully in there, else halfway through it, which is fully in; the
+    /// middle of the recording until a movie is made.
     public func aim(of id: UUID) -> StudioProject.Zoom.Spot {
         guard let zoom = project.zooms.first(where: { $0.id == id }) else { return .init(x: 0.5, y: 0.5) }
         if let target = zoom.target { return target }
         guard let track = composition?.renderer.track, track.width > 0, track.height > 0 else { return .init(x: 0.5, y: 0.5) }
-        let shown = track.frame(at: time)
-        let frame = time >= zoom.start && time <= zoom.end && shown.zoom >= zoom.scale - 0.01 ? shown : track.frame(at: (zoom.start + zoom.end) / 2)
+        let frame = track.frame(at: isFullyIn(zoom) ? shownTime : (zoom.start + zoom.end) / 2)
         return StudioProject.Zoom.Spot(x: frame.centerX / track.width, y: frame.centerY / track.height).clamped
+    }
+
+    /// The recording's time of the frame the preview shows: the playhead's, or, inside a cut, the cut's end.
+    public var shownTime: Double {
+        recordingTime(movieTime(time))
+    }
+
+    /// Whether `zoom` is fully in in the frame the preview shows: there, done coming in, and not under a stronger one.
+    func isFullyIn(_ zoom: StudioProject.Zoom) -> Bool {
+        guard let track = composition?.renderer.track else { return false }
+        let time = shownTime
+        return time >= zoom.start && time <= zoom.end && abs(track.frame(at: time).zoom - zoom.scale) < 0.01
     }
 
     /// Removes the chosen zoom or camera layout, takes back the chosen cut, or cuts the chosen stretch.

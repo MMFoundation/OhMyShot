@@ -203,7 +203,10 @@ nonisolated public struct StudioTrack: Sendable {
         self.frames = frames
     }
 
-    /// The camera and the cursor at `time` (the recording's seconds), between the two nearest samples.
+    /// The camera and the cursor at `time` (the recording's seconds), between the two nearest samples: what the camera
+    /// shows mixed edge by edge (its center, and the share of the recording it shows, the zoom's reciprocal), so a
+    /// point it zooms about stays put between samples too, where the shutter's exposures fall, and what it shows
+    /// stays inside the recording.
     public func frame(at time: Double) -> Frame {
         guard let last = frames.last else {
             return Frame(zoom: 1, centerX: width / 2, centerY: height / 2, cursorX: 0, cursorY: 0, cursor: 0, cursorOpacity: 0)
@@ -216,7 +219,7 @@ nonisolated public struct StudioTrack: Sendable {
         func mix(_ x: Double, _ y: Double) -> Double { x + (y - x) * t }
         let cursor = anchoredCursor(at: position / rate, lower: lower, a: a, b: b)
         return Frame(
-            zoom: mix(a.zoom, b.zoom), centerX: mix(a.centerX, b.centerX), centerY: mix(a.centerY, b.centerY),
+            zoom: a.zoom == b.zoom ? a.zoom : 1 / mix(1 / a.zoom, 1 / b.zoom), centerX: mix(a.centerX, b.centerX), centerY: mix(a.centerY, b.centerY),
             cursorX: cursor.x, cursorY: cursor.y, cursor: a.cursor,
             cursorOpacity: mix(a.cursorOpacity, b.cursorOpacity)
         )

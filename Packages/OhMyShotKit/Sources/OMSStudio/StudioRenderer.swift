@@ -381,6 +381,14 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         view(track.frame(at: time))
     }
 
+    /// Whether the recording shows at `point` (the movie's pixels, y up) at `time`: inside its frame, and the camera
+    /// not filling it (no more than half faded in, on its way in or out).
+    func showsRecording(atMovie point: CGPoint, at time: Double) -> Bool {
+        guard layout.frame.contains(point) else { return false }
+        guard let camera, camera.pane == nil else { return true }
+        return camera.plan.levels(at: time).fill < 0.5
+    }
+
     /// The spot of the recording drawn at `point` (the movie's pixels, y up) while the camera shows `view`; a point
     /// outside the recording's frame gives a spot outside the recording.
     func spot(atMovie point: CGPoint, in view: View) -> StudioProject.Zoom.Spot {

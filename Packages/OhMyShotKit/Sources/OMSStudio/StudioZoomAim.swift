@@ -3,7 +3,7 @@ import SwiftUI
 /// Aims the zoom chosen on the timeline, over the preview: a click or a drag on the recording holds the zoom on the
 /// spot under the pointer, and with the preview focused the arrow keys move that spot (⇧ ten times as far). The
 /// spot shows as a ring over the preview while the movie is paused, with the part of the recording the zoom shows
-/// outlined around it while the playhead is outside the zoom. Points are read through the frame the preview shows,
+/// outlined around it while the picture shown isn't the zoom's. Points are read through the frame the preview shows,
 /// and through that frame as it was when a drag began until the drag ends, so the spot never chases a picture it
 /// is moving.
 struct StudioZoomAim: View {
@@ -34,7 +34,7 @@ struct StudioZoomAim: View {
         GeometryReader { proxy in
             if let chosen {
                 let movie = Self.movieRect(canvas: chosen.renderer.layout.canvas, in: proxy.size)
-                let view = aiming ?? chosen.renderer.view(at: document.time)
+                let view = aiming ?? chosen.renderer.view(at: document.shownTime)
                 ZStack {
                     if !document.isPlaying, let target = chosen.zoom.target {
                         marks(target: target, zoom: chosen.zoom, renderer: chosen.renderer, view: view, movie: movie)
@@ -69,7 +69,7 @@ struct StudioZoomAim: View {
         .modifier(AimAccessibility(document: document, isActive: chosen != nil) { id, x, y in nudge(id, x: x, y: y) })
     }
 
-    /// The ring on the spot, and the part of the recording the zoom shows while the playhead is outside it.
+    /// The ring on the spot, and the part of the recording the zoom shows while the picture shown isn't the zoom's.
     @ViewBuilder
     private func marks(target: StudioProject.Zoom.Spot, zoom: StudioProject.Zoom, renderer: StudioRenderer, view: StudioRenderer.View, movie: CGRect) -> some View {
         let canvas = renderer.layout.canvas
@@ -77,8 +77,8 @@ struct StudioZoomAim: View {
         let outline = contrast == .increased ? 4.0 : 3.0
         let edge = Color.white.opacity(contrast == .increased ? 1 : 0.9)
         let center = Self.viewPoint(renderer.moviePoint(of: target, in: view), canvas: canvas, movie: movie)
-        // Outside the zoom, or still coming in, the picture shows more than the zoom does.
-        if renderer.track.frame(at: document.time).zoom < zoom.scale - 0.01 {
+        // Outside the zoom, still coming in, or under a stronger one, the picture isn't what the zoom shows.
+        if !document.isFullyIn(zoom) {
             let corners = renderer.shown(around: target, scale: zoom.scale)
             let topLeft = Self.viewPoint(renderer.moviePoint(of: corners.topLeft, in: view), canvas: canvas, movie: movie)
             let bottomRight = Self.viewPoint(renderer.moviePoint(of: corners.bottomRight, in: view), canvas: canvas, movie: movie)
@@ -104,9 +104,10 @@ struct StudioZoomAim: View {
         if !dragging {
             dragging = true
             let start = Self.moviePoint(value.startLocation, canvas: renderer.layout.canvas, movie: movie)
-            // Begun off the recording (on the background, or the camera's picture beside it), it aims nothing.
-            guard renderer.layout.frame.contains(start) else { return }
-            aiming = renderer.view(at: document.time)
+            // Begun off the recording (on the background, the camera's picture beside it, or the camera filling the
+            // movie), it aims nothing.
+            guard renderer.showsRecording(atMovie: start, at: document.shownTime) else { return }
+            aiming = renderer.view(at: document.shownTime)
             document.beginContinuousChange()
         }
         guard let aiming else { return }
