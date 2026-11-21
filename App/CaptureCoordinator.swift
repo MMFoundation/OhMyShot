@@ -176,13 +176,17 @@ final class CaptureCoordinator {
             previousArea = area
             let followUp = CaptureFollowUp(action: action)
             if !windows.isEmpty {
-                Task { await captureWindows(windows, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                if windows.count == 1 {
+                    Task { await captureWindow(windows[0], copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display.frame) }
+                } else {
+                    Task { await captureWindows(windows, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                }
                 return
             }
             let window = overlay.window(framing: area)
             let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
             if let window {
-                Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display.frame) }
             } else if let frozen {
                 Task { await deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
             } else {
@@ -509,11 +513,21 @@ final class CaptureCoordinator {
     /// Captures a window on its own, with its shadow while Settings keep it, on the background Settings choose for
     /// windows; `modifiers` with Shift, as the window was clicked, takes it the other way round.
     private func captureWindow(
-        _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none, modifiers: NSEvent.ModifierFlags = []
+        _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none,
+        modifiers: NSEvent.ModifierFlags = [], clipTo: CGRect? = nil
     ) async {
         let probe = LatencyProbe("capture.window")
         do {
-            let frame = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
+            var captured = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
+            if let clipTo {
+                let scale = displays.layout.display(id: captured.displayID)?.pixelsPerPoint ?? captured.pixelsPerPoint
+                let pictureFrame = WallpaperCrop.pictureFrame(of: captured.image, window: captured.frame, pixelsPerPoint: scale)
+                guard let clipped = captured.cropped(to: clipTo, mappedFrom: pictureFrame, pixelsPerPoint: scale) else {
+                    throw CaptureError.emptyResult
+                }
+                captured = clipped
+            }
+            let frame = captured
             probe.end()
             let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift))
             // The display's scale: the capture is larger than the window's frame by its shadow.

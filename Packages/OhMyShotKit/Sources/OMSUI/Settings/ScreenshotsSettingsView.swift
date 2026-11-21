@@ -41,7 +41,7 @@ struct ScreenshotsSettingsView: View {
                 }
             }
             SettingsRow(String(localized: "Background", bundle: .module), help: [
-                HelpTopic(String(localized: "Background", bundle: .module), Text("Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture > Windows. Screenshot background uses a saved preset here, but skips Rounded corners and shadow for windows to avoid duplicating the window’s appearance. Other saved presets can be used around windows.", bundle: .module)),
+                HelpTopic(String(localized: "Background", bundle: .module), Text("Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture > Windows. Screenshot background uses the saved preset selected here, but skips Rounded corners and shadow for windows to avoid duplicating the window’s appearance. Other saved presets can be chosen for Background around windows in Capture > Windows. Save a background as a preset with the editor’s Background tool.", bundle: .module)),
             ]) {
                 Picker(selection: Binding(
                         get: { automaticBackground },

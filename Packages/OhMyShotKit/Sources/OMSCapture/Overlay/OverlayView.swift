@@ -20,6 +20,7 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool)
     func overlayViewDidReleaseSpace(_ view: OverlayView)
     /// The whole display, chosen with the All-In-One bar.
+    func overlayViewDidRequestDisplayCapture(_ view: OverlayView)
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags)
@@ -49,6 +50,9 @@ protocol OverlayViewDelegate: AnyObject {
 }
 
 extension OverlayViewDelegate {
+    func overlayViewDidRequestDisplayCapture(_ view: OverlayView) {
+        overlayView(view, didSelect: view.display.frame, modifiers: [])
+    }
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
         if let first = targets.first {
             overlayView(view, didSelectWindow: first, modifiers: modifiers)
@@ -902,11 +906,13 @@ final class OverlayView: NSView {
         withoutAnimation { updateSelectionLayers() }
     }
 
+    static func roundedWindowPaths(_ rects: [CGRect]) -> [CGPath] {
+        rects.filter { !$0.isNull && !$0.isEmpty }.map { CGPath.continuousRoundedRect($0, radius: 12) }
+    }
+
     static func roundedWindowPath(_ rects: [CGRect]) -> CGPath {
         let path = CGMutablePath()
-        for rect in rects where !rect.isNull && !rect.isEmpty {
-            path.addPath(CGPath.continuousRoundedRect(rect, radius: 12))
-        }
+        for windowPath in roundedWindowPaths(rects) { path.addPath(windowPath) }
         return path
     }
 
@@ -935,7 +941,7 @@ final class OverlayView: NSView {
                 delegate?.overlayView(self, didSwitchTo: .window)
             }
         case .fullscreen:
-            delegate?.overlayView(self, didSelect: display.frame, modifiers: [])
+            delegate?.overlayViewDidRequestDisplayCapture(self)
         case .measure:
             delegate?.overlayViewDidRequestMeasure(self)
         case .cancel:
@@ -1086,7 +1092,9 @@ final class OverlayView: NSView {
         let element = mode == .window ? pickedElement : nil
         // All-In-One's window under the pointer stands for the selection until a drag makes one.
         let highlighted = mode == .area && selection.isTooSmall ? highlightedWindow : nil
-        var roundedWindows = mode == .area ? selectedWindows.map { $0.frame.intersection(display.frame) } : []
+        // A drag that passes the click threshold is an area selection, so its rectangular frame supersedes the
+        // retained Shift-selected window outlines. Before then, keep those outlines and the live hover preview.
+        var roundedWindows = mode == .area && selection.isTooSmall ? selectedWindows.map { $0.frame.intersection(display.frame) } : []
         if let highlighted, !selectedWindows.contains(highlighted.window) {
             roundedWindows.append(highlighted.area)
         }
@@ -1104,8 +1112,10 @@ final class OverlayView: NSView {
             return
         }
         let rect = local(globalRect)
-        let windowPath = Self.roundedWindowPath(roundedWindows.map(local))
-        roomPath.addPath(windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath)
+        let windowRects = roundedWindows.map(local)
+        let windowPath = Self.roundedWindowPath(windowRects)
+        let windowMaskPath = SelectionChromeView.unionPath(Self.roundedWindowPaths(windowRects))
+        roomPath.addPath(windowMaskPath ?? (windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath))
         room.path = roomPath
         let edge = windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath
         let inset = Self.textSelectionEdge(increasedContrast: increasedContrast) / 2

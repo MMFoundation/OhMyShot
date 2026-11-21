@@ -74,6 +74,16 @@ struct CapturedFrameTests {
         #expect(pixel(crop.image, x: 20, y: 30) == [0, 0, 0, 255])
     }
 
+    @Test func aWindowShadowImageCanBeCroppedUsingItsPictureFrame() throws {
+        let full = frame()
+        let pictureFrame = CGRect(x: -410, y: 90, width: 420, height: 320)
+        let selection = CGRect(x: -400, y: 200, width: 100, height: 50)
+        let crop = try #require(full.cropped(to: selection, mappedFrom: pictureFrame, pixelsPerPoint: 2))
+        #expect(crop.image.width == 200 && crop.image.height == 100)
+        #expect(crop.frame == selection)
+        #expect(crop.displayID == 7)
+    }
+
     @Test func theColorSpaceIsKept() throws {
         let crop = try #require(frame().cropped(to: CGRect(x: -310, y: 320, width: 40, height: 40)))
         #expect(crop.image.colorSpace?.name == CGColorSpace.displayP3)

@@ -885,8 +885,14 @@ public final class OverlayController {
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
         setup.onAreaAdjusted = { [weak self] _ in self?.allInOneCaptureWindows = [] }
         setup.codeFinder = codes
-        setup.onChoose = { [weak self, weak setup] choice, area in
+        setup.onChoose = { [weak self, weak setup] choice, area, wholeDisplay in
             guard let self else { return }
+            if wholeDisplay {
+                framed = nil
+                allInOneSelectedWindows = []
+                allInOneCaptureWindows = []
+                for entry in entries.values { entry.view.setSelectedWindows([]) }
+            }
             if sizing {
                 // Taken as the drag would have taken it. In-place annotation hosts its interface in the overlay's view,
                 // which the frame no longer covers.
@@ -1090,6 +1096,20 @@ extension OverlayController {
         for (id, entry) in entries {
             if syncAllInOneSelection { entry.view.setSelectedWindows(allInOneSelectedWindows) }
             entry.view.highlight(id == shown?.display.id ? shown : nil)
+        }
+    }
+
+    static func displayForSetup(targets: [WindowTarget], in layout: DisplayLayout) -> DisplayInfo? {
+        layout.displays.max { first, second in
+            func coveredArea(on display: DisplayInfo) -> CGFloat {
+                targets.reduce(0) { total, target in
+                    let part = target.frame.intersection(display.frame)
+                    return total + (part.isNull ? 0 : part.width * part.height)
+                }
+            }
+            return coveredArea(on: first) < coveredArea(on: second)
+        }.flatMap { display in
+            targets.contains { $0.frame.intersects(display.frame) } ? display : nil
         }
     }
 
@@ -1428,6 +1448,18 @@ extension OverlayController: OverlayViewDelegate {
         drag?.spaceHeld = false
     }
 
+    func overlayViewDidRequestDisplayCapture(_ view: OverlayView) {
+        framed = nil
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
+        for entry in entries.values { entry.view.setSelectedWindows([]) }
+        if isAllInOne, allInOneMode == nil {
+            endAllInOne(.screenshot(nil), view.display.frame, on: view.display)
+        } else {
+            overlayView(view, didSelect: view.display.frame, modifiers: [])
+        }
+    }
+
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
         // All-In-One's Screen (or F) takes the whole display at once; a mode chosen before takes it too.
         if isAllInOne, allInOneMode == nil {
@@ -1441,6 +1473,9 @@ extension OverlayController: OverlayViewDelegate {
         // Choosing the purpose in hand again, or a plain capture (Area, A), lets it go.
         let next: AllInOneChoice? = if case .screenshot = choice { nil } else if choice == allInOneMode { nil } else { choice }
         guard next != allInOneMode else { return }
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
+        for entry in entries.values { entry.view.setSelectedWindows([]) }
         allInOneMode = next
         let mark = next.flatMap(AllInOneBar.Choice.init(purpose:))
         for entry in entries.values { entry.view.markPurpose(mark) }
@@ -1578,10 +1613,11 @@ extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
         guard let first = targets.first else { return }
         let unionFrame = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
-        if isAllInOne, allInOneMode == nil, purpose == .screenshot, targets.count > 1 {
+        if isAllInOne, allInOneMode == nil, purpose == .screenshot {
+            guard let setupDisplay = Self.displayForSetup(targets: targets, in: topology.layout) else { return }
             allInOneCaptureWindows = targets
             guard startAllInOneSetup(
-                on: view.display, area: unionFrame.intersection(view.display.frame), windowFrames: targets.map(\.frame)
+                on: setupDisplay, area: unionFrame.intersection(setupDisplay.frame), windowFrames: targets.map(\.frame)
             ) else {
                 allInOneCaptureWindows = []
                 return

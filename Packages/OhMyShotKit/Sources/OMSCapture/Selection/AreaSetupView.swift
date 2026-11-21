@@ -104,7 +104,12 @@ class AreaSetupView<Bar: NSView>: NSView {
     @discardableResult
     func setArea(_ rect: CGRect) -> Bool {
         guard let kept = AreaFrame.fitted(rect, in: bounds) else { return false }
-        areaAdjusted(AreaFrame.global(AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint), on: display))
+        let snapped = AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint)
+        if let current = adjustableArea,
+           AreaFrame.snapped(AreaFrame.local(current, on: display), pixelsPerPoint: display.pixelsPerPoint) == snapped {
+            return true
+        }
+        areaAdjusted(AreaFrame.global(snapped, on: display))
         // Moved by the keys or a typed size, the area is looked at again once the keys rest; a drag looks once it ends.
         if adjustment == nil { refreshCodes(after: .milliseconds(250)) } else { clearCodes() }
         return true

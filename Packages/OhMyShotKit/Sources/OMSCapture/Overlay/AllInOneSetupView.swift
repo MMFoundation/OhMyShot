@@ -33,7 +33,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     }
 
     /// A way to take the area was chosen: the choice and the area in global points.
-    var onChoose: ((AllInOneChoice, CGRect) -> Void)?
+    var onChoose: ((AllInOneChoice, CGRect, Bool) -> Void)?
     /// A shape was chosen on the ratio chip of Capture Area's size control: the shape Shift keeps from now on.
     var onShapeKept: ((AspectRatio) -> Void)?
     /// Called when the initial window selection becomes an edited area.
@@ -134,9 +134,11 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     private func update() {
         chrome.selection = frameRect
-        chrome.selectionPath = windowFrames.isEmpty
+        let localWindowFrames = windowFrames.map { AreaFrame.local($0.intersection(display.frame), on: display) }
+        chrome.selectionPath = windowFrames.isEmpty ? nil : OverlayView.roundedWindowPath(localWindowFrames)
+        chrome.selectionMaskPath = windowFrames.isEmpty
             ? nil
-            : OverlayView.roundedWindowPath(windowFrames.map { AreaFrame.local($0.intersection(display.frame), on: display) })
+            : SelectionChromeView.unionPath(OverlayView.roundedWindowPaths(localWindowFrames))
         chrome.showsHandles = windowFrames.isEmpty
         bar.show(pixelSize: pixelSize, ratio: ratio)
         placeBar()
@@ -184,11 +186,11 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
-    private func choose(_ choice: AllInOneChoice, area: CGRect? = nil) {
+    private func choose(_ choice: AllInOneChoice, area: CGRect? = nil, wholeDisplay: Bool = false) {
         if case .screenshot(.upload) = choice, !offersUpload { return NSSound.beep() }
         // A size being typed is set first: what is taken is what the fields say.
         endTyping()
-        onChoose?(choice, area ?? self.area)
+        onChoose?(choice, area ?? self.area, wholeDisplay)
     }
 
     /// Sets a size being typed in the bar's fields, and takes the keys back from them.
@@ -223,7 +225,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             guard kind == .allInOne, !flags.contains(.command), !flags.contains(.control) else { return super.keyDown(with: event) }
             if character == "f" {
                 // The whole display, at once.
-                choose(.screenshot(nil), area: display.frame)
+                choose(.screenshot(nil), area: display.frame, wholeDisplay: true)
             } else if let choice = Self.choice(for: character) {
                 choose(choice)
             } else {

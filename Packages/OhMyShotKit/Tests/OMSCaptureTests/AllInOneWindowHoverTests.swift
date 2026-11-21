@@ -49,6 +49,13 @@ struct AllInOneWindowHoverTests {
         #expect(onRight?.area == CGRect(x: 800, y: 100, width: 390, height: 300))
     }
 
+    @Test func multiWindowSetupUsesADisplayIntersectingTheTargets() {
+        let onRight = WindowTarget(id: 41, frame: CGRect(x: 900, y: 100, width: 200, height: 120), ownerName: "Right", title: nil)
+        let anotherOnRight = WindowTarget(id: 42, frame: CGRect(x: 1_150, y: 180, width: 240, height: 160), ownerName: "Also right", title: nil)
+        let layout = DisplayLayout(displays: [Self.left, Self.right])
+        #expect(OverlayController.displayForSetup(targets: [onRight, anotherOnRight], in: layout) == Self.right)
+    }
+
     @Test func onlyAnUnchangedFramedWindowRetainsItsWindowTarget() {
         let framed = (window: Self.front, area: Self.front.frame)
         #expect(OverlayController.framedWindow(framed, matching: Self.front.frame) == Self.front)

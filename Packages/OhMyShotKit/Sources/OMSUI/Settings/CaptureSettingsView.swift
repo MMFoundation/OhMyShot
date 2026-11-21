@@ -86,7 +86,7 @@ struct CaptureSettingsView: View {
             SettingsDivider()
 
             SettingsRow(String(localized: "Windows", bundle: .module), help: [
-                HelpTopic(String(localized: "Windows", bundle: .module), Text("Include window shadow captures the window’s native shadow. Background around windows is added outside the window afterward. Screenshot background uses the automatic background selected under Screenshots, except Rounded corners and shadow is skipped for window captures: windows already have native rounded corners, and their native shadow is controlled by Include window shadow. Hold Shift as you click a window to switch between transparent background and desktop wallpaper.", bundle: .module)),
+                HelpTopic(String(localized: "Windows", bundle: .module), Text("Include window shadow captures the window’s native shadow; Background around windows is added outside the captured window. Screenshot background uses the automatic background from Screenshots, except Rounded corners and shadow is skipped because windows already have native rounded corners and a separately controlled native shadow. For an ordinary single-window capture, Shift toggles the chosen background off or on (a saved preset becomes transparent); in All-in-One, Shift adds or removes windows from the selection.", bundle: .module)),
             ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(isOn: $settings.windowShadow) {
