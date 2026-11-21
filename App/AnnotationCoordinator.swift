@@ -34,6 +34,9 @@ final class AnnotationCoordinator {
 
     init(history: HistoryStore) {
         self.history = history
+        // What an earlier run left of projects' pictures: every project opened from now on has a newer folder.
+        let start = Date.now
+        Task.detached(priority: .background) { ProjectPicture.removeLeftovers(before: start) }
     }
 
     /// Opens `entry` in the editor, or brings its editor forward. `scale` is pixels per point of the
@@ -142,7 +145,8 @@ final class AnnotationCoordinator {
 
     /// Opens a project file in the editor, or brings its editor forward. Edits are kept in the project
     /// when the window closes and whenever the picture leaves it, as a capture's are kept in the history;
-    /// the picture itself is kept beside the app's caches, for dragging out and saving copies.
+    /// the picture itself is kept in the app's caches, in a folder of this editor's own (`ProjectPicture`), for
+    /// dragging out and saving copies.
     func openProject(at url: URL) {
         let file = url.standardizedFileURL
         if let editor = projectEditors[file] {
@@ -159,8 +163,13 @@ final class AnnotationCoordinator {
                 NSAlert(error: error).runModal()
                 return
             }
-            guard let self else { return }
+            guard let self else {
+                ProjectPicture.remove(opened.picture, after: .zero)
+                return
+            }
             if let editor = projectEditors[file] {
+                // Opened twice at once: the editor already open is the one, and nothing has this picture.
+                ProjectPicture.remove(opened.picture, after: .zero)
                 editor.show()
                 return
             }
@@ -192,6 +201,7 @@ final class AnnotationCoordinator {
             )
             editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
                 self?.projectEditors[file] = nil
+                ProjectPicture.remove(picture)
                 MemoryRelief.endEventWait()
             }
             projectEditors[file] = editor
@@ -205,12 +215,7 @@ final class AnnotationCoordinator {
     @concurrent
     private static func loadProject(_ file: URL) async throws -> (project: AnnotationProject, picture: URL) {
         let project = try AnnotationProject.read(from: file)
-        let folder = AppFolders.caches.appending(path: "Projects", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let picture = folder.appending(path: file.deletingPathExtension().lastPathComponent + ".png")
-        guard let image = await AnnotationRenderer.render(project.document, base: project.capture) else { throw CocoaError(.fileReadCorruptFile) }
-        try await ImageExporter.encode(image, as: .png).write(to: picture, options: .atomic)
-        return (project, picture)
+        return (project, try await ProjectPicture.make(for: project, from: file))
     }
 
     #if DEBUG
