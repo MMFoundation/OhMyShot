@@ -74,6 +74,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// Runs once the window has closed and its movie is kept.
     private var closeCompletions: [(Bool) -> Void] = []
     private var preparingToClose: Task<Void, Never>?
+    /// A picture being kept for the background, which closing waits for so it is saved and exported.
+    private var choosingPicture: Task<Void, Never>?
     private var didClose = false
     private var finishedClosing = false
 
@@ -308,12 +310,17 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    try await studio.choosePicture(at: url)
-                } catch {
-                    Log.studio.error("Choosing a Studio background picture failed: \(String(describing: error), privacy: .public)")
-                    NSSound.beep()
+                guard let self, !didClose else { return }
+                // After any chosen before it, so the last one chosen is the one kept.
+                let before = choosingPicture
+                choosingPicture = Task {
+                    await before?.value
+                    do {
+                        try await self.studio.choosePicture(at: url)
+                    } catch {
+                        Log.studio.error("Choosing a Studio background picture failed: \(String(describing: error), privacy: .public)")
+                        NSSound.beep()
+                    }
                 }
             }
         }
@@ -362,6 +369,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard preparingToClose == nil, !didClose else { return }
         preparingToClose = Task {
             defer { preparingToClose = nil }
+            await choosingPicture?.value
             do {
                 try await studio.flushSave()
                 window?.close()
