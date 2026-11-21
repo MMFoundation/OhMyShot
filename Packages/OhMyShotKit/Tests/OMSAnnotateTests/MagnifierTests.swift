@@ -1,0 +1,295 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import Testing
+@testable import OMSAnnotate
+
+/// What the redactions in these tests cover, in pixels from the top left.
+private let secretRect = CGRect(x: 40, y: 50, width: 30, height: 25)
+
+/// A noisy capture, every pixel unlike its neighbours, so a lens showing the wrong pixels shows it. `secret` changes
+/// only what lies under `secretRect`.
+private func noise(width: Int = 200, height: Int = 120, secret: Bool = false) -> CGImage {
+    let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    for y in 0..<height {
+        for x in 0..<width {
+            let hidden = secret && secretRect.contains(CGPoint(x: x, y: y))
+            let red = CGFloat((x * 37 + y * 11 + (hidden ? 128 : 0)) % 256) / 255
+            context.setFillColor(red: red, green: CGFloat((x * y + 7 * y) % 256) / 255, blue: CGFloat((x * 5 + y * 23) % 256) / 255, alpha: 1)
+            // Core Graphics is y up: the row y from the top.
+            context.fill(CGRect(x: x, y: height - 1 - y, width: 1, height: 1))
+        }
+    }
+    return context.makeImage()!
+}
+
+private func close(_ a: (r: Int, g: Int, b: Int, a: Int), _ b: (r: Int, g: Int, b: Int, a: Int), within tolerance: Int = 2) -> Bool {
+    abs(a.r - b.r) <= tolerance && abs(a.g - b.g) <= tolerance && abs(a.b - b.b) <= tolerance && abs(a.a - b.a) <= tolerance
+}
+
+/// The pixels well inside a lens, clear of its ring, each with the pixel of the picture it should show: the
+/// magnified spot plus its offset from the lens's middle over the zoom.
+private func lensSamples(of magnifier: Magnifier) -> [(lens: (x: Int, y: Int), source: (x: Int, y: Int))] {
+    let zoom = CGFloat(magnifier.zoom.rawValue)
+    let inner = magnifier.radius - 6
+    var samples: [(lens: (x: Int, y: Int), source: (x: Int, y: Int))] = []
+    for y in Int(magnifier.center.y - inner)...Int(magnifier.center.y + inner) {
+        for x in Int(magnifier.center.x - inner)...Int(magnifier.center.x + inner) {
+            let dx = CGFloat(x) + 0.5 - magnifier.center.x, dy = CGFloat(y) + 0.5 - magnifier.center.y
+            guard hypot(dx, dy) < inner else { continue }
+            samples.append(((x, y), (Int((magnifier.source.x + dx / zoom).rounded(.down)), Int((magnifier.source.y + dy / zoom).rounded(.down)))))
+        }
+    }
+    return samples
+}
+
+/// The magnifier mark: made, moved, kept in a project, and drawn on the canvas and in an export, where its lens
+/// shows the picture with every redaction on it.
+struct MagnifierTests {
+    private let scratch = ScratchDefaults()
+
+    // MARK: Making one
+
+    @Test func aClickPutsTheLensOverWhatItMagnifiesAtTheLoupesSize() throws {
+        let mark = try #require(AnnotationTool.magnifier.mark(
+            from: CGPoint(x: 100, y: 80), to: CGPoint(x: 101, y: 80), constrained: false, settings: ToolSettings(zoom: .three), scale: 2
+        ))
+        guard case .magnifier(let magnifier) = mark.shape else { Issue.record("Not a magnifier: \(mark.shape)"); return }
+        #expect(magnifier.source == CGPoint(x: 100, y: 80))
+        #expect(magnifier.center == magnifier.source)
+        // 120 pt across, as the overlay's loupe is, in a Retina capture's pixels.
+        #expect(magnifier.radius == 120)
+        #expect(magnifier.zoom == .three)
+        #expect(!magnifier.isDetached)
+        #expect(!mark.castsShadow)
+    }
+
+    @Test func draggingAwayTakesTheLensClearOfWhatItMagnifies() throws {
+        let start = CGPoint(x: 50, y: 60)
+        let mark = try #require(AnnotationTool.magnifier.mark(
+            from: start, to: CGPoint(x: 250, y: 60), constrained: false, settings: ToolSettings(zoom: .two), scale: 1
+        ))
+        guard case .magnifier(let magnifier) = mark.shape else { Issue.record("Not a magnifier"); return }
+        #expect(magnifier.source == start)
+        #expect(magnifier.center == CGPoint(x: 250, y: 60))
+        #expect(magnifier.isDetached)
+        // The ring around what is magnified is a handle of its own; the lens is sized by its corners.
+        let handles = mark.handles(scale: 1)
+        #expect(handles.contains { $0.handle == .start && $0.point == start })
+        #expect(handles.filter { $0.handle != .start }.count == 4)
+        #expect(mark.drawingBounds(scale: 1).contains(magnifier.sourceRect))
+        #expect(mark.contains(CGPoint(x: 250, y: 60), tolerance: 0, scale: 1))
+        #expect(!mark.contains(CGPoint(x: 150, y: 60), tolerance: 0, scale: 1))
+    }
+
+    @Test func movingTheLensLeavesWhatItMagnifiesAndSettlesBackOverIt() throws {
+        let mark = Annotation(shape: .magnifier(Magnifier(source: CGPoint(x: 100, y: 100), radius: 40, zoom: .two)), style: Style())
+        #expect(mark.handles(scale: 1).allSatisfy { $0.handle != .start })
+        let moved = mark.dragged(by: CGSize(width: 150, height: 0))
+        guard case .magnifier(let away) = moved.shape else { Issue.record("Not a magnifier"); return }
+        #expect(away.source == CGPoint(x: 100, y: 100))
+        #expect(away.center == CGPoint(x: 250, y: 100))
+        // Dropped close to it again, the lens stands over what it magnifies.
+        guard case .magnifier(let back) = moved.dragged(by: CGSize(width: -145, height: 3)).shape else { Issue.record("Not a magnifier"); return }
+        #expect(back.center == back.source)
+        // Moved with the arrow keys or with other marks, it moves whole.
+        guard case .magnifier(let nudged) = moved.translated(by: CGSize(width: 1, height: 2)).shape else { Issue.record("Not a magnifier"); return }
+        #expect(nudged.source == CGPoint(x: 101, y: 102))
+        #expect(nudged.center == CGPoint(x: 251, y: 102))
+        // The ring's handle moves what is magnified; a corner sizes the lens about its middle.
+        guard case .magnifier(let aimed) = moved.moving(.start, to: CGPoint(x: 90, y: 120), constrained: false, scale: 1).shape else {
+            Issue.record("Not a magnifier"); return
+        }
+        #expect(aimed.source == CGPoint(x: 90, y: 120))
+        #expect(aimed.center == away.center)
+        guard case .magnifier(let sized) = moved.moving(.topLeft, to: CGPoint(x: 190, y: 70), constrained: false, scale: 1).shape else {
+            Issue.record("Not a magnifier"); return
+        }
+        #expect(sized.radius == 60)
+        #expect(sized.center == away.center)
+    }
+
+    @Test func theZoomIsAStyleSettingKeptWithTheTool() throws {
+        let mark = Annotation(shape: .magnifier(Magnifier(source: .zero, radius: 40, zoom: .two)), style: Style())
+        var settings = ToolSettings.defaults(for: .magnifier)
+        settings.zoom = .four
+        guard case .magnifier(let restyled) = settings.applied(to: mark).shape else { Issue.record("Not a magnifier"); return }
+        #expect(restyled.zoom == .four)
+        var adopted = ToolSettings()
+        adopted.adopt(settings.applied(to: mark))
+        #expect(adopted.zoom == .four)
+        // Settings kept before there were magnifiers still read, at 2×.
+        var kept = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(ToolSettings())) as? [String: Any])
+        kept["magnifierZoom"] = nil
+        let read = try JSONDecoder().decode(ToolSettings.self, from: JSONSerialization.data(withJSONObject: kept))
+        #expect(read.zoom == .two)
+    }
+
+    @Test func turningOrResizingThePictureKeepsTheLensOverTheSameSpot() throws {
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 1)
+        document.items = [Annotation(shape: .magnifier(Magnifier(source: CGPoint(x: 20, y: 30), center: CGPoint(x: 150, y: 50), radius: 30)), style: Style())]
+        let turned = try #require(document.applying(.rotateRight))
+        guard case .magnifier(let magnifier) = turned.items.first?.shape else { Issue.record("Not a magnifier"); return }
+        #expect(magnifier.source == CGPoint(x: 70, y: 20))
+        #expect(magnifier.center == CGPoint(x: 50, y: 150))
+        #expect(magnifier.radius == 30)
+        let halved = try #require(document.applying(.resize(to: CGSize(width: 100, height: 50))))
+        guard case .magnifier(let small) = halved.items.first?.shape else { Issue.record("Not a magnifier"); return }
+        #expect(small.source == CGPoint(x: 10, y: 15))
+        #expect(small.radius == 15)
+    }
+
+    // MARK: The project file
+
+    @Test func onlyAProjectWithAMagnifierNeedsFormatFour() throws {
+        func version(of document: AnnotationDocument) throws -> Int? {
+            let data = try AnnotationProject(capture: noise(width: 8, height: 4), document: document).data()
+            return (try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])?["version"] as? Int
+        }
+        var document = AnnotationDocument(pixelSize: CGSize(width: 8, height: 4), scale: 1)
+        document.items = [Annotation(shape: .redaction(Redaction(rect: CGRect(x: 0, y: 0, width: 4, height: 2), method: .blur)), style: Style())]
+        #expect(try version(of: document) == 1)
+        let magnifier = Magnifier(source: CGPoint(x: 2, y: 2), center: CGPoint(x: 6, y: 1), radius: 3, zoom: .four)
+        document.items.append(Annotation(shape: .magnifier(magnifier), style: Style()))
+        #expect(try version(of: document) == 4)
+        let read = try AnnotationProject.read(AnnotationProject(capture: noise(width: 8, height: 4), document: document).data())
+        #expect(read.document.items.last?.shape == .magnifier(magnifier))
+    }
+
+    // MARK: Exported
+
+    @Test(arguments: Magnifier.Zoom.allCases)
+    func theLensShowsThePictureUnderItLarger(zoom: Magnifier.Zoom) throws {
+        let base = noise()
+        let magnifier = Magnifier(source: CGPoint(x: 50, y: 60), center: CGPoint(x: 150, y: 60), radius: 30, zoom: zoom)
+        let plain = AnnotationDocument(pixelSize: CGSize(width: 200, height: 120), scale: 1)
+        var document = plain
+        document.items = [Annotation(shape: .magnifier(magnifier), style: Style())]
+        let output = Pixels(try #require(AnnotationRenderer.flatten(document, base: base)))
+        let picture = Pixels(try #require(AnnotationRenderer.flatten(plain, base: base)))
+        var mismatches = 0
+        for (lens, source) in lensSamples(of: magnifier) where !close(output[lens.x, lens.y], picture[source.x, source.y]) {
+            mismatches += 1
+        }
+        #expect(mismatches == 0, "\(mismatches) lens pixels show the wrong part of the picture")
+        // A white ring edges the lens.
+        let rim = output[150, 60 - 30]
+        #expect(rim.r > 230 && rim.g > 230 && rim.b > 230)
+    }
+
+    /// A lens shows every redaction as it is drawn on the picture, whether the redaction lies above it or below,
+    /// so the pixels one hides never show in it: it matches the picture with its redactions, magnified.
+    @Test(arguments: Redaction.Method.allCases, [false, true])
+    func anExportedLensNeverShowsWhatARedactionHides(method: Redaction.Method, redactionAbove: Bool) throws {
+        let lens = Magnifier(source: CGPoint(x: 55, y: 60), center: CGPoint(x: 150, y: 60), radius: 40, zoom: .two)
+        let magnifier = Annotation(shape: .magnifier(lens), style: Style())
+        let redaction = Annotation(shape: .redaction(Redaction(rect: secretRect, method: method)), style: Style(color: .black))
+        var shown: [[UInt8]] = []
+        for secret in [false, true] {
+            let base = noise(secret: secret)
+            let redacted = AnnotationDocument(pixelSize: CGSize(width: 200, height: 120), scale: 1, items: [redaction])
+            var document = redacted
+            document.items = redactionAbove ? [magnifier, redaction] : [redaction, magnifier]
+            let output = Pixels(try #require(AnnotationRenderer.flatten(document, base: base)))
+            let picture = Pixels(try #require(AnnotationRenderer.flatten(redacted, base: base)))
+            var mismatches = 0
+            for (point, source) in lensSamples(of: lens) where !close(output[point.x, point.y], picture[source.x, source.y], within: 3) {
+                mismatches += 1
+            }
+            #expect(mismatches == 0, "\(mismatches) lens pixels differ from the redacted picture")
+            shown.append(output.region(lens.lensRect.insetBy(dx: 12, dy: 12)))
+        }
+        // A solid cover hides everything: what lies under it changes nothing the lens shows.
+        if method == .solid { #expect(shown[0] == shown[1]) }
+    }
+
+    // MARK: On the canvas
+
+    @MainActor
+    private func makeCanvas(base: CGImage, tool: AnnotationTool? = nil) throws -> (AnnotationCanvasView, AnnotationSession, NSWindow) {
+        let session = AnnotationSession(image: base, scale: 1, tool: tool, defaults: scratch.make())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: base.width, height: base.height), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let canvas = AnnotationCanvasView(session: session)
+        canvas.contentInsets = NSEdgeInsetsZero
+        canvas.frame = try #require(window.contentView).bounds
+        window.contentView?.addSubview(canvas)
+        canvas.layoutSubtreeIfNeeded()
+        return (canvas, session, window)
+    }
+
+    /// A press, a drag when `end` differs, and a release, at points in the capture's pixels.
+    @MainActor
+    private func press(_ canvas: AnnotationCanvasView, in window: NSWindow, from start: CGPoint, to end: CGPoint? = nil) throws {
+        func event(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: canvas.windowPoint(forDocument: point), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        canvas.mouseDown(with: try event(.leftMouseDown, at: start))
+        if let end { canvas.mouseDragged(with: try event(.leftMouseDragged, at: end)) }
+        canvas.mouseUp(with: try event(.leftMouseUp, at: end ?? start))
+    }
+
+    @MainActor
+    @Test func clickingOrDraggingWithTheToolMakesALens() throws {
+        let (canvas, session, window) = try makeCanvas(base: noise(width: 400, height: 200), tool: .magnifier)
+        defer { window.close() }
+        try press(canvas, in: window, from: CGPoint(x: 100, y: 100))
+        guard case .magnifier(let clicked) = session.document.items.last?.shape else { Issue.record("No magnifier made by a click"); return }
+        #expect(clicked.source == CGPoint(x: 100, y: 100))
+        #expect(clicked.center == clicked.source)
+        #expect(clicked.radius == Magnifier.lensRadius)
+
+        // Clear of the first lens, which a press on would take hold of.
+        session.tool = .magnifier
+        try press(canvas, in: window, from: CGPoint(x: 220, y: 60), to: CGPoint(x: 330, y: 130))
+        guard case .magnifier(let dragged) = session.document.items.last?.shape else { Issue.record("No magnifier made by a drag"); return }
+        #expect(dragged.source == CGPoint(x: 220, y: 60))
+        #expect(dragged.center == CGPoint(x: 330, y: 130))
+        #expect(dragged.isDetached)
+        #expect(session.document.items.count == 2)
+    }
+
+    /// The canvas shows in a lens the picture with every redaction on it, kept up to date as redactions come
+    /// and go: the same pixels an export shows.
+    @MainActor
+    @Test(arguments: Redaction.Method.allCases)
+    func aLensOnTheCanvasNeverShowsWhatARedactionHides(method: Redaction.Method) throws {
+        let base = noise(secret: true)
+        let (canvas, session, window) = try makeCanvas(base: base, tool: .select)
+        defer { window.close() }
+        let lens = Magnifier(source: CGPoint(x: 55, y: 60), center: CGPoint(x: 150, y: 60), radius: 40, zoom: .two)
+        let magnifier = Annotation(shape: .magnifier(lens), style: Style())
+        let redaction = Annotation(shape: .redaction(Redaction(rect: secretRect, method: method)), style: Style(color: .black))
+        var document = session.document
+        document.items = [magnifier]
+        session.commit(document, actionName: "Add")
+        // Covered after the lens was made, from above it.
+        document.items = [magnifier, redaction]
+        session.commit(document, actionName: "Add")
+
+        let shown = Pixels(try #require(canvas.markLayer(for: magnifier.id)?.lens))
+        let area = MagnifierPainter.lensArea(of: lens)
+        #expect(shown.width == Int(area.width) && shown.height == Int(area.height))
+        let redacted = AnnotationDocument(pixelSize: CGSize(width: 200, height: 120), scale: 1, items: [redaction])
+        let picture = Pixels(try #require(AnnotationRenderer.flatten(redacted, base: base)))
+        var mismatches = 0
+        for y in 0..<shown.height {
+            for x in 0..<shown.width where !close(shown[x, y], picture[Int(area.minX) + x, Int(area.minY) + y], within: 3) {
+                mismatches += 1
+            }
+        }
+        #expect(mismatches == 0, "\(mismatches) lens pixels differ from the redacted picture")
+        // Taken away, the lens shows the picture plainly again.
+        document.items = [magnifier]
+        session.commit(document, actionName: "Delete")
+        let plain = Pixels(try #require(canvas.markLayer(for: magnifier.id)?.lens))
+        let under = (x: Int(secretRect.midX - area.minX), y: Int(secretRect.minY - area.minY) + 2)
+        #expect(close(plain[under.x, under.y], Pixels(base)[Int(area.minX) + under.x, Int(area.minY) + under.y]))
+    }
+}
