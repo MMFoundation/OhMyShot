@@ -166,8 +166,9 @@ struct CaptureLauncherView: View {
     let perform: (Entry) -> Void
     /// Opens a row's submenu under the row, whose frame is given in `space`.
     let showMenu: (Entry, CGRect) -> Void
-    /// How tall the launcher may be on a display too short to hold it, where it scrolls; nil while it fits.
-    var maxHeight: CGFloat?
+    /// How tall the launcher may be on its display: taller, as on a short display or when a row appears while it is
+    /// open, it scrolls.
+    var maxHeight: CGFloat = .infinity
 
     var body: some View {
         // Only alive while the popover is open. Re-read countdowns, cancellations, and menu availability.
@@ -201,18 +202,14 @@ struct CaptureLauncherView: View {
             .padding(8)
             .frame(width: 420)
             .fixedSize(horizontal: false, vertical: true)
-            Group {
-                if let maxHeight {
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical) { content }
-                            .frame(width: 420, height: maxHeight)
-                            .onChange(of: highlight.cell) { _, cell in
-                                if highlight.fromKeys, let cell { proxy.scrollTo(cell) }
-                            }
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) { content }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(width: 420)
+                    .frame(maxHeight: maxHeight)
+                    .onChange(of: highlight.cell) { _, cell in
+                        if highlight.fromKeys, let cell { proxy.scrollTo(cell) }
                     }
-                } else {
-                    content
-                }
             }
             .coordinateSpace(.named(Self.space))
         }

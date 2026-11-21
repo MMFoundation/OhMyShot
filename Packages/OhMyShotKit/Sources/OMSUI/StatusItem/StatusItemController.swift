@@ -421,10 +421,7 @@ public final class StatusItemController {
         // it under the menu bar and above the Dock, with room for the popover's arrow: then it stops there and scrolls.
         host.sizingOptions = [.preferredContentSize]
         if let window = button.window, let screen = window.screen {
-            let room = window.frame.minY - screen.visibleFrame.minY - 24
-            if host.sizeThatFits(in: CGSize(width: 420, height: CGFloat.greatestFiniteMagnitude)).height > room {
-                host.rootView.maxHeight = room
-            }
+            host.rootView.maxHeight = window.frame.minY - screen.visibleFrame.minY - 24
         }
         launcher.contentViewController = host
         launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

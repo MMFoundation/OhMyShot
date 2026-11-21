@@ -180,12 +180,24 @@ struct CaptureLauncherTests {
         #expect(launcher.rows.map { $0.entries.map(\.title) }[1] == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…"])
     }
 
-    @Test func onADisplayTooShortTheLauncherScrollsAtTheHeightItHas() {
-        let rows = (1 ... 40).map { StatusItemController.Entry(title: "Row \($0)", systemImage: "viewfinder") {} }
-        let host = NSHostingController(rootView: CaptureLauncherView(model: model([], tools: rows), perform: { _ in }, showMenu: { _, _ in }))
-        let unbounded = CGSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
-        #expect(host.sizeThatFits(in: unbounded).height > 500)
-        host.rootView.maxHeight = 300
-        #expect(host.sizeThatFits(in: unbounded) == CGSize(width: 420, height: 300))
+    @Test func theLauncherIsAsTallAsItsRowsUpToTheRoomItHasAndThenScrolls() {
+        func rows(_ count: Int) -> [StatusItemController.Entry] {
+            (1 ... count).map { StatusItemController.Entry(title: "Row \($0)", systemImage: "viewfinder") {} }
+        }
+        func launcher(_ count: Int) -> CaptureLauncherView {
+            CaptureLauncherView(model: model([], tools: rows(count)), perform: { _ in }, showMenu: { _, _ in }, maxHeight: 300)
+        }
+        // The popover takes the preferred size, which follows the rows as they change while it is open.
+        let host = NSHostingController(rootView: launcher(2))
+        host.sizingOptions = [.preferredContentSize]
+        host.view.layoutSubtreeIfNeeded()
+        let short = host.preferredContentSize
+        #expect(short.width == 420 && short.height > 0 && short.height < 300)
+        host.rootView = launcher(40)
+        host.view.layoutSubtreeIfNeeded()
+        #expect(host.preferredContentSize == CGSize(width: 420, height: 300))
+        host.rootView = launcher(2)
+        host.view.layoutSubtreeIfNeeded()
+        #expect(host.preferredContentSize == short)
     }
 }
