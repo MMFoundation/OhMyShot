@@ -222,6 +222,8 @@ extension CompositionRoot {
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
                     if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: item.fileURL)) {
+                        // A copy is saved after all: the capture's card, if it said one couldn't be, no longer does.
+                        self.quickAccess.clearFailure(for: entry.id)
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }

@@ -248,6 +248,8 @@ final class ScreenshotFiles {
         }
         didName(chosen.deletingPathExtension().lastPathComponent, offered: offered)
         return Self.logged(await SaveOutcome.saving(into: chosen.deletingLastPathComponent()) {
+            // The capture's own file in History is no place for its copy.
+            try AtomicFileCopy.refuseSaving(over: source.fileURL, at: chosen)
             // Written atomically over a file the person agreed to replace: if reading or encoding fails, it stays as it was.
             if case .file(let url, _) = source, output.isUnchanged, output.format == sourceFormat {
                 try ImageExporter.write(try Data(contentsOf: url), to: chosen)
