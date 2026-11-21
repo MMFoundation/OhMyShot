@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- **Favorites in Capture History.** Add a capture to Favorites from its menu, with the period key, or with VoiceOver, and find it under Show › Favorites. A favorite stays in History until you take it out, however long Keep captures is.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
