@@ -32,6 +32,9 @@ public final class StudioDocument {
     public let folder: URL
     /// The camera's movie, recorded beside the recording; nil when none was.
     public let cameraMovie: URL?
+    /// The recording's sounds kept apart, each in a file of its own; empty when they weren't, and the recording's own
+    /// sound plays as one.
+    let soundFiles: [(sound: StudioSound, url: URL)]
 
     public var project: StudioProject {
         didSet {
@@ -144,6 +147,7 @@ public final class StudioDocument {
         self.background = background
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
+        soundFiles = StudioSound.files(in: folder)
         hasUnexportedChanges = !hasBeenExported || pictureGone
         // Pictures chosen for the background the last time it was open and since put aside can't be taken back
         // with Undo any more: only the one in use stays, with any the project as saved names, in a form this
@@ -190,6 +194,19 @@ public final class StudioDocument {
     /// Whether the camera showed while recording but couldn't be recorded, or its movie is gone since.
     public var cameraFailed: Bool {
         !hasCamera && (telemetry.cameraFailed == true || telemetry.camera != nil)
+    }
+
+    /// The sounds the movie can play, each set on its own; empty for a recording without sound, or before the
+    /// preview is first made.
+    public var sounds: [StudioSound] {
+        composition?.sounds ?? []
+    }
+
+    /// Mutes `sound`, or plays it again, as one step that Undo names.
+    public func setMuted(_ muted: Bool, _ sound: StudioSound) {
+        change(named: muted ? String(localized: "Mute", bundle: .module) : String(localized: "Unmute", bundle: .module)) {
+            project.audio[sound].isMuted = muted
+        }
     }
 
     /// Whether keys were written down while recording, so they can be shown.
@@ -281,8 +298,8 @@ public final class StudioDocument {
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
         return try await Self.assemble(
             project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
-            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, folder: folder, background: background,
-            ringColor: ringColor
+            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, folder: folder, soundFiles: soundFiles,
+            background: background, ringColor: ringColor
         )
     }
 
@@ -302,7 +319,7 @@ public final class StudioDocument {
     @concurrent
     private static func assemble(
         project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
-        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, folder: URL,
+        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, folder: URL, soundFiles: [(sound: StudioSound, url: URL)],
         background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
@@ -323,7 +340,8 @@ public final class StudioDocument {
         )
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
-        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
+        let sounds = soundFiles.map { StudioComposition.SoundSource(sound: $0.sound, asset: AVURLAsset(url: $0.url)) }
+        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera, sounds: sounds)
     }
 
     /// The gradient a background picture that has gone from the project's folder gives way to: the default one.
@@ -489,6 +507,35 @@ public final class StudioDocument {
             if start { zoom.start = min(time, zoom.end - StudioProject.shortestZoom) } else { zoom.end = max(time, zoom.start + StudioProject.shortestZoom) }
         }
         return project.zooms.first { $0.id == id }.map { $0.start...$0.end }
+    }
+
+    /// Holds a zoom on `target`, kept inside the recording, or has it follow the pointer again (nil). Aimed by hand,
+    /// an automatic zoom is no longer placed again with the others, as with any other change to it.
+    public func setZoomTarget(_ id: UUID, _ target: StudioProject.Zoom.Spot?) {
+        updateZoom(id) { $0.target = target?.clamped }
+    }
+
+    /// Where a zoom looks as the movie is now: its spot, or, following the pointer, where the camera looks in the
+    /// frame the preview shows while the zoom is fully in there, else halfway through it, which is fully in; the
+    /// middle of the recording until a movie is made.
+    public func aim(of id: UUID) -> StudioProject.Zoom.Spot {
+        guard let zoom = project.zooms.first(where: { $0.id == id }) else { return .init(x: 0.5, y: 0.5) }
+        if let target = zoom.target { return target }
+        guard let track = composition?.renderer.track, track.width > 0, track.height > 0 else { return .init(x: 0.5, y: 0.5) }
+        let frame = track.frame(at: isFullyIn(zoom) ? shownTime : (zoom.start + zoom.end) / 2)
+        return StudioProject.Zoom.Spot(x: frame.centerX / track.width, y: frame.centerY / track.height).clamped
+    }
+
+    /// The recording's time of the frame the preview shows: the playhead's, or, inside a cut, the cut's end.
+    public var shownTime: Double {
+        recordingTime(movieTime(time))
+    }
+
+    /// Whether `zoom` is fully in in the frame the preview shows: there, done coming in, and not under a stronger one.
+    func isFullyIn(_ zoom: StudioProject.Zoom) -> Bool {
+        guard let track = composition?.renderer.track else { return false }
+        let time = shownTime
+        return time >= zoom.start && time <= zoom.end && abs(track.frame(at: time).zoom - zoom.scale) < 0.01
     }
 
     /// Removes the chosen zoom or camera layout, takes back the chosen cut, or cuts the chosen stretch.
@@ -761,9 +808,11 @@ public final class StudioDocument {
         case .range, .none: false
         }
         if gone { selection = .none }
-        // The preview isn't encoded, so the movie's quality is no reason to film it again.
+        // The preview isn't encoded, so the movie's quality is no reason to film it again, and the player sets how
+        // loud each sound plays as it plays.
         var seen = project
         seen.quality = old.quality
+        seen.audio = old.audio
         if seen != old { scheduleComposition() }
     }
 
@@ -789,4 +838,7 @@ nonisolated public enum StudioFiles {
     public static let project = "project.json"
     /// The camera, recorded in a movie of its own while the screen was.
     public static let camera = "camera.mov"
+    /// The system's sound and the microphone, each as recorded, in a file of its own (`StudioSound`).
+    public static let systemAudio = "system audio.m4a"
+    public static let microphone = "microphone.m4a"
 }
