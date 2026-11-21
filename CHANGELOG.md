@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- A copy in another format, made ahead of a drag as a card appears, can no longer arrive late and stand in for the picture as it is now: a drag, Share…, or upload after you mark up or redact a capture hands over the marked-up picture, never the one from before.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
