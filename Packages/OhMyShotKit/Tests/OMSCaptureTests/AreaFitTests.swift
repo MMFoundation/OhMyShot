@@ -101,6 +101,51 @@ struct AreaFitTests {
         #expect(live.view.area == Self.area)
     }
 
+    /// Nudged away and back to where the fit left it, the area was still changed by the person: ⌘Z leaves it.
+    @Test func anAreaMovedAwayAndBackIsNotPutBack() throws {
+        let (overlay, view) = setup(frame: try Self.frame())
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        _ = view.debugAct("left")
+        _ = view.debugAct("right")
+        #expect(view.area == Self.card)
+        _ = view.debugAct("cmd-z")
+        #expect(view.area == Self.card)
+    }
+
+    /// A remembered area on another display starts before that display's frame arrives: B joins the help with it.
+    @Test func theHelpNamesBOnceTheFrozenFrameArrives() throws {
+        let overlay = OverlayView(display: Self.display)
+        defer { overlay.clear() }
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false)
+        overlay.addSubview(view)
+        view.begin()
+        #expect(view.accessibilityHelp()?.contains(AllInOneSetupView.fitHelp) == false)
+        overlay.show(try Self.frame(), frozen: true)
+        #expect(view.accessibilityHelp()?.hasSuffix(AllInOneSetupView.fitHelp) == true)
+    }
+
+    /// The fit stays inside the area framed: off center in a kept square, the square is moved in from the frame's edge
+    /// rather than reaching past it.
+    @Test func aFitNeverReachesPastTheAreaFramed() throws {
+        let post = CGRect(x: 110, y: 210, width: 20, height: 80)
+        let square = CGRect(x: 100, y: 200, width: 100, height: 100)
+        let (overlay, view) = setup(area: square, frame: try Self.frame(card: post), kind: .sizing, ratio: AspectRatio(width: 1, height: 1))
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        #expect(view.area == CGRect(x: 100, y: 210, width: 80, height: 80))
+    }
+
+    /// An area framed smaller than the smallest area has no fit that stays inside it.
+    @Test func anAreaSmallerThanTheSmallestStaysAsDrawn() throws {
+        let dot = CGRect(x: 200, y: 280, width: 6, height: 6)
+        let tight = CGRect(x: 195, y: 275, width: 14, height: 14)
+        let (overlay, view) = setup(area: tight, frame: try Self.frame(card: dot))
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        #expect(view.area == tight)
+    }
+
     @Test func anAreaWithNoEdgesInsideStaysAsDrawn() throws {
         let blank = CGRect(x: 450, y: 100, width: 200, height: 100)
         let (overlay, view) = setup(area: blank, frame: try Self.frame())
