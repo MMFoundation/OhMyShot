@@ -221,8 +221,7 @@ final class UploadCoordinator {
                 defer { deleting.remove(record.id) }
                 do {
                     try await uploader.delete(record, from: destination)
-                    records.forget(id: record.id)
-                    refreshCard(record)
+                    records.forgetDeleted(record).forEach(refreshCard)
                     tell(String(localized: "Deleted from storage"), near: record.captureID)
                     Log.upload.notice("Deleted an upload from \(destination.kindName, privacy: .public)")
                 } catch {

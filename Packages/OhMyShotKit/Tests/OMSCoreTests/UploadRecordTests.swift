@@ -10,10 +10,10 @@ struct UploadRecordTests {
 
     private func record(
         capture: UUID? = UUID(), date: Date = .now, expires: Date? = nil, key: String? = "a/b.png", deletion: URL? = nil,
-        link: String = "https://x.test/b.png"
+        link: String = "https://x.test/b.png", to destination: UploadDestination? = nil
     ) -> UploadRecord {
         UploadRecord(
-            captureID: capture, date: date, fileName: "b.png", destination: destination(),
+            captureID: capture, date: date, fileName: "b.png", destination: destination ?? self.destination(),
             result: UploadResult(link: URL(string: link)!, deletionURL: deletion, fileName: "b.png", expiresAt: expires, remoteKey: key)
         )
     }
@@ -79,6 +79,34 @@ struct UploadRecordTests {
         #expect(store.link(for: capture, at: now) == older.link)
         #expect(store.link(for: capture, at: now.addingTimeInterval(3599)) == older.link)
         #expect(store.link(for: capture, at: now.addingTimeInterval(3600)) == nil)
+    }
+
+    @Test func deletingAFileForgetsEveryUploadOfIt() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let store = UploadRecordStore(fileURL: nil)
+        let capture = UUID(), storage = destination()
+        // Sent twice under its own name to the same storage, so the second replaced the first there; and once elsewhere.
+        let first = record(capture: capture, date: now.addingTimeInterval(-180), key: "b.png", link: "https://x.test/1/b.png", to: storage)
+        let elsewhere = record(capture: capture, date: now.addingTimeInterval(-120), key: "b.png", link: "https://y.test/b.png")
+        let second = record(capture: capture, date: now.addingTimeInterval(-60), key: "b.png", link: "https://x.test/2/b.png", to: storage)
+        store.add(first)
+        store.add(elsewhere)
+        store.add(second)
+        let forgotten = store.forgetDeleted(second)
+        #expect(Set(forgotten.map(\.id)) == [first.id, second.id])
+        #expect(store.records.map(\.id) == [elsewhere.id])
+        #expect(store.link(for: capture, at: now) == elsewhere.link)
+    }
+
+    @Test func aDeletedFileWithoutAKeyTakesOnlyItsOwnRecord() {
+        let store = UploadRecordStore(fileURL: nil)
+        let capture = UUID(), storage = destination()
+        let older = record(capture: capture, date: .now.addingTimeInterval(-60), key: nil, deletion: URL(string: "https://x.test/delete/1"), to: storage)
+        let newer = record(capture: capture, key: nil, deletion: URL(string: "https://x.test/delete/2"), to: storage)
+        store.add(older)
+        store.add(newer)
+        #expect(store.forgetDeleted(newer).map(\.id) == [newer.id])
+        #expect(store.records.map(\.id) == [older.id])
     }
 
     @Test func removalIsASignedRequestOrTheServersAddress() {
