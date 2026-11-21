@@ -22,6 +22,14 @@ struct AnnotationDisplayChangeTests {
         #expect(OverlayController.keepsAnnotating(on: Self.external, in: DisplayLayout(displays: [Self.builtIn, Self.external, Self.display(3, x: -800)])))
     }
 
+    @Test func itsOwnDisplayRenamedLeavesTheAnnotationBe() {
+        // A second monitor of the same model plugged in: macOS numbers the first one's name, and nothing else changes.
+        let renamed = DisplayInfo(
+            id: 2, name: "Display 2 (1)", frame: Self.external.frame, pixelSize: Self.external.pixelSize, backingScale: 1, maximumPotentialEDR: 1
+        )
+        #expect(OverlayController.keepsAnnotating(on: Self.external, in: DisplayLayout(displays: [Self.builtIn, renamed, Self.display(3, x: 2400)])))
+    }
+
     @Test func itsOwnDisplayGoneMovedOrResizedEndsIt() {
         #expect(!OverlayController.keepsAnnotating(on: Self.external, in: DisplayLayout(displays: [Self.builtIn])))
         // Moved to the other side of the built-in display.

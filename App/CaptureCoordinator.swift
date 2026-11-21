@@ -259,7 +259,7 @@ final class CaptureCoordinator {
     func displaysChanged(to layout: DisplayLayout) {
         if let display = overlay.annotationDisplay {
             if OverlayController.keepsAnnotating(on: display, in: layout) { return }
-            if let view = inPlaceView, view.hasMarks { view.openInEditor() }
+            inPlaceView?.openInEditorIfMarked()
         }
         overlay.cancel()
     }
