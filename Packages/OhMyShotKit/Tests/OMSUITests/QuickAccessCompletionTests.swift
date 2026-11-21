@@ -245,4 +245,34 @@ struct QuickAccessCompletionTests {
         controller.perform(.copyLink, on: capture, keyed: false)
         #expect(controller.isEmpty)
     }
+
+    /// Copy clicked sends Copy to the card's controller, and with Option held, Copy that keeps the card.
+    @Test func copyClickedWithOptionKeepsTheCard() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        controller.add(try item())
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        var sent: [CardCommand] = []
+        card.onCommand = { sent.append($0) }
+        let button = card.copyButton
+        #expect(button.sendAction(button.action, to: button.target))
+        #expect(sent == [.copy])
+        #expect(CaptureCardView.copyCommand(with: .option) == .copyAndKeep)
+        #expect(CaptureCardView.copyCommand(with: [.option, .shift]) == .copyAndKeep)
+        #expect(CaptureCardView.copyCommand(with: .command) == .copy)
+    }
+
+    /// ⌥⌘C leaves the keyboard on the card, to be copied again or used further; ⌘C gives it back to the app in front.
+    @Test(arguments: [(CardCommand.copyAndKeep, true), (.copy, false)])
+    func copyWithOptionKeepsTheKeyboard(command: CardCommand, keepsKeyboard: Bool) throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        controller.focusLatest()
+        #expect(card.isSelected)
+        controller.perform(command, on: capture, keyed: true)
+        #expect(card.isSelected == keepsKeyboard)
+    }
 }
