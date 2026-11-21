@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Marks can be reached from the keyboard and with VoiceOver, in the editor and in place. Tab and Shift-Tab step through the marks in the order they were drawn, bring each into view, and move on from the canvas after the last. VoiceOver reads each mark by name, such as "Arrow, Red", "Text: Fix this", or "Counter 3", and can select or delete it. With a mark selected or a tool in hand, 1 to 9 choose the style capsule's colors and [ and ] step its sizes; the rail's right-click menu and the capsule's tooltips show these keys.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
