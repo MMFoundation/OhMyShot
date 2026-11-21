@@ -289,6 +289,36 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
+    // MARK: Background
+
+    /// Asks for a picture for the movie's background, in a sheet, and makes it the background: from the Desktop
+    /// Pictures folder until one has been chosen. A file that isn't a picture beeps, as in the editor.
+    func chooseBackgroundPicture() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = String(localized: "Use Picture", bundle: .module)
+        panel.message = String(localized: "Choose a picture for the movie’s background.", bundle: .module)
+        if studio.lastPicture == nil {
+            let pictures = URL(filePath: "/System/Library/Desktop Pictures", directoryHint: .isDirectory)
+            if FileManager.default.fileExists(atPath: pictures.path(percentEncoded: false)) { panel.directoryURL = pictures }
+        }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await studio.choosePicture(at: url)
+                } catch {
+                    Log.studio.error("Choosing a Studio background picture failed: \(String(describing: error), privacy: .public)")
+                    NSSound.beep()
+                }
+            }
+        }
+    }
+
     // MARK: Window
 
     /// Whether closing would export: the project changed since the movie in the history was made.

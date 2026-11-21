@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Studio can set a recording on a picture or on a blur of itself, as screenshots can be: Choose Image… under Background picks any picture, which is kept in the project so it goes wherever the project goes, and Blurred recording puts the recording behind itself, blurred until only its colors are left, as it plays. Both show in the preview and the exported movie alike.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
