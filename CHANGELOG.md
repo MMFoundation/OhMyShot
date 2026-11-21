@@ -9,6 +9,14 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Pins come back after OhMyShot quits, updates, or crashes: each where it was, at its zoom, opacity, and lock, hidden if the pins were hidden, with its picture, text, or color. Turn it off in Settings › Tools › Pins (Bring pins back after relaunch), which is off by default when Keep captures is Never. Closing a pin removes what was kept of it.
+
+### Fixed
+
+- A pin left on a display that was unplugged, or past the edge after the displays were rearranged, moves onto the nearest display.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

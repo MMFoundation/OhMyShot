@@ -372,6 +372,13 @@ final class CompositionRoot {
             return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers).union(sketch.canvasWindowIDs)
         }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
+        // The pins open when the app last quit, once captures can take them in.
+        pins.restore()
+        observations.append(Task { [weak self] in
+            for await _ in Observations({ settings.pinsComeBack }) {
+                self?.pins.keepingChanged()
+            }
+        })
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
@@ -404,6 +411,7 @@ final class CompositionRoot {
             captures.cancelSelfTimer()
             overlay.prepare()
             quickAccess.displaysChanged()
+            pins.displaysChanged()
             if settings.hidesDesktopIcons { desktopIcons.refresh() }
         }
 
@@ -430,6 +438,7 @@ final class CompositionRoot {
         quickAccess.dismissFirstCaptureHint()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
         quickAccess.finishTrashingNow()
+        pins.finishKeeping()
         textReader.stop()
     }
 

@@ -13,7 +13,7 @@ struct PinAppearance: Equatable {
 /// OhMyShot forward, as Spotlight does: Escape, the arrows, and ⌘C reach it while the app in front stays
 /// in front. Its shadow is the system window shadow, as the Translation Lens's, and lies outside the
 /// window, so nothing around a pin catches the pointer.
-final class PinWindow: NSPanel {
+final class PinWindow: NSPanel, NSWindowDelegate {
     let pin: PinController.Pin
     /// The pin's size in points at 100 percent.
     let baseSize: CGSize
@@ -29,10 +29,13 @@ final class PinWindow: NSPanel {
     var onCloseAll: (() -> Void)?
     /// Locked or unlocked: the menu bar's Unlock Pins follows.
     var onChange: (() -> Void)?
+    /// Moved, zoomed, or faded: what is kept for the next launch follows.
+    var onAdjust: (() -> Void)?
 
-    /// `textReader` reads a picture's text for Live Text.
+    /// `textReader` reads a picture's text for Live Text. `opacity` is the picture's, as a pin brought back after a
+    /// relaunch had it.
     init(
-        pin: PinController.Pin, frame: CGRect, zoom: CGFloat, appearance: PinAppearance, actions: PinController.Actions,
+        pin: PinController.Pin, frame: CGRect, zoom: CGFloat, opacity: CGFloat = 1, appearance: PinAppearance, actions: PinController.Actions,
         textReader: PinTextReader? = nil
     ) {
         self.pin = pin
@@ -53,6 +56,9 @@ final class PinWindow: NSPanel {
         pinView.autoresizingMask = [.width, .height]
         contentView = pinView
         pinView.pinWindow = self
+        self.opacity = PinGeometry.clamp(opacity, to: PinGeometry.opacityRange)
+        pinView.setPictureOpacity(self.opacity)
+        delegate = self
         updateAccessibilityValue()
     }
 
@@ -106,6 +112,29 @@ final class PinWindow: NSPanel {
     override func resignKey() {
         super.resignKey()
         pinView.isFocused = false
+    }
+
+    /// Brings the pin in front of every app's windows, with its shadow following its rounded picture and the lock badge
+    /// of a pin locked while out of sight.
+    func show() {
+        orderFrontRegardless()
+        if let panel = lockBadgePanel, panel.parent == nil { addChildWindow(panel, ordered: .above) }
+        // It takes the keys only when clicked: a pin stays, and taking them now would leave the app in front unable
+        // to type.
+        invalidateShadow()
+    }
+
+    /// The pin as it is kept for the next launch.
+    var record: PinArchive.Record? {
+        PinArchive.Record(pin, frame: frame, zoom: zoom, opacity: opacity, locked: isLocked)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        onAdjust?()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        onAdjust?()
     }
 
     func apply(_ appearance: PinAppearance) {
@@ -169,6 +198,7 @@ final class PinWindow: NSPanel {
         invalidateShadow()
         pinView.showReading(String(localized: "Opacity \(Int((opacity * 100).rounded()))%", bundle: .module))
         updateAccessibilityValue()
+        onAdjust?()
     }
 
     func move(by delta: CGVector) {

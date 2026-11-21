@@ -203,6 +203,7 @@ extension SettingsTab {
                     String(localized: "Shadow", bundle: .module),
                     String(localized: "Border", bundle: .module),
                     String(localized: "Show in screenshots", bundle: .module),
+                    String(localized: "Bring pins back after relaunch", bundle: .module),
                 ]),
             ]
         case .sharing:

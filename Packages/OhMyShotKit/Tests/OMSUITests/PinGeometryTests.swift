@@ -96,4 +96,46 @@ struct PinGeometryTests {
         #expect(anchor == CGPoint(x: 100, y: 200))
         #expect(zoom == 2)
     }
+
+    /// The built-in display at the origin, with the menu bar and the Dock out of its visible frame, and an external one
+    /// to its right.
+    private let displays: [(frame: CGRect, visible: CGRect)] = [
+        (CGRect(x: 0, y: 0, width: 1000, height: 800), CGRect(x: 0, y: 70, width: 1000, height: 705)),
+        (CGRect(x: 1000, y: 0, width: 2000, height: 1200), CGRect(x: 1000, y: 0, width: 2000, height: 1175)),
+    ]
+
+    @Test func aPinThatCanStillBeTakenHoldOfStays() {
+        #expect(PinGeometry.recovered(CGRect(x: 1500, y: 400, width: 300, height: 200), on: displays) == nil)
+        // Mostly past the edge of the screen, with 20 points of it still on it.
+        #expect(PinGeometry.recovered(CGRect(x: 2980, y: 400, width: 300, height: 200), on: displays) == nil)
+        // A pin smaller than that needs to be wholly on a screen, and not half of it.
+        #expect(PinGeometry.recovered(CGRect(x: 985, y: 300, width: 10, height: 10), on: displays) == nil)
+        #expect(PinGeometry.recovered(CGRect(x: 500, y: -5, width: 10, height: 10), on: displays) == CGRect(x: 500, y: 70, width: 10, height: 10))
+    }
+
+    @Test func aPinLeftOnADisplayThatWentComesOntoTheNearest() throws {
+        let alone = [displays[0]]
+        // Where the external display was: onto the built-in one's right edge, at the same height.
+        let moved = try #require(PinGeometry.recovered(CGRect(x: 1500, y: 400, width: 300, height: 200), on: alone))
+        #expect(moved == CGRect(x: 700, y: 400, width: 300, height: 200))
+        // Below the built-in display: up, above the Dock.
+        let below = try #require(PinGeometry.recovered(CGRect(x: 100, y: -500, width: 300, height: 200), on: alone))
+        #expect(below == CGRect(x: 100, y: 70, width: 300, height: 200))
+        // A sliver too thin to take hold of is as good as gone.
+        #expect(PinGeometry.recovered(CGRect(x: 995, y: 400, width: 300, height: 200), on: alone) == CGRect(x: 700, y: 400, width: 300, height: 200))
+    }
+
+    @Test func aPinLargerThanItsNewScreenKeepsItsTopLeftCornerOnIt() throws {
+        let alone = [displays[0]]
+        let moved = try #require(PinGeometry.recovered(CGRect(x: 1200, y: 100, width: 1600, height: 1000), on: alone))
+        #expect(moved == CGRect(x: 0, y: -225, width: 1600, height: 1000))
+        #expect(moved.minX == alone[0].visible.minX && moved.maxY == alone[0].visible.maxY)
+    }
+
+    @Test func thePinGoesToTheScreenNearestItsCenter() throws {
+        // Far above the external display, which is taller: there, not on the built-in display.
+        let moved = try #require(PinGeometry.recovered(CGRect(x: 1100, y: 3000, width: 200, height: 100), on: displays))
+        #expect(moved == CGRect(x: 1100, y: 1075, width: 200, height: 100))
+        #expect(PinGeometry.recovered(CGRect(x: 1100, y: 3000, width: 200, height: 100), on: []) == nil)
+    }
 }

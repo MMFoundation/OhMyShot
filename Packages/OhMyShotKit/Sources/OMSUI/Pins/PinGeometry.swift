@@ -24,6 +24,27 @@ enum PinGeometry {
         return (CGRect(x: visible.midX - fitted.width / 2, y: visible.midY - fitted.height / 2, width: fitted.width, height: fitted.height), fit)
     }
 
+    /// Where a pin at `frame` goes when the displays change, or when it comes back after a relaunch: nil while enough of
+    /// it to take hold of (`grip` points each way, or all of it when it is smaller) is on one of `screens` (frames and
+    /// visible frames, global points). Else onto the screen nearest its center, inside that screen's visible frame, at the
+    /// same size: as near as it fits to where it was, and its top left corner first when it is larger.
+    static func recovered(_ frame: CGRect, on screens: [(frame: CGRect, visible: CGRect)], grip: CGFloat = 20) -> CGRect? {
+        let needed = CGSize(width: min(grip, frame.width), height: min(grip, frame.height))
+        let shown = screens.contains { screen in
+            let part = screen.frame.intersection(frame)
+            return !part.isNull && part.width >= needed.width && part.height >= needed.height
+        }
+        guard !shown else { return nil }
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        func distance(to rect: CGRect) -> CGFloat {
+            hypot(max(rect.minX - center.x, 0, center.x - rect.maxX), max(rect.minY - center.y, 0, center.y - rect.maxY))
+        }
+        guard let visible = screens.min(by: { distance(to: $0.frame) < distance(to: $1.frame) })?.visible else { return nil }
+        let x = frame.width > visible.width ? visible.minX : min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        let y = frame.height > visible.height ? visible.maxY - frame.height : min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        return CGRect(x: x, y: y, width: frame.width, height: frame.height)
+    }
+
     /// `frame` at `size`, keeping `anchor` (a point in the same space: the pointer, or the pin's center)
     /// where it is in it. The size comes from the pin's own size and zoom, never from `frame`: the window
     /// server rounds a window's frame to whole points, and sizes scaled from rounded frames drift apart step
