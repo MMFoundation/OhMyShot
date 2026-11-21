@@ -32,6 +32,18 @@ struct ScreenCapturerTests {
         #expect(AreaFrame.local(builtIn.frame, on: builtIn) == CGRect(x: 0, y: 0, width: 2056, height: 1329))
     }
 
+    @Test func windowsArePutTogetherWhereTheyAreNowBackToFront() {
+        let notes = WindowTarget(id: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100), ownerName: "Notes", title: nil)
+        let mail = WindowTarget(id: 2, frame: CGRect(x: 200, y: 0, width: 100, height: 100), ownerName: "Mail", title: nil)
+        let closed = WindowTarget(id: 3, frame: CGRect(x: 400, y: 0, width: 50, height: 50), ownerName: "Maps", title: nil)
+        // Since they were chosen, Notes was moved and made larger, and Mail came to the front.
+        let notesNow = WindowTarget(id: 1, frame: CGRect(x: 50, y: 60, width: 300, height: 200), ownerName: "Notes", title: nil)
+        let other = WindowTarget(id: 9, frame: CGRect(x: 0, y: 0, width: 800, height: 600), ownerName: "Safari", title: nil)
+        let placed = ScreenCapturer.backToFront([notes, mail, closed], in: [mail, other, notesNow])
+        #expect(placed.map(\.id) == [3, 1, 2])
+        #expect(placed.map(\.frame) == [closed.frame, notesNow.frame, mail.frame])
+    }
+
     @Test func compositeWindowsCombinesMultipleWindowsInBoundingBox() throws {
         func solidWindow(width: Int, height: Int, color: CGColor) throws -> CGImage {
             let ctx = try #require(CGContext(
