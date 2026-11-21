@@ -11,7 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
-- A Shortcuts capture action hands its screenshot to the next action with Keep Captures at Never and Quick Access off, where the capture used to be deleted before the shortcut could read it. Nothing is kept once it has been handed on.
+- A Shortcuts capture action hands its screenshot to the next action with Keep Captures at Never and Quick Access off, where the capture used to be deleted before the shortcut could read it. Nothing is kept once it has been handed on, but for a pinned capture, which is left as Capture Area and Pin leaves it.
 
 ## [0.3.0] - 2026-11-21
 

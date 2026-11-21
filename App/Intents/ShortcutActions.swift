@@ -64,7 +64,8 @@ final class ShortcutActions {
     func capture(_ command: AutomationCommand) async throws -> (data: Data, name: String, type: UTType)? {
         try requireScreenRecording()
         if command.captureAction == .upload, !uploads.canUpload { throw ShortcutFailure.noUploadDestination }
-        return try await holds.holding { hold -> (data: Data, name: String, type: UTType)? in
+        // A pinned capture is left as Capture Area and Pin leaves it, for the pin's Save and drag.
+        return try await holds.holding(lettingGo: command.captureAction != .pin) { hold -> (data: Data, name: String, type: UTType)? in
             guard let entry = await kept(command, holding: hold) else { return nil }
             return try await files.shortcutFile(for: entry)
         }

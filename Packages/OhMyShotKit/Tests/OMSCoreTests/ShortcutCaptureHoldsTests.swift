@@ -56,6 +56,46 @@ struct ShortcutCaptureHoldsTests {
         #expect(released == [capture])
     }
 
+    /// The capture waits on the overlay, which a stopped shortcut doesn't end: the area chosen after the shortcut was
+    /// stopped is still kept, held, and let go once the shortcut's work returns.
+    @Test func aShortcutStoppedWhileChoosingLetsTheCaptureGoOnceItIsKept() async {
+        @MainActor final class Overlay {
+            var chosen: CheckedContinuation<Void, Never>?
+        }
+        var released = [UUID]()
+        let holds = ShortcutCaptureHolds { released.append($0) }
+        let capture = UUID(), overlay = Overlay()
+        let shortcut = Task { @MainActor in
+            await holds.holding { hold -> String? in
+                await withCheckedContinuation { overlay.chosen = $0 }
+                hold(capture)
+                #expect(holds.heldIDs == [capture])
+                return Task.isCancelled ? nil : "read"
+            }
+        }
+        while overlay.chosen == nil { await Task.yield() }
+        shortcut.cancel()
+        #expect(released.isEmpty)
+        overlay.chosen?.resume()
+        #expect(await shortcut.value == nil)
+        #expect(holds.heldIDs.isEmpty)
+        #expect(released == [capture])
+    }
+
+    @Test func aPinnedCaptureIsLeftAsAPinWithoutAShortcutLeavesIt() async {
+        var released = [UUID]()
+        let holds = ShortcutCaptureHolds { released.append($0) }
+        let capture = UUID()
+        let file = await holds.holding(lettingGo: false) { hold in
+            hold(capture)
+            #expect(holds.heldIDs == [capture])
+            return "read"
+        }
+        #expect(file == "read")
+        #expect(holds.heldIDs.isEmpty)
+        #expect(released.isEmpty)
+    }
+
     @Test func aShortcutThatKeptNothingLetsNothingGo() async {
         var released = [UUID]()
         let holds = ShortcutCaptureHolds { released.append($0) }

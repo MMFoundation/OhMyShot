@@ -15,14 +15,18 @@ public final class ShortcutCaptureHolds {
     }
 
     /// Runs a shortcut's `work`, which calls `hold` with its capture's ID as soon as the capture is kept. The capture is
-    /// held until `work` ends: with the file read, with an error, or cancelled. A `hold` after that holds nothing.
-    public func holding<Result>(_ work: (_ hold: @escaping (UUID) -> Void) async throws -> Result) async rethrows -> Result {
+    /// held until `work` ends: with the file read, with an error, or cancelled. A `hold` after that holds nothing. With
+    /// `lettingGo` off the hold ends without a word, and the capture is left as one kept without a shortcut is: a pinned
+    /// capture, which the pin's Save and drag still read.
+    public func holding<Result>(
+        lettingGo: Bool = true, _ work: (_ hold: @escaping (UUID) -> Void) async throws -> Result
+    ) async rethrows -> Result {
         var held = Set<UUID>(), ended = false
         defer {
             ended = true
             for id in held {
                 heldIDs.remove(id)
-                released(id)
+                if lettingGo { released(id) }
             }
         }
         return try await work { [weak self] id in
