@@ -61,6 +61,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Save As… for a recording on a Quick Access card keeps the movie it replaces until the new copy is complete. Choosing the capture's own file in Capture History, for a recording or a screenshot, leaves it as it is and says the copy couldn't be saved, instead of closing the card as saved, which with History off could delete it.
 - When Settings ask for a watermark, another format, 1×, sRGB, or a border and that copy can't be made, a drag, Share…, Send by Email, an upload, or Capture History's Copy sends nothing, instead of the capture without them, and says why ("Couldn’t prepare the picture: the disk is full") on the card or by the pointer.
 - A capture whose Capture History record can't be written (on a full disk, say) no longer leaves its file behind in the history folder, where nothing showed it and Keep captures never removed it. A recording goes back where it was.
+- The system log no longer shows the names of captures and files, where they are kept, the text of errors about them, or the server a cloud reading goes to, so a file name made from a window's title or typed in Save As no longer turns up in a log collected for a bug report. Most errors still show their domain and code, so the log still says what went wrong; a failed Studio save or History text reading only says that it failed.
 
 ## [0.3.0] - 2026-11-21
 
