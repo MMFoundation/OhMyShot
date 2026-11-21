@@ -397,10 +397,10 @@ final class CompositionRoot {
             await self?.files.copy(.init(image), png: png, name: name, scale: scale) ?? false
         }
 
-        displays.onChange = { [weak self] _ in
+        displays.onChange = { [weak self] layout in
             guard let self else { return }
             shareableContent.refresh()
-            overlay.cancel()
+            captures.displaysChanged(to: layout)
             captures.cancelSelfTimer()
             overlay.prepare()
             quickAccess.displaysChanged()

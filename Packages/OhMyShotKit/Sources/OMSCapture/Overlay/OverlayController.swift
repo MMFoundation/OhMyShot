@@ -564,6 +564,19 @@ public final class OverlayController {
         isActive && entries.values.contains { $0.view.isAnnotating }
     }
 
+    /// The display in-place annotation is showing on, while it is.
+    public var annotationDisplay: DisplayInfo? {
+        guard isActive else { return nil }
+        return entries.values.first { $0.view.isAnnotating }?.view.display
+    }
+
+    /// Whether in-place annotation on `display` can go on once the displays are `layout`: only while that display is there
+    /// as it was (where it was, as large, at the same scale), as the marks are drawn on its frozen frame. Displays
+    /// plugged in, taken away, or moved around it leave it be.
+    public static func keepsAnnotating(on display: DisplayInfo, in layout: DisplayLayout) -> Bool {
+        layout.display(id: display.id) == display
+    }
+
     /// The recording bar's view while a choice is framed, for scripted checks.
     var recordingSetup: RecordingSetupView? { hostedSetup() }
 

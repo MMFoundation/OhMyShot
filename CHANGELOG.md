@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Marking up in place, plugging in, taking away, or rearranging a display no longer throws the marks away. While the display holding the selection stays as it was, the annotation goes on; when that display goes or changes, the marked selection opens in the editor, kept in Capture History with its marks editable, as Open in Editor does.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
