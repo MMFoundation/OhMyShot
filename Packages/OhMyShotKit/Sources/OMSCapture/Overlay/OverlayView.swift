@@ -46,6 +46,10 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
     /// All-In-One's Measure (M): the overlay turns into Measure, on the screen as it is held.
     func overlayViewDidRequestMeasure(_ view: OverlayView)
+    /// ?: the keys of the overlay's purpose show by the edge of the display under the pointer, or go when they show.
+    func overlayViewDidToggleKeys(_ view: OverlayView)
+    /// A key other than ?: the keys go wherever they show. True when they showed.
+    func overlayViewDidPutKeysAway(_ view: OverlayView) -> Bool
 }
 
 extension OverlayViewDelegate {
@@ -57,6 +61,8 @@ extension OverlayViewDelegate {
     func overlayViewDidRequestWindowPicker(_ view: OverlayView) {}
     func overlayViewDidRequestLastArea(_ view: OverlayView) {}
     func overlayViewDidResetDrag(_ view: OverlayView) {}
+    func overlayViewDidToggleKeys(_ view: OverlayView) { view.toggleKeys(view.keyHelp) }
+    func overlayViewDidPutKeysAway(_ view: OverlayView) -> Bool { view.putKeysAway() }
 }
 
 /// The capture overlay on one display: a lightly dimmed screen, the selection with its size, a small
@@ -135,6 +141,8 @@ final class OverlayView: NSView {
     /// The edges of the selection that snapped to text, drawn over `border` in the accent.
     private let snapEdges = CAShapeLayer()
     private let sizePill = ReadingCapsule()
+    /// The keys of what is being chosen, a sentence a line, shown by ? near the display's edge.
+    private let keyList = ReadingCapsule()
     private let crosshairOutline = CAShapeLayer()
     private let crosshair = CAShapeLayer()
     private let loupeShadow = CAShapeLayer()
@@ -250,6 +258,7 @@ final class OverlayView: NSView {
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
         setAccessibilityHelp(snapsToText ? Sentences.joined(help, String(localized: "The selection’s edges snap to text; hold Command to place them freely.", bundle: .module)) : help)
+        putKeysAway()
         withoutAnimation {
             layoutLoupe()
             applyAppearance()
@@ -314,6 +323,7 @@ final class OverlayView: NSView {
         highlightedWindow = nil
         measure?.clear()
         isAnnotating = false
+        putKeysAway()
         for subview in subviews where subview !== toolbar {
             subview.removeFromSuperview()
         }
@@ -763,6 +773,13 @@ final class OverlayView: NSView {
             super.keyDown(with: event)
             return
         }
+        // ? shows the keys of what is being chosen by the display's edge; Escape, or any other key, puts them away, and
+        // Escape does nothing more then.
+        if event.charactersIgnoringModifiers == "?", event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            delegate?.overlayViewDidToggleKeys(self)
+            return
+        }
+        if delegate?.overlayViewDidPutKeysAway(self) == true, event.keyCode == 53 { return }
         let character = event.charactersIgnoringModifiers?.lowercased()
         if character == "w", event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty,
            !isDraggingSelection, purpose == .screenshot || purpose == .record {
@@ -864,6 +881,66 @@ final class OverlayView: NSView {
         delegate?.overlayView(self, didCopyMeasurement: text, ending: false)
         measure?.flashCopied()
         return true
+    }
+
+    // MARK: Keys
+
+    /// The keys of the overlay's purpose, as its VoiceOver help says them.
+    var keyHelp: String { accessibilityHelp() ?? "" }
+
+    /// Whether the keys show on this display.
+    var showsKeys: Bool { !keyList.layer.isHidden }
+
+    /// What the keys show, a sentence a line, for tests.
+    var debugKeys: String { keyList.text }
+
+    /// Shows `help`'s keys a sentence a line in a reading capsule near this display's edge (`keysFrame`), over everything
+    /// the overlay shows; it is part of the overlay, so it is never in a capture.
+    func showKeys(_ help: String) {
+        let lines = Sentences.split(help)
+        guard !lines.isEmpty else { return }
+        let mouse = NSEvent.mouseLocation
+        withoutAnimation {
+            keyList.maximumTextWidth = max(bounds.width - 2 * Self.keysInset - 22, 160)
+            keyList.text = lines.joined(separator: "\n")
+            keyList.layer.frame = Self.keysFrame(
+                size: keyList.layer.bounds.size, pointer: display.frame.contains(mouse) ? local(mouse) : pointer, in: bounds,
+                avoiding: toolbar.isHidden ? nil : toolbar.frame
+            )
+            keyList.layer.isHidden = false
+        }
+        VoiceOver.announce(help, from: self)
+    }
+
+    /// Shows `help`'s keys, or puts them away when they show.
+    func toggleKeys(_ help: String) {
+        if !putKeysAway() { showKeys(help) }
+    }
+
+    /// Puts the keys away; true when they showed.
+    @discardableResult
+    func putKeysAway() -> Bool {
+        guard showsKeys else { return false }
+        withoutAnimation { keyList.layer.isHidden = true }
+        return true
+    }
+
+    /// How far in from the display's top or bottom edge the keys sit.
+    static let keysInset: CGFloat = 40
+
+    /// Where the keys go (y up, as this view lays out): centered across `bounds`, `keysInset` in from its top or bottom
+    /// edge, whichever is further from `pointer` (the bottom without one), so they never cover what it points at; at the
+    /// bottom, 12 pt over `bar` when it shows. Kept 6 pt inside, as every reading is.
+    static func keysFrame(size: CGSize, pointer: CGPoint?, in bounds: CGRect, avoiding bar: CGRect?) -> CGRect {
+        let bottom = max(bounds.minY + keysInset, (bar?.maxY ?? -.greatestFiniteMagnitude) + 12)
+        let top = bounds.maxY - keysInset - size.height
+        let pointsLow = pointer.map { $0.y < bounds.midY } ?? false
+        let y = pointsLow ? top : bottom
+        let room = bounds.insetBy(dx: 6, dy: 6)
+        return CGRect(
+            x: min(max(bounds.midX - size.width / 2, room.minX), room.maxX - size.width),
+            y: min(max(y, room.minY), room.maxY - size.height), width: size.width, height: size.height
+        )
     }
 
     /// Tells VoiceOver what the crosshair is on now (the color, or the measurement), for keys that move it
@@ -980,7 +1057,11 @@ final class OverlayView: NSView {
 
         sizePill.setScale(display.backingScale)
         loupePill.setScale(display.backingScale)
-        for sublayer in [backdrop, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
+        keyList.setScale(display.backingScale)
+        // Over what a frame set up for its next step draws on this view (its views lie over this view's own layers),
+        // and over the lens raised there.
+        keyList.layer.zPosition = 2
+        for sublayer in [backdrop, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer, keyList.layer] {
             root.addSublayer(sublayer)
         }
         withoutAnimation {
@@ -1035,6 +1116,7 @@ final class OverlayView: NSView {
         let isDark = effectiveAppearance.isDark
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
+        keyList.applyAppearance(dark: isDark, contrast: increasedContrast)
         // Text: the selection reads as selected text (the system's selection color, lightly filled,
         // edged in the accent), over an undimmed screen. Screenshot: a white edge over a soft outline.
         let text = purpose == .text

@@ -12,6 +12,7 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Added
 
 - On a frozen screen, B fits a framed area to the edges of what it holds, as Measure fits a box, so a rough drag around a card, a button, or a picture lands on it. It works in All-In-One's framed area and in Capture Area's size control (Tab), and it keeps the shape the area keeps. Press B again, or Command-Z, to put the area back.
+- Press ? while choosing an area to see its keys beside the screen's edge; Escape or any other key puts them away. Every key OhMyShot answers, from the capture overlay to the editor, Quick Access, pins, and History, is listed in a new keyboard reference, linked from the foot of Settings › Shortcuts.
 
 ## [0.3.0] - 2026-11-21
 
