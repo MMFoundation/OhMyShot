@@ -43,8 +43,9 @@ extension CompositionRoot {
     /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
     /// the copy is made. When that copy cannot be made nothing is sent, and the card, or the reading by the pointer, says
-    /// why: the capture itself would leave without the watermark, format, or border Settings promise.
-    private func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
+    /// why: the capture itself would leave without the watermark, format, or border Settings promise. `scale` is the picture's
+    /// pixels per point where the history has no record of it (a project's).
+    func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil, scale: Double? = nil) {
         guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
@@ -56,7 +57,7 @@ extension CompositionRoot {
             return showSaveFailure(.converting(error), onCardOf: captureID)
         }
         let name = fileURL.deletingPathExtension().lastPathComponent
-        let scale = history.item(id: captureID)?.pixelsPerPoint
+        let scale = history.item(id: captureID)?.pixelsPerPoint ?? scale
         Task {
             switch await files.exportedFile(forPictureData: data, named: name, scale: scale) {
             case .success(let file):
@@ -201,6 +202,10 @@ extension CompositionRoot {
                 loaded.image, pixelsPerPoint: loaded.scale, title: item.fileURL.deletingPathExtension().lastPathComponent
             )
         }
+        actions.copyText = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: item.fileURL)
+        }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? .success(item.fileURL) }
         actions.codes = { [weak self] item in
             guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
@@ -282,6 +287,10 @@ extension CompositionRoot {
             }
         )
         historyActions.isBeingEdited = { [weak self] entry in self?.annotations.openCaptureIDs.contains(entry.id) ?? false }
+        historyActions.copyText = { [weak self] entry in
+            guard let self, entry.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: history.fileURL(for: entry))
+        }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
@@ -320,7 +329,8 @@ extension CompositionRoot {
         historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 }
+            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 }
         )
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller
