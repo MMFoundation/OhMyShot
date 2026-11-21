@@ -186,7 +186,7 @@ nonisolated extension AnnotationTool {
     /// draw by dragging. `constrained` (Shift) makes squares and circles and snaps lines to 45°. A magnifier
     /// magnifies `start` with its lens at `end`, over `start` until the drag leaves what it shows; it is
     /// `Magnifier.lensRadius` points across at `scale` pixels per point, or smaller to lie inside `room` (pixels)
-    /// where it stands, though never below `Magnifier.smallestRadius`.
+    /// where it stands, though never below `Magnifier.smallestRadius`; a drag past `room` leaves the lens at its edge.
     public func mark(
         from start: CGPoint, to end: CGPoint, constrained: Bool, settings: ToolSettings, id: UUID = UUID(), scale: CGFloat = 1,
         room: CGRect? = nil
@@ -216,7 +216,10 @@ nonisolated extension AnnotationTool {
                 return min(largest, max(Magnifier.smallestRadius * scale, space))
             }
             var magnifier = Magnifier(source: start, radius: radius(at: start), zoom: settings.zoom)
-            let lens = constrained ? Geometry.snapped(end, from: start) : end
+            var lens = constrained ? Geometry.snapped(end, from: start) : end
+            if let room, !room.isNull {
+                lens = CGPoint(x: min(max(lens.x, room.minX), room.maxX), y: min(max(lens.y, room.minY), room.maxY))
+            }
             if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius {
                 magnifier.center = lens
                 magnifier.radius = radius(at: lens)
