@@ -328,9 +328,12 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         playerView.player?.replaceCurrentItem(with: AVPlayerItem(url: url))
         let asset = AVURLAsset(url: url)
         Task { [weak self] in
-            if let size = try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize) {
-                self?.model.pixelWidth = Int(size.width.rounded())
-                self?.model.pixelHeight = Int(size.height.rounded())
+            // As it is shown: a movie from a phone held upright is encoded on its side.
+            if let track = try? await asset.loadTracks(withMediaType: .video).first,
+               let loaded = try? await track.load(.naturalSize, .preferredTransform) {
+                let shown = CGRect(origin: .zero, size: loaded.0).applying(loaded.1)
+                self?.model.pixelWidth = Int(abs(shown.width).rounded())
+                self?.model.pixelHeight = Int(abs(shown.height).rounded())
             }
         }
         loadAudio()

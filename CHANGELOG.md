@@ -9,6 +9,15 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Movies open in the recording window: an MP4 or MOV opened with OhMyShot from Finder's Open With, dropped on its Dock icon, or chosen in Open Image › Annotate… is copied into Capture History as a recording, to trim, make quieter or smaller, or make into a GIF. The file itself is left where it is.
+
+### Fixed
+
+- Make GIF makes a movie shown turned or mirrored, such as a phone's held upright, as it is shown; it used to come out on its side or the wrong way round.
+- A file opened with OhMyShot that it can't open now beeps and says so by the pointer, where it used to be passed over without a word.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
