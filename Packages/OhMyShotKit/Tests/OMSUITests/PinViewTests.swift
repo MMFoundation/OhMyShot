@@ -1,4 +1,5 @@
 import AppKit
+import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -84,6 +85,47 @@ extension PinViewTests {
         let view = try #require(window.contentView as? PinView)
         view.layout()
         return (view, try #require(view.textView))
+    }
+
+    @Test func aPictureGoesOnlyAsTheAppHandsItOver() throws {
+        let context = try #require(CGContext(
+            data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let content = PinController.Content.image(try #require(context.makeImage()), scale: 1)
+        let pin = PinController.Pin(id: UUID(), content: content, origin: .capture(UUID()))
+        var actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let frame = CGRect(origin: .zero, size: PinWindow.baseSize(of: content))
+        // The app could not make the copy Settings ask for: the pin's own picture does not go in its place.
+        actions.fileForDrag = { _ in nil }
+        #expect(PinWindow(pin: pin, frame: frame, zoom: 1, appearance: Self.appearance, actions: actions).fileForDrag() == nil)
+        // Left to itself, a pin hands over its own picture.
+        actions.fileForDrag = nil
+        let own = try #require(PinWindow(pin: pin, frame: frame, zoom: 1, appearance: Self.appearance, actions: actions).fileForDrag())
+        defer { try? FileManager.default.removeItem(at: own) }
+        #expect(FileManager.default.fileExists(atPath: own.path(percentEncoded: false)))
+    }
+
+    /// A picture resized in the editor to fewer pixels than points pins at the size the editor shows it; a scale that is
+    /// none at all pins at one point a pixel.
+    @Test func aPictureKeepsAScaleBelowOne() throws {
+        let suite = "PinViewTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let pins = PinController(settings: SettingsStore(defaults: defaults), actions: actions)
+        defer { pins.closeAll() }
+        let image = try #require(Self.picture(size: CGSize(width: 200, height: 100)) {})
+
+        let resized = pins.pin(image, scale: 0.5, origin: .clipboard)
+        let unknown = pins.pin(image, scale: 0, origin: .clipboard)
+
+        // The picture has as many pixels as the screen it was drawn for gives it.
+        let pixels = CGSize(width: image.width, height: image.height)
+        let pinned = NSApplication.shared.windows.compactMap { $0 as? PinWindow }
+        let size = { (id: UUID) in pinned.first { $0.pin.id == id }.map { PinWindow.baseSize(of: $0.pin.content) } }
+        #expect(size(resized) == CGSize(width: pixels.width * 2, height: pixels.height * 2))
+        #expect(size(unknown) == pixels)
     }
 
     @Test func aCardsTextBreaksWhereItsSizeWasMeasured() throws {
@@ -203,5 +245,29 @@ extension PinViewTests {
         #expect(abs(pin.zoom - 1.0) < 0.01)
         view.mouseDown(with: doubleClick)
         #expect(abs(pin.zoom - 1.5) < 0.01)
+    }
+
+    @Test func zoomingOutAPinFittedBelowTheSmallestZoomLeavesItAsItIs() throws {
+        let (view, _) = try card("npm run dev", zoom: 0.05)
+        let pin = try #require(view.pinWindow)
+        let frame = pin.frame
+        pin.setZoom(pin.zoom / 1.25)
+        #expect(pin.zoom == 0.05 && pin.frame == frame)
+        pin.setZoom(0.08)
+        #expect(pin.zoom == 0.08)
+    }
+
+    @Test func aClickBringsThePinInFrontOfTheOthers() throws {
+        let (view, _) = try card("npm run dev")
+        let pin = try #require(view.pinWindow)
+        var raised: [PinWindow] = []
+        pin.onRaise = { raised.append($0) }
+        // At its bottom right corner, where a press only begins a resize.
+        let down = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: pin.frame.width - 3, y: 3), modifierFlags: [], timestamp: 0,
+            windowNumber: pin.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        pin.sendEvent(down)
+        #expect(raised.count == 1 && raised.first === pin)
     }
 }
