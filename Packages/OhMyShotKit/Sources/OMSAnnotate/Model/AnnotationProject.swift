@@ -14,7 +14,7 @@ nonisolated public struct AnnotationProject: Sendable {
     /// The newest format this version reads and writes. Format 2 adds what an earlier version would read
     /// wrongly or not at all: a capture turned, flipped, or resized, combined images turned with it, and
     /// highlight boxes. Format 3 adds speech bubbles, counters with a pointer, and watermarks. Format 4 adds
-    /// magnifiers.
+    /// erasing redactions and magnifiers.
     static let version = 4
 
     /// The oldest format that holds `document`, so a project nothing new is in is still read by an earlier
@@ -23,8 +23,9 @@ nonisolated public struct AnnotationProject: Sendable {
     static func version(for document: AnnotationDocument) -> Int {
         let usesFourth = document.items.contains { item in
             switch item.shape {
+            case .redaction(let redaction): redaction.method == .erase
             case .magnifier: true
-            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .text, .counter, .redaction, .spotlight, .image: false
+            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .text, .counter, .spotlight, .image: false
             }
         }
         if usesFourth { return 4 }
