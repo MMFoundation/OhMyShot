@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Copy Text on Quick Access cards (⇧⌘C, under Recognize Text… in the card's menu, and in its VoiceOver actions) and in Capture History's menu copies a screenshot's text without opening the OCR panel. The picture is read on this Mac as Capture Text reads it, with Settings' line breaks, never by the cloud model; the card says "Copied 42 characters" or "No text found" and stays open, and History says it by the pointer. A reading that ends after something else was copied leaves the clipboard alone.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

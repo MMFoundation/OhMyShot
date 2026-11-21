@@ -85,25 +85,10 @@ final class ShortcutActions {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
             throw ShortcutFailure.unreadableImage
         }
-        // Read in the text reader, so the app is no larger after it (Docs/perf.md, M5 — power gate).
-        guard let helper = packs.helper else {
-            guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutFailure.unreadableImage }
-            return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
-        }
         let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")
         try data.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            let text = try await TextReaderTool.text(
-                ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: packs.formula, vlm: packs.vlm, seconds: TextCaptureCoordinator.panelTableWait,
-                helper: helper
-            )
-            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
-        } catch let failure as TextReaderTool.Failure {
-            // As Capture Text's own reading did: no text, rather than an error.
-            Log.capture.error("Recognizing a shortcut's picture failed: \(String(describing: failure), privacy: .public)")
-            return nil
-        }
+        return try await textCapture.text(ofPictureAt: file, joinLines: !keepsLineBreaks)
     }
 
     /// A shortcut's Capture Formula: the LaTeX copied, or nil when no formula was.

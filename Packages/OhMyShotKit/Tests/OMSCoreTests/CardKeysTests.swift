@@ -67,6 +67,13 @@ struct CardKeysTests {
         #expect(CardKeys.binding(for: .picture(.scaleToOneX(pixelsPerPoint: 2))) == nil)
     }
 
+    /// Copy Text is ⇧⌘C, beside Copy's ⌘C, and the menu shows it.
+    @Test func copyTextIsShiftCommandC() {
+        #expect(CardKeys.command(for: .character("c"), modifiers: [.command, .shift]) == .copyText)
+        #expect(CardKeys.binding(for: .copyText)?.key == .character("c"))
+        #expect(CardKeys.binding(for: .copyText)?.modifiers == [.command, .shift])
+    }
+
     @Test func theTrashIsShownWithCommandDeleteAsHistoryHasIt() {
         #expect(CardKeys.binding(for: .moveToTrash)?.modifiers == .command)
         #expect(CardKeys.binding(for: .moveToTrash)?.key == .delete)
