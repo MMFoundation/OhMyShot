@@ -365,6 +365,35 @@ struct PictureEditingTests {
         #expect(session.tool != .crop && session.document.canvas == canvasBefore && !session.undoManager.canUndo)
     }
 
+    /// Escape in the middle of a crop drag ends the drag with it: the frame it was making never comes back with the
+    /// pointer's next move, and nothing is cropped.
+    @Test func escapeDuringACropDragEndsTheDrag() throws {
+        let session = makeSession()
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        let canvasBefore = session.document.canvas
+        session.tool = .crop
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53
+        ))
+        canvas.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 200, y: 150)))
+        canvas.keyDown(with: escape)
+        #expect(session.tool != .crop)
+        canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 260, y: 190)))
+        canvas.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 260, y: 190)))
+        #expect(canvas.pendingCrop == nil)
+        // A tool change crops to any frame left behind.
+        session.tool = .rectangle
+        #expect(session.document.canvas == canvasBefore)
+    }
+
     @Test func settingTheRatioTellsTheCapsuleOnce() {
         let session = makeSession()
         var heard: [AnnotationSession.Event] = []

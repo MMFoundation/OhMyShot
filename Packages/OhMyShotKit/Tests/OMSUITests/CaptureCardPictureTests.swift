@@ -117,4 +117,10 @@ struct CaptureCardPictureTests {
         swipe(80)
         #expect(closed == 2)
     }
+
+    /// A swipe goes by the fingers whatever Natural Scrolling says: AppKit reverses a scroll's sign with it off.
+    @Test func aSwipeFollowsTheFingersEitherWay() {
+        #expect(CaptureCardView.fingerTravel(-80, invertedFromDevice: true) == -80)
+        #expect(CaptureCardView.fingerTravel(80, invertedFromDevice: false) == -80)
+    }
 }

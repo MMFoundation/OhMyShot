@@ -187,10 +187,17 @@ final class AllInOneBar: NSView {
         needsLayout = true
     }
 
-    /// Window means an app preview for independent captures, direct pointing for visible-region tools.
-    func usesWindowPreview(_ usesPreview: Bool) {
-        setHelp(usesPreview ? String(localized: "Choose an app and preview its window (W)", bundle: .module)
-            : String(localized: "Click a window to capture it (Space)", bundle: .module), for: .window)
+    /// Window means an app preview for independent captures, direct pointing for visible-region tools. W chooses it
+    /// whenever `takesW`: All-In-One's Text and Scrolling point at a window with it as with Space.
+    func usesWindowPreview(_ usesPreview: Bool, takesW: Bool) {
+        let help = if usesPreview {
+            String(localized: "Choose an app and preview its window (W)", bundle: .module)
+        } else if takesW {
+            String(localized: "Click a window to capture it (W or Space)", bundle: .module)
+        } else {
+            String(localized: "Click a window to capture it (Space)", bundle: .module)
+        }
+        setHelp(help, for: .window)
     }
 
     private func setHelp(_ help: String, for choice: Choice) {

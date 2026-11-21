@@ -1849,6 +1849,40 @@
         }
       }
     },
+    "Click a window to capture it (W or Space)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en una ventana para capturarla (W o Espacio)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquer sur une fenêtre pour la capturer (W ou Espace)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウをクリックしてキャプチャ（W またはスペース）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按一个窗口以截取（W 或空格键）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下視窗以擷取（W 或空白鍵）"
+          }
+        }
+      }
+    },
     "Click Cancel again to throw this picture away." : {
       "localizations" : {
         "es" : {
