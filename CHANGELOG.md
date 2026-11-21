@@ -53,6 +53,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Make GIF makes a movie shown turned or mirrored, such as a phone's held upright, as it is shown; it used to come out on its side or the wrong way round.
 - A file opened with OhMyShot that it can't open now beeps and says so by the pointer, where it used to be passed over without a word.
 - Self-Timer with several Shift-clicked windows captures those windows, each on its own and put together as without the timer, instead of the rectangle around them with whatever lay between or behind them. A chosen window closed during the countdown is no longer replaced by the screen where it was: nothing is captured, and a beep and the reading by where it was say so.
+- A save that fails says why instead of only beeping. A Quick Access card shows the reason in its badge ("Couldn’t save: the disk is full", "Couldn’t save: the folder isn’t available") and stays until a copy is saved or you close it, so it can't close by itself and take an unsaved capture with it. The editor, pins, Capture History, the recording window, Studio, and saving after a capture with Quick Access off show the same sentence by the pointer. VoiceOver reads it.
+- Save As… for a recording on a Quick Access card keeps the movie it replaces until the new copy is complete. Choosing the capture's own file in Capture History, for a recording or a screenshot, leaves it as it is and says the copy couldn't be saved, instead of closing the card as saved, which with History off could delete it.
 
 ## [0.3.0] - 2026-11-21
 
