@@ -26,6 +26,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Pin from Clipboard, Hide or Show Pins, and Restore Recently Closed can each have a global shortcut, set in Settings › Shortcuts (none has keys until chosen), and are tiles in the menu bar launcher, which on a display too short to hold every tile stops above the Dock and scrolls. The URL scheme adds `pin-from-clipboard` and `toggle-pins`.
 - The annotation editor pins, shares, and uploads the marked-up picture: Save Options (the chevron beside Save) holds Pin to Screen, Share…, and, once a destination is set up, Upload and Upload To, and the File menu has them with a card's keys (⇧⌘P pins, ⇧⌘U uploads). Each keeps the edits in the capture first, as Copy does, and the window stays open. A project opened from Finder pins, shares, and uploads too. With no card up, the upload shows by the pointer as an upload from Capture History does. A pin saves and drags the picture it shows after the editor keeps later edits in its capture, and a picture resized to fewer pixels than points pins at the size the editor shows it.
 - Marks can be reached from the keyboard and with VoiceOver, in the editor and in place. Tab and Shift-Tab step through the marks in the order they were drawn, bring each into view, and move on from the canvas after the last. VoiceOver reads each mark by name, such as "Arrow, Red", "Text: Fix this", or "Counter 3", and can select or delete it. With a mark selected or a tool in hand, 1 to 9 choose the style capsule's colors and [ and ] step its sizes; the rail's right-click menu and the capsule's tooltips show these keys.
+- Movies open in the recording window: an MP4 or MOV opened with OhMyShot from Finder's Open With, dropped on its Dock icon, or chosen in Open Image › Annotate… is copied into Capture History as a recording, to trim, make quieter or smaller, or make into a GIF. The file itself is left where it is, and a MOV stays a QuickTime movie when it is edited.
 
 ### Changed
 
@@ -41,6 +42,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - A screenshot of several windows on displays with different scales keeps each window at its size, instead of drawing the one from the lower-scale display too small.
 - A pin left on a display that was unplugged, or past the edge after the displays were rearranged, moves onto the nearest display.
 - All-In-One's Area, Window, and Screen tooltips name their keys (A, W, and F), as Text, Scrolling, Record, and Measure do.
+- Make GIF makes a movie shown turned or mirrored, such as a phone's held upright, as it is shown; it used to come out on its side or the wrong way round.
+- A file opened with OhMyShot that it can't open now beeps and says so by the pointer, where it used to be passed over without a word.
 
 ## [0.3.0] - 2026-11-21
 
