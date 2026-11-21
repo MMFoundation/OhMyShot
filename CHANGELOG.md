@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Studio can blur the room behind the person on camera or cut the person out, as a Background setting for the camera: Original, Blur, or Cutout. The person is found on this Mac, frame by frame, in every layout. Cut out, they sit right on the recording in picture in picture and on the movie's background side by side or filling the movie. Both show in the preview and the exported movie alike.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
