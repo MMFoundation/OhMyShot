@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Changed
+
+- The display stays awake while a screen recording runs, paused included, so a long recording no longer goes dark partway through. Replay's buffer still lets the display and the Mac sleep.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
