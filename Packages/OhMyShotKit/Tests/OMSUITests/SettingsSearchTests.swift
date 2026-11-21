@@ -61,6 +61,7 @@ struct SettingsSearchTests {
         ("LaTeX", .text, "Model packs"),
         ("QR code", .capture, "Selecting"),
         ("watermark", .screenshots, "Pictures"),
+        ("record keys", .recording, "Studio"),
         ("barcode", .capture, "Selecting"),
     ] as [(String, SettingsTab, String?)])
     func whatPeopleTypeReachesTheRowTheyMean(query: String, tab: SettingsTab, row: String?) {
@@ -73,6 +74,18 @@ struct SettingsSearchTests {
     @Test func autoZoomFindsNothing() {
         #expect(SettingsTab.found("auto zoom").isEmpty)
         #expect(SettingsTab.recording.row(matching: "zoom") == nil)
+    }
+
+    /// A row the pane doesn't draw now, as Recent uploads before any upload has finished, is neither found nor
+    /// landed on.
+    @Test func aRowThePaneHidesIsNotFound() {
+        #expect(SettingsTab.found("upload history").first?.tab == .sharing)
+        #expect(SettingsTab.sharing.row(matching: "upload history") == "Recent uploads")
+        let hidden: Set = ["Recent uploads"]
+        #expect(SettingsTab.sharing.matches("upload history", hiding: hidden) == nil)
+        #expect(SettingsTab.sharing.matches("Forget All", hiding: hidden) == nil)
+        #expect(SettingsTab.sharing.row(matching: "upload history", hiding: hidden) == nil)
+        #expect(SettingsTab.sharing.matches("S3", hiding: hidden) == ["S3"])
     }
 
     /// The two controls that were missing are found by their own names.

@@ -258,24 +258,32 @@ extension SettingsTab {
         title.localizedStandardContains(query) || searchKeywords.contains { $0.localizedStandardContains(query) }
     }
 
+    /// The rows the pane draws now: all but those `hidden`, as Sharing hides Recent uploads until an upload finishes.
+    private func drawnRows(hiding hidden: Set<String>) -> [SettingsSearchRow] {
+        searchRows.filter { !hidden.contains($0.title) }
+    }
+
     /// The rows whose title or controls show what a search typed.
-    private func rowsShowing(_ query: String) -> [SettingsSearchRow] {
-        searchRows.filter { row in ([row.title] + row.terms).contains { $0.localizedStandardContains(query) } }
+    private func rowsShowing(_ query: String, hiding hidden: Set<String>) -> [SettingsSearchRow] {
+        drawnRows(hiding: hidden).filter { row in ([row.title] + row.terms).contains { $0.localizedStandardContains(query) } }
     }
 
     /// The rows a search finds only by a word they are known by, which they don't show.
-    private func rowsKnownBy(_ query: String) -> [SettingsSearchRow] {
-        let showing = Set(rowsShowing(query).map(\.title))
-        return searchRows.filter { row in !showing.contains(row.title) && row.keywords.contains { $0.localizedStandardContains(query) } }
+    private func rowsKnownBy(_ query: String, hiding hidden: Set<String>) -> [SettingsSearchRow] {
+        let showing = Set(rowsShowing(query, hiding: hidden).map(\.title))
+        return drawnRows(hiding: hidden).filter { row in
+            !showing.contains(row.title) && row.keywords.contains { $0.localizedStandardContains(query) }
+        }
     }
 
     /// The rows a search finds in the pane, as the sidebar lists them under its name, or nil when it finds neither
     /// them nor the pane: first what it found that the pane shows (a row's title, a control's name), then the titles
-    /// of the rows it found only by a word they are known by, as that word is never shown.
-    func matches(_ query: String) -> [String]? {
+    /// of the rows it found only by a word they are known by, as that word is never shown. Rows the pane doesn't draw
+    /// now (`hidden`, by title) aren't found.
+    func matches(_ query: String, hiding hidden: Set<String> = []) -> [String]? {
         var seen = Set<String>()
-        let shown = searchRows.flatMap { [$0.title] + $0.terms }.filter { $0.localizedStandardContains(query) }
-        let found = (shown + rowsKnownBy(query).map(\.title)).filter { seen.insert($0).inserted }
+        let shown = drawnRows(hiding: hidden).flatMap { [$0.title] + $0.terms }.filter { $0.localizedStandardContains(query) }
+        let found = (shown + rowsKnownBy(query, hiding: hidden).map(\.title)).filter { seen.insert($0).inserted }
         return found.isEmpty && !isNamed(by: query) ? nil : found
     }
 
@@ -283,20 +291,20 @@ extension SettingsTab {
     /// pane is known by ("text" lists Text before Capture's "Snap the selection to text"), then those with a row that
     /// shows what was typed, then those found only by a word a row is known by; each in the sidebar's order. Return
     /// opens the first. Spaces around what was typed don't count, as the sidebar leaves them out.
-    static func found(_ typed: String) -> [(tab: SettingsTab, rows: [String])] {
+    static func found(_ typed: String, hiding hidden: Set<String> = []) -> [(tab: SettingsTab, rows: [String])] {
         let query = typed.trimmingCharacters(in: .whitespaces)
-        let found = allCases.compactMap { tab in tab.matches(query).map { (tab: tab, rows: $0) } }
+        let found = allCases.compactMap { tab in tab.matches(query, hiding: hidden).map { (tab: tab, rows: $0) } }
         func tier(_ tab: SettingsTab) -> Int {
-            tab.isNamed(by: query) ? 0 : tab.rowsShowing(query).isEmpty ? 2 : 1
+            tab.isNamed(by: query) ? 0 : tab.rowsShowing(query, hiding: hidden).isEmpty ? 2 : 1
         }
         return (0...2).flatMap { level in found.filter { tier($0.tab) == level } }
     }
 
     /// The title of the row opening the pane from a search lands on: the first that shows what was typed, else the
     /// first known by it. Spaces around what was typed don't count.
-    func row(matching typed: String) -> String? {
+    func row(matching typed: String, hiding hidden: Set<String> = []) -> String? {
         let query = typed.trimmingCharacters(in: .whitespaces)
-        return (rowsShowing(query).first ?? rowsKnownBy(query).first)?.title
+        return (rowsShowing(query, hiding: hidden).first ?? rowsKnownBy(query, hiding: hidden).first)?.title
     }
 }
 
@@ -395,6 +403,8 @@ final class SettingsNavigator {
     private var forward: [SettingsTab] = []
 
     @ObservationIgnored var onChange: ((SettingsTab) -> Void)?
+    /// The titles of the rows the panes don't draw now, which the search leaves out.
+    @ObservationIgnored var hiddenRows: @MainActor () -> Set<String> = { [] }
 
     var canGoBack: Bool { !back.isEmpty }
     var canGoForward: Bool { !forward.isEmpty }
@@ -429,7 +439,7 @@ final class SettingsNavigator {
     /// Opens a pane the search found, on the first row it found there.
     func open(_ tab: SettingsTab, searchedFor query: String) {
         go(to: tab)
-        target.land(on: tab.row(matching: query))
+        target.land(on: tab.row(matching: query, hiding: hiddenRows()))
     }
 }
 
@@ -478,7 +488,7 @@ struct SettingsRootView: View {
         .searchable(text: $navigator.query, placement: .sidebar, prompt: Text("Search", bundle: .module))
         .searchFocused($isSearching)
         .onSubmit(of: .search) {
-            if let first = SettingsTab.found(navigator.query).first {
+            if let first = SettingsTab.found(navigator.query, hiding: navigator.hiddenRows()).first {
                 navigator.open(first.tab, searchedFor: navigator.query)
             }
         }
@@ -559,7 +569,7 @@ private struct SettingsSidebar: View {
                 }
             }
         } else {
-            let results = SettingsTab.found(query)
+            let results = SettingsTab.found(query, hiding: navigator.hiddenRows())
             if results.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
