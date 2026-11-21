@@ -222,6 +222,28 @@ struct MagnifierTests {
         #expect(shown == 0, "\(shown) lens pixels show what the crop leaves out")
     }
 
+    /// A spot the crop's edge runs through shows what the crop keeps of it, and only that.
+    @Test func aLensShowsWhatACropKeepsOfItsSpot() throws {
+        let lens = Magnifier(source: CGPoint(x: 100, y: 60), center: CGPoint(x: 150, y: 60), radius: 30, zoom: .two)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 120), scale: 1)
+        document.items = [Annotation(shape: .magnifier(lens), style: Style())]
+        document.canvas = CGRect(x: 100, y: 0, width: 100, height: 120)
+        let picture = Pixels(noise())
+        let output = Pixels(try #require(AnnotationRenderer.flatten(document, base: noise())))
+        var kept = 0, wrong = 0
+        for (point, source) in lensSamples(of: lens) {
+            let shown = output[point.x - 100, point.y]
+            if source.x >= 100 {
+                kept += 1
+                if !close(shown, picture[source.x, source.y]) { wrong += 1 }
+            } else if !close(shown, (255, 255, 255, 255)) {
+                wrong += 1
+            }
+        }
+        #expect(kept > 0)
+        #expect(wrong == 0, "\(wrong) lens pixels show the wrong side of the crop")
+    }
+
     // MARK: On the canvas
 
     @MainActor
@@ -296,6 +318,29 @@ struct MagnifierTests {
         #expect(dragged.source == CGPoint(x: 220, y: 60))
         #expect(dragged.center == CGPoint(x: 330, y: 130))
         #expect(dragged.isDetached)
+        #expect(session.document.items.count == 2)
+    }
+
+    /// On a canvas that cannot grow, as Annotate Area's selection is, a new lens fits inside it with room for its
+    /// handles all round, still magnifying the spot clicked, so it can be resized; one by an edge moves in from it.
+    @MainActor
+    @Test func onACanvasThatCannotGrowALensFitsInsideWithItsHandles() throws {
+        let (canvas, session, window) = try makeCanvas(base: noise(width: 400, height: 200), tool: .magnifier)
+        defer { window.close() }
+        session.keepsCanvasFixed = true
+        var document = session.document
+        document.canvas = CGRect(x: 150, y: 70, width: 100, height: 60)
+        session.commit(document, actionName: "Crop")
+        canvas.layoutSubtreeIfNeeded()
+        let reach = (SelectionLayer.handleSize / 2 + 4) / canvas.zoom
+        let room = document.canvas.insetBy(dx: reach, dy: reach)
+        for spot in [CGPoint(x: 200, y: 100), CGPoint(x: 160, y: 76)] {
+            session.tool = .magnifier
+            try press(canvas, in: window, from: spot)
+            guard case .magnifier(let lens) = session.document.items.last?.shape else { Issue.record("No magnifier at \(spot)"); return }
+            #expect(lens.source == spot)
+            #expect(room.insetBy(dx: -0.01, dy: -0.01).contains(lens.lensRect), "\(lens.lensRect) is not inside \(room)")
+        }
         #expect(session.document.items.count == 2)
     }
 
