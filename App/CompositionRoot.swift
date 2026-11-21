@@ -346,7 +346,7 @@ final class CompositionRoot {
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
         }
-        overlay.onWillMeasure = { [weak self] in self?.measurer.configureOverlay() }
+        captures.allInOneWillMeasure = { [weak self] copiesToClipboard in self?.measurer.configureOverlay(copiesToClipboard: copiesToClipboard) }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
             self?.pins.pin(color: pinned)

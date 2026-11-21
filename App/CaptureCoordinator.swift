@@ -114,6 +114,8 @@ final class CaptureCoordinator {
     var allInOneText: ((CGRect, CapturedFrame?) -> Void)?
     /// A scrolling capture of All-In-One's area, started at once.
     var allInOneScroll: ((CGRect) -> Void)?
+    /// All-In-One about to turn into Measure, with whether its session may touch the clipboard.
+    var allInOneWillMeasure: ((Bool) -> Void)?
     /// A recording All-In-One set up: what, where, with what, and the app in front.
     var onRecord: ((RecordingTarget, DisplayInfo, RecordingChoices, String?) -> Void)?
     /// A recording All-In-One set up was cancelled, leaving a camera preview to put away.
@@ -137,6 +139,7 @@ final class CaptureCoordinator {
         let options = OverlayController.SessionOptions(allInOne: .init(offersUpload: canUpload?() ?? false, showsCopy: !settings.copyAfterCapture))
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
         configureCaptureOverlay()
+        overlay.onWillMeasure = { [weak self] in self?.allInOneWillMeasure?(copiesToClipboard) }
         overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
             guard let self else { return }
             if let area = outcome.takenArea { lastArea = area }
