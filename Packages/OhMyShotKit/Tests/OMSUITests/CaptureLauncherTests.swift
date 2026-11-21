@@ -8,10 +8,11 @@ struct CaptureLauncherTests {
         _ captures: [StatusItemController.Entry],
         tools: [StatusItemController.Entry] = [],
         images: [StatusItemController.Entry] = [],
+        pins: [StatusItemController.Entry] = [],
         history: [StatusItemController.Entry] = [],
         app: [StatusItemController.Entry] = []
     ) -> CaptureLauncherModel {
-        CaptureLauncherModel(captureEntries: captures, toolEntries: tools, imageEntries: images, historyEntries: history,
+        CaptureLauncherModel(captureEntries: captures, toolEntries: tools, imageEntries: images, historyEntries: history, pinEntries: pins,
                              priorityEntries: [], appEntries: app, debugEntries: [], openSettings: {},
                              editShortcut: { _ in }, quit: {})
     }
@@ -154,5 +155,27 @@ struct CaptureLauncherTests {
             "Join Discord",
         ]))
         #expect(!shown.contains("Cancel Studio Export") && !shown.contains("What’s New…"))
+    }
+
+    /// The status menu keeps Pin from Clipboard and Hide Pins in Images & Pins' menus; with shortcuts of their own they
+    /// are tiles too, after the tools, and Restore Recently Closed is one among the history's.
+    @Test func thePinCommandsAndRestoreRecentlyClosedAreTiles() {
+        let launcher = model(
+            [.init(title: "Capture Area", shortcut: .captureArea) {}],
+            tools: [.init(title: "Pick Color", shortcut: .pickColor) {}],
+            images: [.init(title: "From Clipboard") { [] }, .init(title: "Pins") { [] }],
+            pins: [
+                .init(title: "Pin from Clipboard", shortcut: .pinFromClipboard) {},
+                .init(title: "Hide Pins", shortcut: .togglePins) {},
+            ],
+            history: [
+                .init(title: "Capture History…", shortcut: .openHistory) {},
+                .init(title: "Restore Recently Closed", shortcut: .restoreRecentlyClosed) {},
+            ]
+        )
+        #expect(launcher.toolTiles.map(\.title) == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…", "Restore Recently Closed"])
+        #expect(launcher.moreRows.isEmpty)
+        #expect(launcher.imageRows.map(\.title) == ["From Clipboard", "Pins"])
+        #expect(launcher.rows.map { $0.entries.map(\.title) }[1] == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…"])
     }
 }

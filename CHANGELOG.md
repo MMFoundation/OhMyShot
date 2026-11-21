@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Pin from Clipboard, Hide or Show Pins, and Restore Recently Closed can each have a global shortcut, set in Settings › Shortcuts (none has keys until chosen), and are tiles in the menu bar launcher. The URL scheme adds `pin-from-clipboard` and `toggle-pins`.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

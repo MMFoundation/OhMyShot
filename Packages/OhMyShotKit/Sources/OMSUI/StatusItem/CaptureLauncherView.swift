@@ -13,6 +13,8 @@ struct CaptureLauncherModel {
     let toolEntries: [Entry]
     let imageEntries: [Entry]
     let historyEntries: [Entry]
+    /// Pin from Clipboard and Hide Pins, tiles after the tools; the status menu keeps them in Images & Pins' menus.
+    var pinEntries: [Entry] = []
     let priorityEntries: [Entry]
     let appEntries: [Entry]
     let debugEntries: [Entry]
@@ -28,7 +30,7 @@ struct CaptureLauncherModel {
         .recordScreen, .allInOne, .selfTimer, .pinArea,
     ]
 
-    private var commands: [Entry] { visible(captureEntries + toolEntries + historyEntries) }
+    private var commands: [Entry] { visible(captureEntries + toolEntries + pinEntries + historyEntries) }
 
     var captureTiles: [Entry] {
         Self.captureShortcuts.compactMap { shortcut in commands.first { $0.shortcut == shortcut } }
@@ -44,7 +46,7 @@ struct CaptureLauncherModel {
         visible(priorityEntries) + commands.filter(Self.isStatus)
     }
 
-    /// Commands without a shortcut: menus of their own, switches, and Restore Recently Closed.
+    /// Commands without a shortcut: menus of their own and switches.
     var moreRows: [Entry] {
         commands.filter { $0.shortcut == nil && !Self.isStatus($0) }
     }

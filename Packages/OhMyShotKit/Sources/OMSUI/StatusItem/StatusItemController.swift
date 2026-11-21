@@ -124,6 +124,8 @@ public final class StatusItemController {
     private let toolEntries: [Entry]
     /// Pictures already on disk or on the clipboard, and the pins.
     private let imageEntries: [Entry]
+    /// The pin commands that take a shortcut, tiles in the launcher; the status menu has them in `imageEntries`' menus.
+    private let pinEntries: [Entry]
     private let historyEntries: [Entry]
     /// The app's own entries above Settings…, such as Check for Updates….
     private let priorityEntries: [Entry]
@@ -139,6 +141,7 @@ public final class StatusItemController {
         captureEntries: [Entry],
         toolEntries: [Entry] = [],
         imageEntries: [Entry] = [],
+        pinEntries: [Entry] = [],
         historyEntries: [Entry] = [],
         priorityEntries: [Entry] = [],
         appEntries: [Entry] = [],
@@ -150,6 +153,7 @@ public final class StatusItemController {
         self.captureEntries = captureEntries
         self.toolEntries = toolEntries
         self.imageEntries = imageEntries
+        self.pinEntries = pinEntries
         self.historyEntries = historyEntries
         self.priorityEntries = priorityEntries
         self.appEntries = appEntries
@@ -385,7 +389,7 @@ public final class StatusItemController {
 
     private func makeLauncherModel() -> CaptureLauncherModel {
         CaptureLauncherModel(captureEntries: captureEntries, toolEntries: toolEntries,
-                             imageEntries: imageEntries, historyEntries: historyEntries,
+                             imageEntries: imageEntries, historyEntries: historyEntries, pinEntries: pinEntries,
                              priorityEntries: priorityEntries, appEntries: appEntries,
                              debugEntries: debugEntries, openSettings: openSettings,
                              editShortcut: editShortcut, quit: quit)
