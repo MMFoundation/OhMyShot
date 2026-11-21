@@ -42,14 +42,14 @@ extension CompositionRoot {
 
     /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
-    /// the copy is made.
-    private func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
+    /// the copy is made. `scale` is the picture's pixels per point where the history has no record of it (a project's).
+    func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil, scale: Double? = nil) {
         guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
         }
         let name = fileURL.deletingPathExtension().lastPathComponent
-        let scale = history.item(id: captureID)?.pixelsPerPoint
+        let scale = history.item(id: captureID)?.pixelsPerPoint ?? scale
         Task {
             let file = await files.exportedFile(forPictureData: data, named: name, scale: scale) ?? fileURL
             uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
@@ -179,6 +179,10 @@ extension CompositionRoot {
                 loaded.image, pixelsPerPoint: loaded.scale, title: item.fileURL.deletingPathExtension().lastPathComponent
             )
         }
+        actions.copyText = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: item.fileURL)
+        }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.codes = { [weak self] item in
             guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
@@ -260,6 +264,10 @@ extension CompositionRoot {
             }
         )
         historyActions.isBeingEdited = { [weak self] entry in self?.annotations.openCaptureIDs.contains(entry.id) ?? false }
+        historyActions.copyText = { [weak self] entry in
+            guard let self, entry.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: history.fileURL(for: entry))
+        }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
@@ -289,7 +297,8 @@ extension CompositionRoot {
         historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 }
+            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 }
         )
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller
