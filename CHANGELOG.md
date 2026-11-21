@@ -11,6 +11,8 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Studio can play part of a recording faster or slower: choose a stretch on the clip, then pick 0.5×, 1.5×, 2×, 3×, or 4× from Speed beside Cut or in the inspector. The picture, both sounds (at their own pitch), the pointer, clicks, keys, zooms, and camera all keep in step, in the preview and the movie.
+
 - Studio's inspector has an Audio section. A recording's system sound and microphone each have their own Mute and volume, heard as you set them and exported that way. Recordings made before this, or with only one sound, get one Sound row. The recording in Capture History still has both sounds mixed into one track, so it plays everywhere.
 
 ## [0.3.0] - 2026-11-21
