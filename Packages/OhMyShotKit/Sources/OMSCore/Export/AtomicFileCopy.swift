@@ -21,7 +21,8 @@ public enum AtomicFileCopy {
         }
     }
 
-    /// Throws when `destination` is `source`'s own file, however its path is written. A capture's file in Capture
+    /// Throws when `destination` is `source`'s own file, however the folders on its way are written; a link to it is a
+    /// file of its own, which the copy replaces, leaving `source` as it is. A capture's file in Capture
     /// History is no copy of it: taken for one, its card would close as saved, and with History off the capture would
     /// then go, taking the only file with it.
     public static func refuseSaving(over source: URL?, at destination: URL) throws {
@@ -30,7 +31,8 @@ public enum AtomicFileCopy {
     }
 
     private static func identifier(of url: URL) -> (any NSObjectProtocol)? {
-        try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        let file = url.deletingLastPathComponent().resolvingSymlinksInPath().appending(path: url.lastPathComponent)
+        return try? file.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
     }
 
     /// The copy boundary is injectable for partial-write and cancellation tests; the commit always uses

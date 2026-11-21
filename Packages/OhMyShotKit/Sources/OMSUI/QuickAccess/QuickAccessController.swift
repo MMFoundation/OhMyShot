@@ -106,6 +106,9 @@ public final class QuickAccessController {
         let notice = CopiedHUD()
         return { notice.show($0, near: NSEvent.mouseLocation) }
     }()
+    /// Says by the pointer why a copy to hand over from a card could not be made, while the card itself says why a copy
+    /// could not be saved.
+    lazy var showHandOverFailure: (String) -> Void = { [unowned self] in showTrashFailure($0) }
     private var panel: QuickAccessPanel?
     private var firstCaptureHint: FirstCaptureHintController?
 
@@ -368,7 +371,7 @@ public final class QuickAccessController {
         if failures[id]?.step == .converting { clearFailure(for: id) }
     }
 
-    /// Marks a capture saved elsewhere (from the editor) as saved on its card.
+    /// Marks a capture saved elsewhere (from the editor or Capture History) as saved on its card.
     public func markSaved(_ id: UUID, at url: URL) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].savedURL = url
@@ -630,7 +633,7 @@ public final class QuickAccessController {
                 clearHandOverFailure(for: item.id)
                 return file
             case .failure(let failure):
-                showFailure(failure, for: item.id)
+                if !showFailure(failure, for: item.id) { showHandOverFailure(failure.summary) }
                 return nil
             }
         }

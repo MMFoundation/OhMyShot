@@ -268,6 +268,24 @@ struct QuickAccessCompletionTests {
         #expect(controller.item(capture.id) != nil)
     }
 
+    /// A drag, Share…, or Send by Email whose copy can't be made while the card says a save failed says why by the pointer,
+    /// rather than nothing at all.
+    @Test func aFailedHandOverUnderAFailedSaveIsSaidByThePointer() throws {
+        var actions = actions(succeeds: true)
+        actions.fileToHandOver = { _ in .failure(Self.cannotPrepare) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        var said: [String] = []
+        controller.showHandOverFailure = { said.append($0) }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        let card = try card(in: controller)
+        #expect(card.fileToHandOver?() == nil)
+        #expect(said == [Self.cannotPrepare.summary])
+        #expect(card.failure == Self.diskFull)
+    }
+
     /// An upload whose copy is made after all clears the card's earlier failure to make one.
     @Test func aCopyMadeForAnUploadClearsAFailureToMakeOne() throws {
         let controller = QuickAccessController(actions: actions(succeeds: true))
