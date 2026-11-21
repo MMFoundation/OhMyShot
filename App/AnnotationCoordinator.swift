@@ -178,7 +178,8 @@ final class AnnotationCoordinator {
             let capture = opened.project.capture
             let capturePNG = opened.project.capturePNG
             let picture = opened.picture
-            let projectScale = Double(opened.project.document.scale)
+            // Image Size changes the document's scale, so each keep records it for the outcomes that follow.
+            var projectScale = Double(opened.project.document.scale)
             let editor = AnnotationEditorWindowController(
                 image: capture,
                 scale: opened.project.document.scale,
@@ -191,6 +192,7 @@ final class AnnotationCoordinator {
                             let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
                                 .keep(at: file, preview: png, previewURL: picture)
                             Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+                            projectScale = Double(document.scale)
                             return preview
                         } catch {
                             Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
