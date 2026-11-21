@@ -1871,7 +1871,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 selectionLayer.alignmentGuides = []
                 session.cancelLiveChange()
             } else if session.tool == .crop {
-                // A drag under way ends here too, so the next move of the pointer can't bring its frame back.
+                // A drag under way ends here too, so the next move of the pointer can't bring its frame back, and
+                // the controls it hid come back once the frame is settled, as at a drag's end.
+                let endsDrag = drag != nil
+                defer { if endsDrag { onViewportChange?() } }
                 drag = nil
                 cropLayer.showsThirds = false
                 // A frame and shape left as they began have nothing to put back: Escape leaves Crop, cropping

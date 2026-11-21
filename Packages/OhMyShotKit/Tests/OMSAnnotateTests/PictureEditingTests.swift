@@ -394,6 +394,38 @@ struct PictureEditingTests {
         #expect(session.document.canvas == canvasBefore)
     }
 
+    /// Escape that ends a drag in Crop, a pan as well as the frame's, brings back the controls the drag hid, as the drag's
+    /// end would have: a resized frame put back keeps Crop in hand, with its controls.
+    @Test func escapeDuringACropDragBringsTheControlsBack() throws {
+        let session = makeSession()
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        session.tool = .crop
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53
+        ))
+        canvas.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 200, y: 150)))
+        canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 260, y: 190)))
+        canvas.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 260, y: 190)))
+        #expect(canvas.pendingCrop != nil)
+        var refreshedWhileDragging: [Bool] = []
+        canvas.onViewportChange = { refreshedWhileDragging.append(canvas.isDragging) }
+
+        canvas.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 230, y: 170)))
+        #expect(canvas.isDragging)
+        canvas.keyDown(with: escape)
+
+        #expect(session.tool == .crop && canvas.pendingCrop == session.document.canvas)
+        #expect(refreshedWhileDragging.last == false)
+    }
+
     @Test func settingTheRatioTellsTheCapsuleOnce() {
         let session = makeSession()
         var heard: [AnnotationSession.Event] = []
