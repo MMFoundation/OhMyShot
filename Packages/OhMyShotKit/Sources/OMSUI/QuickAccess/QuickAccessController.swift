@@ -20,6 +20,8 @@ public final class QuickAccessController {
         public var reveal: (QuickAccessItem) -> Void
         /// Opens the capture in the OCR panel.
         public var recognizeText: (QuickAccessItem) -> Void
+        /// Reads the text in a screenshot and copies it (`TextCopier`).
+        public var copyText: (QuickAccessItem) async -> TextCopy = { _ in .noText }
         /// Keeps the capture on screen as a pin.
         public var pin: (QuickAccessItem) async -> Bool
         /// Prints the capture's picture through the print panel.
@@ -429,6 +431,8 @@ public final class QuickAccessController {
         stack?.setTrashing(false, for: pending.id)
         // Brought back, it starts its time again, as a card restored from Recently Closed does.
         schedule.restart(pending.id)
+        // The Trash let its holds go; a Copy Text still reading holds it again.
+        if readingText[pending.id] != nil { hold(.reading, for: pending.id, if: true) }
         updateCountdowns()
         return true
     }
@@ -841,11 +845,14 @@ public final class QuickAccessController {
     /// Keep the source alive while an action consumes it. Failure or cancellation leaves the card available.
     private var completing: [UUID: UUID] = [:]
 
-    private func complete(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: @escaping () async -> Bool) {
-        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, action: action) }
+    /// `keepsCard`: the card stays once the action succeeds, as it does after a copy made with Option.
+    private func complete(
+        _ item: QuickAccessItem, showsCopyConfirmation: Bool = false, keepsCard: Bool = false, action: @escaping () async -> Bool
+    ) {
+        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, keepsCard: keepsCard, action: action) }
     }
 
-    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: () async -> Bool) async {
+    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, keepsCard: Bool = false, action: () async -> Bool) async {
         guard self.item(item.id) != nil, !isTrashing(item.id), completing[item.id] == nil else { return }
         let completion = UUID()
         completing[item.id] = completion
@@ -859,7 +866,7 @@ public final class QuickAccessController {
         }
         completing[item.id] = nil
         hold(.action, for: item.id, if: false)
-        if succeeded { dismiss(item.id) }
+        if succeeded, !keepsCard { dismiss(item.id) }
     }
 
     // MARK: Commands
@@ -879,6 +886,8 @@ public final class QuickAccessController {
         case .copy:
             if keyed { endKeyboard() }
             complete(item, showsCopyConfirmation: true) { [self] in await actions.copy(item) }
+        case .copyAndKeep:
+            complete(item, showsCopyConfirmation: true, keepsCard: true) { [self] in await actions.copy(item) }
         case .save:
             if keyed { endKeyboard() }
             complete(item) { [self] in
@@ -902,6 +911,8 @@ public final class QuickAccessController {
         case .recognizeText:
             if keyed { endKeyboard() }
             actions.recognizeText(item)
+        case .copyText:
+            copyText(item)
         case .print:
             if keyed { endKeyboard() }
             complete(item) { [self] in await actions.print(item) }
@@ -949,6 +960,26 @@ public final class QuickAccessController {
         case .selectNewer:
             move(by: 1)
             refreshPreview()
+        }
+    }
+
+    /// The Copy Text reading going on each card: asked again, the newer one is the one the card waits for.
+    private var readingText: [UUID: UUID] = [:]
+
+    /// Copy Text: the screenshot's text goes to the clipboard and the card says how much, or that it held none, and
+    /// stays, held from closing by itself while it is read. A reading overtaken by a newer copy says nothing.
+    private func copyText(_ item: QuickAccessItem) {
+        guard item.kind == .screenshot else { return }
+        let reading = UUID()
+        readingText[item.id] = reading
+        hold(.reading, for: item.id, if: true)
+        Task {
+            let copy = await actions.copyText(item)
+            guard readingText[item.id] == reading else { return }
+            readingText[item.id] = nil
+            hold(.reading, for: item.id, if: false)
+            guard self.item(item.id) != nil, !isTrashing(item.id) else { return }
+            stack?.showTextCopy(copy, on: item.id)
         }
     }
 
