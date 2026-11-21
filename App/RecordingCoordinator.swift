@@ -1390,6 +1390,8 @@ final class RecordingCoordinator {
         let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).gif")
         do {
             let gif = try await GIFMaker.make(from: movie, to: destination, options: options, progress: progress)
+            // Cancelled as it was finished: nothing is kept.
+            try Task.checkCancellation()
             let displayID = displayID ?? displays.layout.pointerDisplay?.id ?? 0
             let file = KeptFile(url: gif.url, pixelWidth: gif.pixelWidth, pixelHeight: gif.pixelHeight, duration: gif.duration, byteCount: gif.byteCount)
             let made = try await deliver(file, startedAt: entry.createdAt, appName: entry.appName, pixelsPerPoint: entry.pixelsPerPoint, displayID: displayID)

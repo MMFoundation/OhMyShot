@@ -13,6 +13,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 - Make GIF in Studio makes a GIF of the movie as you've edited it, with its zooms, cursor, clicks, keys, camera, cuts, and background, at the GIF frame rate set in Settings › Recording. It is kept as a capture of its own with a card; the project and the recording stay as they are.
 
+### Fixed
+
+- A GIF cancelled just as it was finishing is no longer kept.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

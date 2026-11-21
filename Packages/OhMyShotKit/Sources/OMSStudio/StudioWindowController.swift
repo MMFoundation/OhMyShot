@@ -304,6 +304,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func copyMovie() {
+        // While a GIF is made, the busy card and its Cancel are the GIF's: ⌘C waits, as the toolbar's Copy does.
+        guard makingGIF == nil else { return NSSound.beep() }
         Task {
             guard let url = await exportIfNeeded() else { return }
             actions.copy(url)
@@ -312,6 +314,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func saveMovie() {
+        guard makingGIF == nil else { return NSSound.beep() }
         Task {
             guard let url = await exportIfNeeded() else { return }
             guard actions.save(url) != nil else { return NSSound.beep() }
@@ -320,6 +323,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func saveMovieAs() {
+        guard makingGIF == nil else { return NSSound.beep() }
         guard let window else { return }
         Task {
             guard let url = await exportIfNeeded() else { return }

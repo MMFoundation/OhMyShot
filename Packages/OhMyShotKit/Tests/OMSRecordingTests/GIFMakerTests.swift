@@ -179,6 +179,23 @@ struct GIFMakerTests {
         #expect(!FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
     }
 
+    @Test func cancellingOnceEveryFrameIsReadStillRemovesTheFile() async throws {
+        let movie = try await Self.movie(seconds: 2) { second in
+            second == 0 ? (0..<20).map { TestMedia.frame(at: Double($0) / 10, gray: UInt8(40 + $0 * 8)) } : []
+        }
+        let url = Self.temporaryGIF()
+        defer { [movie, url].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        // Cancelled as the last frame read is told, 1.9 s of 2: the frames after it are still to be written.
+        let task = Task {
+            try await GIFMaker.make(from: movie, to: url) { fraction in
+                if fraction >= 0.93, fraction < 1 { withUnsafeCurrentTask { $0?.cancel() } }
+            }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+    }
+
     @Test func sizeFitsTheLongestSide() {
         #expect(GIFMaker.pixelSize(width: 2000, height: 1280, options: .init(scale: 0.5)) == (1000, 640))
         #expect(GIFMaker.pixelSize(width: 6880, height: 2880, options: .init(scale: 0.5)) == (1920, 804))
