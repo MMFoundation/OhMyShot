@@ -46,8 +46,10 @@ nonisolated public enum StudioSound: String, CaseIterable, Sendable {
     }
 
     /// Keeps each sound of `movie` (the movie written while recording) in its file in `folder`, copied as it was
-    /// encoded, on the movie's timeline, so Studio plays it in step with the recording. A file is in place only once
-    /// it is whole. Returns the sounds kept: none when the movie has no sound, or tracks the recorder never writes.
+    /// encoded, on the movie's timeline, so Studio plays it in step with the recording. The files are put in place only
+    /// once every one is whole, and none is when one fails: Studio, finding some, would play those and leave the others
+    /// out, where the recording's own sound has them all. Returns the sounds kept: none when the movie has no sound, or
+    /// tracks the recorder never writes.
     @concurrent public static func keep(from movie: URL, in folder: URL) async throws -> [StudioSound] {
         let asset = AVURLAsset(url: movie)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
@@ -59,14 +61,22 @@ nonisolated public enum StudioSound: String, CaseIterable, Sendable {
         guard let sounds = sounds(ofTracksWithChannels: channels), !sounds.isEmpty else { return [] }
         let end = try await asset.load(.duration)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var written: [(partial: URL, destination: URL)] = []
+        defer { written.forEach { try? FileManager.default.removeItem(at: $0.partial) } }
         for (track, sound) in zip(tracks, sounds) {
             guard let name = sound.fileName else { continue }
-            let destination = folder.appending(path: name)
             let partial = folder.appending(path: ".\(UUID().uuidString).m4a")
-            defer { try? FileManager.default.removeItem(at: partial) }
+            written.append((partial, folder.appending(path: name)))
             try await copy(track, of: asset, endingAt: end, to: partial)
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: partial, to: destination)
+        }
+        do {
+            for file in written {
+                try? FileManager.default.removeItem(at: file.destination)
+                try FileManager.default.moveItem(at: file.partial, to: file.destination)
+            }
+        } catch {
+            written.forEach { try? FileManager.default.removeItem(at: $0.destination) }
+            throw error
         }
         return sounds
     }
@@ -79,6 +89,7 @@ nonisolated public enum StudioSound: String, CaseIterable, Sendable {
         reader.add(output)
         let writer = try AVAssetWriter(outputURL: destination, fileType: .m4a)
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil, sourceFormatHint: try await track.load(.formatDescriptions).first)
+        guard writer.canAdd(input) else { throw StudioError.writingFailed("An M4A can't hold this sound as it was encoded") }
         writer.add(input)
         guard reader.startReading() else { throw StudioError.readingFailed(String(describing: reader.error)) }
         guard writer.startWriting() else { throw StudioError.writingFailed(String(describing: writer.error)) }

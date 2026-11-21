@@ -8,8 +8,9 @@ import Testing
 struct StudioSoundTests {
     /// A movie of `seconds` at 30 fps, 320 × 200, its gray stepping up each second, with an AAC track for each of
     /// `sounds`: its channels and how loud its 440 Hz tone is (0 is silence). The recorder writes the system's sound
-    /// in stereo first, then the microphone in mono.
-    static func movie(seconds: Double, sounds: [(channels: Int, loudness: Float)]) async throws -> URL {
+    /// in stereo first, then the microphone in mono. The track at `muLawTrack` is µ-law instead, which the recorder
+    /// never writes and an M4A can't hold.
+    static func movie(seconds: Double, sounds: [(channels: Int, loudness: Float)], muLawTrack: Int? = nil) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OMSStudioSoundTests-\(UUID().uuidString).mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
@@ -23,8 +24,10 @@ struct StudioSoundTests {
         // would wait on each other.
         video.expectsMediaDataInRealTime = true
         writer.add(video)
-        let audio = sounds.map { sound in
-            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+        let audio = sounds.enumerated().map { index, sound in
+            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: index == muLawTrack ? [
+                AVFormatIDKey: kAudioFormatULaw, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: sound.channels,
+            ] : [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: sound.channels, AVEncoderBitRateKey: 64_000 * sound.channels,
             ])
             input.expectsMediaDataInRealTime = true
@@ -198,6 +201,17 @@ struct StudioSoundTests {
         #expect(try await StudioSound.keep(from: silent, in: second) == [])
         #expect(!StudioSound.areKept(in: second))
         #expect(try FileManager.default.contentsOfDirectory(atPath: second.path(percentEncoded: false)).isEmpty)
+    }
+
+    @Test func aSoundThatCantBeKeptKeepsNoneApart() async throws {
+        // The microphone in a form an M4A can't hold as it is: the system's sound, kept first, must not stay alone.
+        let movie = try await Self.movie(seconds: 1, sounds: [(2, 0.2), (1, 0.2)], muLawTrack: 1)
+        let folder = try Self.folder()
+        defer { [movie, folder].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        await #expect(throws: StudioError.self) { try await StudioSound.keep(from: movie, in: folder) }
+        #expect(!StudioSound.areKept(in: folder))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)).isEmpty)
     }
 
     // MARK: Playing them
