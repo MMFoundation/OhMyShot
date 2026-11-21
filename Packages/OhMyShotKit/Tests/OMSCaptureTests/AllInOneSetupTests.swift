@@ -140,6 +140,18 @@ struct AllInOneSetupTests {
         #expect(free.ratio == nil && free.barSummary.hasSuffix("any"))
     }
 
+    @Test func aRatioMatchingTheAreaRefreshesTheChipWithoutLosingWindowChrome() {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true, windowFrames: [Self.area])
+        #expect(view.barSummary == "600 × 300 any")
+        #expect(view.chrome.selectionPath != nil)
+
+        _ = view.debugAct("ratio=2:1")
+
+        #expect(view.area == Self.area)
+        #expect(view.barSummary == "600 × 300 2:1")
+        #expect(view.chrome.selectionPath != nil)
+    }
+
     /// Larger than the display, a typed size is cut to it, and a shape kept stays kept.
     @Test func aTypedSizePastTheDisplayStaysOnItInShape() {
         let view = run(["ratio=1:1", "width=4000"]).view

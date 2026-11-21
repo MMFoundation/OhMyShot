@@ -158,8 +158,12 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         endTyping()
         self.ratio = ratio
         if let ratio {
+            let before = area
             let local = AreaFrame.local(area, on: display)
             setArea(AreaFrame.shaped(local, to: ratio.value, in: bounds))
+            // `setArea` deliberately skips `areaAdjusted` when snapping leaves the geometry unchanged. The ratio chip
+            // still needs to reflect the newly kept shape, without clearing a selected window outline on a no-op resize.
+            if area == before { update() }
             if kind == .sizing { onShapeKept?(ratio) }
         } else {
             update()
