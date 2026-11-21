@@ -127,12 +127,15 @@ enum PinGeometry {
     }
 
     /// The new zoom and fixed anchor when `corner` of `frame` is dragged to `point` (in the same space),
-    /// keeping the pin's proportions (`baseSize`).
-    static func resizedZoom(dragging corner: Corner, of frame: CGRect, baseSize: CGSize, to point: CGPoint) -> (zoom: CGFloat, anchor: CGPoint) {
+    /// keeping the pin's proportions (`baseSize`), never below `zoomRange(from: zoom)` for the pin's `zoom` now (its own,
+    /// not its frame's: the window server rounds a frame to whole points).
+    static func resizedZoom(
+        dragging corner: Corner, of frame: CGRect, baseSize: CGSize, zoom: CGFloat = 1, to point: CGPoint
+    ) -> (zoom: CGFloat, anchor: CGPoint) {
         let anchor = oppositeCorner(of: corner, in: frame)
         let dx = abs(point.x - anchor.x)
         let dy = abs(point.y - anchor.y)
         let scale = max(dx / max(baseSize.width, 1), dy / max(baseSize.height, 1))
-        return (clamp(scale, to: zoomRange(from: frame.width / max(baseSize.width, 1))), anchor)
+        return (clamp(scale, to: zoomRange(from: zoom)), anchor)
     }
 }

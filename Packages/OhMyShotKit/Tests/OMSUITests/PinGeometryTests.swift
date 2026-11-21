@@ -119,11 +119,11 @@ struct PinGeometryTests {
         #expect(PinGeometry.zoomRange(from: 0.064) == 0.064 ... PinGeometry.zoomRange.upperBound)
         #expect(PinGeometry.zoom(0.064, scrolledBy: -5, precise: false) == 0.064)
         #expect(PinGeometry.zoom(0.064, scrolledBy: 1, precise: false) > 0.064)
-        // Its bottom right corner dragged in toward its top left one.
+        // Its bottom right corner dragged in toward its top left one, its window's frame rounded up to whole points.
         let base = CGSize(width: 400, height: 10_000)
-        let frame = CGRect(x: 100, y: 100, width: 400 * 0.064, height: 10_000 * 0.064)
-        let (zoom, _) = PinGeometry.resizedZoom(dragging: .bottomRight, of: frame, baseSize: base, to: CGPoint(x: 110, y: 700))
-        #expect(abs(zoom - 0.064) < 0.0001)
+        let frame = CGRect(x: 100, y: 100, width: 26, height: 640)
+        let (zoom, _) = PinGeometry.resizedZoom(dragging: .bottomRight, of: frame, baseSize: base, zoom: 0.064, to: CGPoint(x: 110, y: 700))
+        #expect(zoom == 0.064)
     }
 
     @Test func aPinThatCanBeTakenHoldOfOnlyUnderTheMenuBarOrTheDockComesOut() throws {
