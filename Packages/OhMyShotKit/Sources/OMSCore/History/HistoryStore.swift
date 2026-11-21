@@ -532,6 +532,13 @@ public final class HistoryStore: Sendable {
         expired.filter { !held.contains($0.id) && $0.createdAt <= checkedAt }
     }
 
+    /// Of the captures listed as expired at `now`, those still expired as their records are now: one deleted since, one
+    /// whose file another capture has taken, and one added to Favorites since stay.
+    public func stillExpired(_ listed: [HistoryItem], retention: HistoryRetention, now: Date) -> [HistoryItem] {
+        let current = listed.compactMap { listed in item(forFileAt: fileURL(for: listed)).flatMap { $0.id == listed.id ? $0 : nil } }
+        return Self.expired(current, retention: retention, keeping: [], now: now)
+    }
+
     private static func expired(_ items: [HistoryItem], retention: HistoryRetention, keeping: Set<UUID>, now: Date) -> [HistoryItem] {
         items.filter { item in
             guard !keeping.contains(item.id) else { return false }

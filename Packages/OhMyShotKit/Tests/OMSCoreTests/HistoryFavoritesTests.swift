@@ -46,6 +46,21 @@ struct HistoryFavoritesTests {
         #expect(store.items().map(\.id) == [favorite.id])
     }
 
+    /// A capture added to Favorites after expiry listed it, while the listing ran off the main actor, isn't deleted.
+    @Test func aCaptureAddedToFavoritesAfterTheListingStays() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let now = Date()
+        let starred = try add(store, age: 2 * 86_400, now: now), old = try add(store, age: 2 * 86_400, now: now)
+        let listed = await store.loadExpired(retention: .oneDay, now: now)
+        #expect(Set(listed.map(\.id)) == [starred.id, old.id])
+        try store.setFavorite(true, of: starred)
+        #expect(store.stillExpired(listed, retention: .oneDay, now: now).map(\.id) == [old.id])
+        store.delete(old)
+        #expect(store.stillExpired(listed, retention: .oneDay, now: now).isEmpty)
+        #expect(store.stillExpired(listed, retention: .never, now: now).map(\.id) == [starred.id])
+    }
+
     /// With History off nothing is kept past its card, a favorite included.
     @Test func historyOffKeepsNoFavorite() throws {
         let store = makeStore()
