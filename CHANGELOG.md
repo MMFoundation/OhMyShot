@@ -31,6 +31,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Movies open in the recording window: an MP4 or MOV opened with OhMyShot from Finder's Open With, dropped on its Dock icon, or chosen in Open Image › Annotate… is copied into Capture History as a recording, to trim, make quieter or smaller, or make into a GIF. The file itself is left where it is, and a MOV stays a QuickTime movie when it is edited.
 - Studio's inspector has an Audio section. A recording's system sound and microphone each have their own Mute and volume, heard as you set them and exported that way. Recordings made before this get one Sound row; one that recorded only the system sound or only the microphone gets a row for that one. The recording in Capture History still has both sounds mixed into one track, so it plays everywhere.
 - Studio can play part of a recording faster or slower: choose a stretch on the clip, then pick 0.5×, 1.5×, 2×, 3×, or 4× from Speed beside Cut or in the inspector. The picture, both sounds (at their own pitch), the pointer, clicks, keys, zooms, and camera all keep in step, in the preview and the movie.
+- Studio can blur the room behind the person on camera or cut the person out, as a Background setting for the camera: Original, Blur, or Cutout. The person is found on this Mac, frame by frame, in every layout. Cut out, they sit right on the recording in picture in picture and on the movie's background side by side or filling the movie. Both show in the preview and the exported movie alike.
 
 ### Changed
 
