@@ -124,8 +124,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var laidOut: Frames?
     /// The images blurs and pixelations were last made over.
     private var redactionImages: [Annotation] = []
-    /// Where the redactions lay when erasures were last made, which they read nothing of.
-    private var erasedAround: [CGRect] = []
+    /// Where the redactions lay when erasures were last made, which they read nothing of, and the canvas they
+    /// were kept inside.
+    private var erasedAround: (covered: [CGRect], canvas: CGRect) = ([], .null)
     /// The picture the image layer shows, which a turn, a flip, or a resize replaces.
     private var shownPicture: CGImage?
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
@@ -887,7 +888,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
         let source = session.combinedRedactionSource ?? Redactor.Source(base: session.picture)
         layer.coverage = Redactor.coverage(
-            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale, covered: session.document.redactedRects
+            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale, covered: session.document.redactedRects,
+            canvas: session.document.canvas
         )
     }
 
@@ -900,14 +902,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Makes blurs and pixelations again over images that moved, once a drag has ended, and reads again
     /// what highlights lie on: remaking them at every step of a drag would be slow, and they show the
-    /// result on release. Erasures are made again as well when a redaction around them came, went, or moved.
+    /// result on release. Erasures are made again as well when a redaction around them came, went, or moved,
+    /// or the canvas they keep inside changed.
     private func refreshRedactionsIfNeeded() {
         guard !session.isInLiveChange else { return }
         let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
-        let covered = session.document.redactedRects
+        let around = (covered: session.document.redactedRects, canvas: session.document.canvas)
         if images != redactionImages {
             redactionImages = images
-            erasedAround = covered
+            erasedAround = around
             for layer in markLayers.values {
                 if case .redaction = layer.mark.shape {
                     updateRedaction(layer)
@@ -915,8 +918,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 }
                 updateGround(layer)
             }
-        } else if covered != erasedAround {
-            erasedAround = covered
+        } else if around != erasedAround {
+            erasedAround = around
             for layer in markLayers.values {
                 guard case .redaction(let redaction) = layer.mark.shape, redaction.method == .erase else { continue }
                 updateRedaction(layer)

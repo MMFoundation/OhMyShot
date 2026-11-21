@@ -34,18 +34,25 @@ nonisolated enum Redactor {
     /// cover; nil means that there is no area to filter or that the mark itself draws a solid fill.
     /// The source retains its document bounds even if the combined image could not be made. `covered` is
     /// where the document's redactions lie, in document pixels (`AnnotationDocument.redactedRects`): an
-    /// erasure reads none of it.
+    /// erasure reads none of it. `canvas` is what the picture keeps (a crop, or Annotate Area's selection): an
+    /// erasure fills and reads only inside it, so it comes out the same once the picture is cut to it.
     static func coverage(
-        for redaction: Redaction, id: UUID, source: Source, scale: CGFloat, covered: [CGRect] = [], filter: Filter = apply
+        for redaction: Redaction, id: UUID, source: Source, scale: CGFloat, covered: [CGRect] = [], canvas: CGRect? = nil,
+        filter: Filter = apply
     ) -> Coverage? {
         guard redaction.method != .solid else { return nil }
-        let rect = redaction.rect.standardized.integral.intersection(source.bounds)
+        var rect = redaction.rect.standardized.integral.intersection(source.bounds)
+        let kept = canvas?.standardized.integral
+        if redaction.method == .erase, let kept { rect = rect.intersection(kept) }
         guard !rect.isNull, rect.width >= 1, rect.height >= 1 else { return nil }
         // In the source's own pixels.
         let local = rect.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY)
         guard let image = source.image else { return .opaque(rect) }
         let pixels = if redaction.method == .erase {
-            erased(local, of: image, scale: scale, avoiding: covered.map { $0.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY) })
+            erased(
+                local, of: image, scale: scale, avoiding: covered.map { $0.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY) },
+                within: kept?.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY)
+            )
         } else {
             filter(redaction.method, local, image, scale, id)
         }
@@ -70,12 +77,13 @@ nonisolated enum Redactor {
     /// what borders it is one color, a gradient when that changes evenly, otherwise each side's colors carried
     /// in from that side, the nearer sides counting for more. Only a band of pixels just outside `rect` is
     /// read, never one inside it, so nothing it covers can be recovered from the fill; nor one in `avoiding`
-    /// (where other redactions lie), so it never spreads what they hide. A few stray pixels in the band (the
-    /// edge of a word beside it) are outvoted. Nil when nothing around it can be read, which covers it
+    /// (where other redactions lie), so it never spreads what they hide; nor one outside `within`; nor one
+    /// that is not opaque (a window's clear margin), so the fill is always opaque. A few stray pixels in the
+    /// band (the edge of a word beside it) are outvoted. Nil when nothing around it can be read, which covers it
     /// opaquely.
-    static func erased(_ rect: CGRect, of base: CGImage, scale: CGFloat, avoiding: [CGRect]) -> CGImage? {
+    static func erased(_ rect: CGRect, of base: CGImage, scale: CGFloat, avoiding: [CGRect], within: CGRect? = nil) -> CGImage? {
         let band = max(2, Int((2 * scale).rounded()))
-        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height).intersection(within ?? .infinite)
         let area = rect.insetBy(dx: -CGFloat(band), dy: -CGFloat(band)).intersection(bounds).integral
         guard !area.isNull, let around = Bitmap(base, crop: area) else { return nil }
         let inner = rect.offsetBy(dx: -area.minX, dy: -area.minY)
@@ -87,6 +95,8 @@ nonisolated enum Redactor {
         func readable(_ x: Int, _ y: Int) -> Bool {
             guard x >= 0, y >= 0, x < around.width, y < around.height else { return false }
             if (left..<right).contains(x), (top..<bottom).contains(y) { return false }
+            // The alpha comes first.
+            guard around.bytes[y * around.rowBytes + x * 4] == 255 else { return false }
             let center = CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5)
             return !avoided.contains { $0.contains(center) }
         }

@@ -251,7 +251,8 @@ nonisolated public enum AnnotationRenderer {
             var ground = HighlightGround.light
             if case .redaction(let redaction) = item.shape {
                 coverage = Redactor.coverage(
-                    for: redaction, id: item.id, source: source, scale: document.scale, covered: covered, filter: redactionFilter
+                    for: redaction, id: item.id, source: source, scale: document.scale, covered: covered, canvas: document.canvas,
+                    filter: redactionFilter
                 )
             } else if item.multiplies {
                 let picture = source.picture ?? (base, .zero)

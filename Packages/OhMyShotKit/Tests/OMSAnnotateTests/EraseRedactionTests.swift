@@ -230,6 +230,66 @@ struct EraseRedactionTests {
         document.items = [ToolSettings.defaults(for: .redact).applied(to: mark)]
         #expect(AnnotationProject.version(for: document) == 1)
     }
+
+    /// Beside a window's clear margin, an erasure reads only opaque pixels, so it never makes a hole in what it
+    /// covers.
+    @Test func anErasureIsOpaqueBesideAClearMargin() throws {
+        let base = try picture { context in
+            context.clear(CGRect(x: 0, y: 0, width: 120, height: 80))
+            context.setFillColor(Self.gray(200))
+            context.fill(CGRect(x: 60, y: 0, width: 60, height: 80))
+        }
+        let redaction = Redaction(rect: CGRect(x: 40, y: 20, width: 40, height: 40), method: .erase)
+        guard case let .filtered(image, _) = Redactor.coverage(for: redaction, id: markID, source: .init(base: base), scale: 1) else {
+            Issue.record("No fill")
+            return
+        }
+        let pixels = Pixels(image)
+        var unlike = 0
+        for y in 0..<pixels.height {
+            for x in 0..<pixels.width {
+                let pixel = pixels[x, y]
+                if pixel.a != 255 || abs(pixel.r - 200) > 2 { unlike += 1 }
+            }
+        }
+        #expect(unlike == 0, "\(unlike) pixels are not the opaque gray beside the margin")
+    }
+
+    /// An erasure fills and reads only what the picture keeps, so Annotate Area's preview, made on the whole display,
+    /// comes out the same once the picture is cut to the selection, and a crop lets nothing in from outside it.
+    @Test func anErasureKeepsInsideTheCanvas() throws {
+        let base = try picture { context in
+            context.setFillColor(Self.gray(250))
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+            context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 30, height: 80))
+            Self.text(in: CGRect(x: 30, y: 20, width: 40, height: 30), context: context)
+        }
+        let canvas = CGRect(x: 30, y: 10, width: 80, height: 60)
+        // Reaching past the canvas's left edge, onto the red it leaves out.
+        let redaction = Redaction(rect: CGRect(x: 20, y: 20, width: 50, height: 30), method: .erase)
+        guard case let .filtered(whole, area) = Redactor.coverage(for: redaction, id: markID, source: .init(base: base), scale: 1, canvas: canvas) else {
+            Issue.record("No fill")
+            return
+        }
+        #expect(area == CGRect(x: 30, y: 20, width: 40, height: 30))
+        let filled = Pixels(whole)
+        var unlike = 0
+        for y in 0..<filled.height {
+            for x in 0..<filled.width where abs(filled[x, y].r - 250) > 2 || abs(filled[x, y].g - 250) > 2 { unlike += 1 }
+        }
+        #expect(unlike == 0, "\(unlike) pixels take in what lies outside the canvas")
+        // The same erasure on the picture cut to the canvas, as Annotate Area keeps it.
+        let cut = try #require(base.cropping(to: canvas))
+        let moved = Redaction(rect: redaction.rect.offsetBy(dx: -canvas.minX, dy: -canvas.minY), method: .erase)
+        guard case let .filtered(kept, keptArea) = Redactor.coverage(for: moved, id: markID, source: .init(base: cut), scale: 1) else {
+            Issue.record("No fill on the cut picture")
+            return
+        }
+        #expect(keptArea == area.offsetBy(dx: -canvas.minX, dy: -canvas.minY))
+        let all = CGRect(x: 0, y: 0, width: whole.width, height: whole.height)
+        #expect(Pixels(kept).region(all) == filled.region(all))
+    }
 }
 
 /// The canvas draws an erasure as the export does, and makes it again when a redaction beside it comes or
