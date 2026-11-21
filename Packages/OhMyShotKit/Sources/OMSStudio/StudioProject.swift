@@ -540,6 +540,15 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         return kept
     }
 
+    /// How long `range` of the recording plays in the movie, at the speeds set across it: a cut there makes the movie
+    /// this much shorter.
+    func playedLength(of range: ClosedRange<Double>) -> Double {
+        speeds.reduce(range.upperBound - range.lowerBound) { length, speed in
+            let overlap = max(0, min(range.upperBound, speed.end) - max(range.lowerBound, speed.start))
+            return length - overlap + overlap / speed.rate
+        }
+    }
+
     /// The shortest stretch of the timeline for the camera's layout, in seconds.
     public static let shortestSegment = 0.5
     /// The shortest zoom, in seconds: one dragged or typed shorter keeps this long, and an automatic one shorter is

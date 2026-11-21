@@ -472,7 +472,8 @@ public final class StudioDocument {
             return
         }
         let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
-        guard upper - lower >= 0.05 else { return }
+        // A new stretch is at least a twentieth of a second; a speed already set changes, or goes, however short it was left.
+        guard upper > lower, selectedSpeed != nil || upper - lower >= 0.05 else { return }
         // What the others keep outside the stretch, then the stretch itself.
         var speeds = project.speeds.flatMap { speed -> [StudioProject.Speed] in
             guard speed.end > lower, speed.start < upper else { return [speed] }

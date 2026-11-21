@@ -24,8 +24,9 @@ struct StudioTimeline: View {
     private static let zoomHeight: CGFloat = 26
     private static let clipTop: CGFloat = 64
     private static let clipHeight: CGFloat = 40
-    /// A stretch played faster or slower, as a band along the clip's foot.
+    /// A stretch played faster or slower, as a band along the clip's foot, never narrower than `speedWidth`.
     private static let speedHeight: CGFloat = 16
+    private static let speedWidth: CGFloat = 6
     /// The camera's layouts, as chips under the clip, when it has any: 26 pt high, 6 pt below it.
     private static let layoutTop: CGFloat = 110
     private static let layoutHeight: CGFloat = 26
@@ -387,7 +388,7 @@ struct StudioTimeline: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth)
                     )
-                    .frame(width: max(speedRight - speedLeft, 6), height: Self.speedHeight)
+                    .frame(width: max(speedRight - speedLeft, Self.speedWidth), height: Self.speedHeight)
                     .pointerStyle(.link)
                     .contextMenu {
                         ForEach(StudioProject.speedRates, id: \.self) { rate in
@@ -419,7 +420,7 @@ struct StudioTimeline: View {
                             Image(systemName: "scissors")
                                 .font(.system(size: 11, weight: .semibold))
                             if cutRight - cutLeft >= 64 {
-                                Text(verbatim: "−" + TransportBar.oneDecimal(cut.upperBound - cut.lowerBound) + " s")
+                                Text(verbatim: "−" + TransportBar.oneDecimal(document.project.playedLength(of: cut)) + " s")
                                     .font(.system(size: 11).monospacedDigit())
                                     .lineLimit(1)
                             }
@@ -557,7 +558,9 @@ struct StudioTimeline: View {
             if let cut = cuts.first(where: { $0.contains(at) }) {
                 return .cut(cut.lowerBound)
             }
-            if point.y >= Self.clipTop + Self.clipHeight - Self.speedHeight, let speed = speeds.first(where: { $0.start <= at && at < $0.end }) {
+            // Where the band is drawn, at least `speedWidth` wide; of two drawn over each other, the later, on top.
+            if point.y >= Self.clipTop + Self.clipHeight - Self.speedHeight,
+               let speed = speeds.last(where: { point.x >= x($0.start) && point.x < max(x($0.end), x($0.start) + Self.speedWidth) }) {
                 return .speed(speed.start)
             }
             return .clipRange

@@ -96,6 +96,51 @@ struct StudioSpeedTests {
         #expect(document.project.speeds == [.init(start: 1, end: 2, rate: 3)])
     }
 
+    @MainActor @Test func aSpeedLeftShortByAnotherStillChangesAndGoes() {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioSpeedTests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let document = StudioDocument(
+            source: folder.appending(path: "none.mp4"), telemetry: StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2),
+            project: StudioProject(), duration: 10, recordingSize: CGSize(width: 320, height: 200),
+            folder: folder, hasBeenExported: true, background: { _, _ in nil }
+        )
+        document.selection = .range(1...3)
+        document.setSpeed(2)
+        document.selection = .range(1.03...2)
+        document.setSpeed(3)
+        // Three hundredths of a second left of the first, chosen on the timeline: a new stretch that short would be refused.
+        #expect(document.project.speeds.first == .init(start: 1, end: 1.03, rate: 2))
+        document.selection = .range(4...4.02)
+        document.setSpeed(2)
+        #expect(document.project.speeds.count == 3)
+        document.selection = .speed(1)
+        document.setSpeed(0.5)
+        #expect(document.project.speeds.first == .init(start: 1, end: 1.03, rate: 0.5))
+        document.setSpeed(1)
+        #expect(document.project.speeds.map(\.start) == [1.03, 2] && document.selection == .none)
+    }
+
+    @Test func aCutSaysHowMuchShorterTheMovieIsAtTheSpeedItsStretchPlays() {
+        let project = StudioProject(speeds: [.init(start: 1, end: 5, rate: 4)])
+        #expect(abs(project.playedLength(of: 2...4) - 0.5) < 1e-9)
+        #expect(abs(project.playedLength(of: 0...2) - 1.25) < 1e-9)
+        #expect(abs(project.playedLength(of: 6...8) - 2) < 1e-9)
+    }
+
+    @Test func aSpeedBandDrawnWiderThanItsStretchIsHitWhereItIsDrawn() {
+        // 240 s over 1000 pt: half a second is about 2 pt, drawn 6 pt wide.
+        let viewport = StudioTimelineViewport(duration: 240)
+        let speed = StudioProject.Speed(start: 100, end: 100.5, rate: 2)
+        let start = 16 + 1000 * 100 / 240.0
+        let foot = 64 + 40 - 8.0
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: start + 3, y: foot), width: 1032, viewport: viewport, zooms: [], cuts: [], speeds: [speed]) == .speed(100))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: start + 8, y: foot), width: 1032, viewport: viewport, zooms: [], cuts: [], speeds: [speed]) == .clipRange)
+        // A cut over it keeps its place on top.
+        #expect(StudioTimeline.laneHit(
+            at: CGPoint(x: start + 3, y: foot), width: 1032, viewport: viewport, zooms: [], cuts: [99...101], speeds: [speed]
+        ) == .cut(99))
+    }
+
     @Test func aProjectFromBeforeSpeedsPlaysAsRecorded() throws {
         let old = try JSONDecoder().decode(StudioProject.self, from: Data(#"{"padding": 0.1}"#.utf8))
         #expect(old.speeds.isEmpty)
@@ -171,5 +216,35 @@ struct StudioSpeedTests {
         let crossings = zip(middle, middle.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count
         let frequency = Double(crossings) / 2 / (Double(middle.count) / 48_000)
         #expect(abs(frequency - 440) < 30, "\(frequency) Hz")
+    }
+
+    @Test func thePitchHoldsAtHalfAndFourTimesTheSpeedOnEitherSideOfWhereTheyMeet() async throws {
+        let movie = try await StudioSoundTests.movie(seconds: 2, sounds: [(2, 0.3)])
+        let folder = try StudioSoundTests.folder()
+        var made: [URL] = []
+        defer { ([movie, folder] + made).forEach { try? FileManager.default.removeItem(at: $0) } }
+        _ = try await StudioSound.keep(from: movie, in: folder)
+        let sounds = StudioSound.files(in: folder).map { StudioComposition.SoundSource(sound: $0.sound, asset: AVURLAsset(url: $0.url)) }
+        // The first second at half speed, two seconds of the movie; the next at 4×, a quarter second of it.
+        let speeds = [StudioProject.Speed(start: 0, end: 1, rate: 0.5), StudioProject.Speed(start: 1, end: 2, rate: 4)]
+        var project = StudioProject(background: .color(red: 1, green: 1, blue: 1), padding: 0)
+        project.speeds = speeds
+        let composition = try await StudioComposition.make(
+            source: AVURLAsset(url: movie), renderer: StudioSoundTests.renderer(project, duration: 2), cuts: [], speeds: speeds, sounds: sounds
+        )
+        let url = try await StudioSoundTests.exported(composition)
+        made.append(url)
+
+        let samples = try #require(try await StudioSoundTests.samples(of: url))
+        try #require(samples.count > Int(2.2 * 48_000), "\(samples.count) samples")
+        func frequency(from start: Double, to end: Double) -> Double {
+            let part = samples[Int(start * 48_000) ..< Int(end * 48_000)]
+            let crossings = zip(part, part.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count
+            return Double(crossings) / 2 / (Double(part.count) / 48_000)
+        }
+        // Away from where the speeds meet, where the two blend.
+        let slow = frequency(from: 0.3, to: 1.7), fast = frequency(from: 2.06, to: 2.19)
+        #expect(abs(slow - 440) < 30, "\(slow) Hz at 0.5×")
+        #expect(abs(fast - 440) < 30, "\(fast) Hz at 4×")
     }
 }
