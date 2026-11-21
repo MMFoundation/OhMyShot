@@ -22,13 +22,13 @@ struct ProjectPictureTests {
     private func red(of picture: URL) throws -> UInt8 {
         let source = try #require(CGImageSourceCreateWithURL(picture as CFURL, nil))
         let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
-        var pixel = [UInt8](repeating: 0, count: 4)
+        // The context's own buffer, which lives as long as it does.
         let context = try #require(CGContext(
-            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ))
         context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        return pixel[0]
+        return try #require(context.data).load(as: UInt8.self)
     }
 
     @Test func twoProjectsOfOneNameKeepTheirOwnPictures() async throws {
