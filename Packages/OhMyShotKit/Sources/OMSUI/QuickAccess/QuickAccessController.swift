@@ -358,7 +358,7 @@ public final class QuickAccessController {
         hold(.failure, for: id, if: false)
     }
 
-    /// Marks a capture saved elsewhere (from the editor or Capture History) as saved on its card.
+    /// Marks a capture saved elsewhere (from the editor) as saved on its card.
     public func markSaved(_ id: UUID, at url: URL) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].savedURL = url
