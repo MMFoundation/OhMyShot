@@ -163,6 +163,84 @@ struct MarkKeyboardTests {
         #expect(block.fontSize == 14)
     }
 
+    /// At either end of the capsule's sizes a size between its steps stays as it is: [ on a 3 pt line, whose chosen chip is
+    /// 2 pt, and ] on a 12 pt one, past the last.
+    @Test func bracketsLeaveASizeBetweenStepsAtTheEnds() throws {
+        var thin = arrow(20)
+        thin.style.lineWidth = 3
+        var thick = arrow(120)
+        thick.style.lineWidth = 12
+        let (canvas, session, window) = try makeCanvas(items: [thin, thick])
+        defer { window.close() }
+
+        session.select([thin.id])
+        canvas.keyDown(with: try key("[", keyCode: 33))
+        #expect(session.document.item(thin.id)?.style.lineWidth == 3)
+        session.select([thick.id])
+        canvas.keyDown(with: try key("]", keyCode: 30))
+        #expect(session.document.item(thick.id)?.style.lineWidth == 12)
+        canvas.keyDown(with: try key("[", keyCode: 33))
+        #expect(session.document.item(thick.id)?.style.lineWidth == 6)
+    }
+
+    /// A digit from the keypad chooses its color as one from the number row does, and a bracket typed with Option, as
+    /// layouts such as German type it, steps the size rather than choosing the color of the digit under it.
+    @Test func keypadDigitsAndOptionBracketsAreStyleKeys() throws {
+        let line = arrow(20)
+        let (canvas, session, window) = try makeCanvas(items: [line])
+        defer { window.close() }
+        session.select([line.id])
+
+        canvas.keyDown(with: try key("2", keyCode: 84, modifiers: .numericPad))
+        #expect(session.document.item(line.id)?.style.color == StyleCapsule.palette[1])
+
+        let optionBracket = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "[", charactersIgnoringModifiers: "5", isARepeat: false, keyCode: 23
+        ))
+        canvas.keyDown(with: optionBracket)
+        #expect(session.document.item(line.id)?.style.lineWidth == 2)
+        #expect(session.document.item(line.id)?.style.color == StyleCapsule.palette[1])
+    }
+
+    /// Past the last mark, and before the first, Tab reaches the window, whose keyDown moves the keyboard to the next control.
+    /// A mark to pick up keeps it. (The window here is never key, in a test process that is not the active app, so AppKit
+    /// moves nothing itself; what is checked is that the canvas lets the key go to the window and that there is a next
+    /// control for the window to move to.)
+    @Test func tabPastTheEndsGoesOnToTheWindow() throws {
+        let context = try #require(CGContext(
+            data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let session = AnnotationSession(image: try #require(context.makeImage()), scale: 1, tool: .select, defaults: scratch.make())
+        let item = arrow(20)
+        var document = session.document
+        document.items = [item]
+        session.commit(document, actionName: "Add")
+        let window = KeyRecordingWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 230), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let canvas = AnnotationCanvasView(session: session)
+        canvas.contentInsets = NSEdgeInsetsZero
+        canvas.frame = CGRect(x: 0, y: 30, width: 400, height: 200)
+        let field = NSTextField(frame: CGRect(x: 0, y: 0, width: 80, height: 22))
+        window.contentView?.addSubview(canvas)
+        window.contentView?.addSubview(field)
+        canvas.nextKeyView = field
+        field.nextKeyView = canvas
+        window.makeFirstResponder(canvas)
+
+        canvas.keyDown(with: try tab)
+        #expect(session.selection == [item.id] && window.tabs == 0)
+        canvas.keyDown(with: try tab)
+        #expect(session.selection.isEmpty && window.tabs == 1)
+        canvas.keyDown(with: try key("\t", keyCode: 48, modifiers: .shift))
+        #expect(session.selection == [item.id] && window.tabs == 1)
+        canvas.keyDown(with: try key("\t", keyCode: 48, modifiers: .shift))
+        #expect(session.selection.isEmpty && window.tabs == 2)
+        #expect(canvas.nextValidKeyView === field && canvas.previousValidKeyView === field)
+    }
+
     /// Each mark is a layout item VoiceOver names, frames where it is drawn, selects as a click would, and deletes.
     @Test func eachMarkIsANamedElementThatSelectsAndDeletes() throws {
         let items = [
@@ -214,8 +292,11 @@ struct MarkKeyboardTests {
 
     /// The rail's menu lists the keys after the tools, the colors with their numbers.
     @Test func theRailMenuListsTheKeys() throws {
+        let (canvas, _, window) = try makeCanvas()
+        defer { window.close() }
         let rail = ToolRail()
         rail.keyedColors = { [.red, .orange] }
+        rail.markTarget = canvas
         let event = try #require(NSEvent.mouseEvent(
             with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
         ))
@@ -226,6 +307,9 @@ struct MarkKeyboardTests {
         #expect(titled["Smaller"]?.keyEquivalent == "[" && titled["Larger"]?.keyEquivalent == "]")
         let colors = try #require(titled["Color"]?.submenu)
         #expect(colors.items.map(\.title) == ["Red", "Orange"] && colors.items.map(\.keyEquivalent) == ["1", "2"])
+        // Sent to the canvas itself, which a rail chip holding the keys has no responder chain to.
+        let keyed = ["Select Next Mark", "Select Previous Mark", "Smaller", "Larger"].compactMap { titled[$0] } + colors.items
+        #expect(keyed.count == 6 && keyed.allSatisfy { $0.target === canvas })
     }
 
     /// In place the canvas is the same, so its keys are too.
@@ -248,5 +332,15 @@ struct MarkKeyboardTests {
         annotator.canvas.keyDown(with: try key("5", keyCode: 23))
         #expect(annotator.session.document.item(item.id)?.style.color == .blue)
         #expect(marks(annotator.canvas).map { $0.accessibilityLabel() } == ["Rectangle, Blue"])
+    }
+}
+
+/// A window that counts the Tabs that reach it, which its own keyDown turns into a move to the next control.
+private final class KeyRecordingWindow: NSWindow {
+    var tabs = 0
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 48 { tabs += 1 }
+        super.keyDown(with: event)
     }
 }

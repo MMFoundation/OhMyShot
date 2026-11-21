@@ -11,6 +11,8 @@ final class ToolRail: NSView {
     var onSelect: ((AnnotationTool) -> Void)?
     /// The colors 1 to 9 choose now, for the menu to list beside their keys.
     var keyedColors: (() -> [RGBA])?
+    /// The canvas the menu's mark and style items go to, which is no responder of the rail's own when a chip has the keys.
+    weak var markTarget: AnyObject?
 
     static let width: CGFloat = 42
     private static let inset: CGFloat = 6
@@ -218,6 +220,7 @@ final class ToolRail: NSView {
         func key(_ title: String, _ action: Selector, _ key: String, _ modifiers: NSEvent.ModifierFlags = []) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
             item.keyEquivalentModifierMask = modifiers
+            item.target = markTarget
             return item
         }
         menu.addItem(key(String(localized: "Select Next Mark", bundle: .module), #selector(AnnotationCanvasView.selectNextMark(_:)), "\t"))

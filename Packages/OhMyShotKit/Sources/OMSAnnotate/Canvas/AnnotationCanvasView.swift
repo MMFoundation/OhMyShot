@@ -1973,6 +1973,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             return false
         default:
+            // Digits from the keypad too, and brackets as typed, Option and all, for layouts that need Option for them.
+            if editing == nil, flags.subtracting([.shift, .capsLock, .numericPad]).isEmpty,
+               let digit = event.charactersIgnoringModifiers?.first?.wholeNumberValue, (1...9).contains(digit) {
+                return chooseColor(at: digit - 1)
+            }
+            if editing == nil, flags.subtracting([.shift, .capsLock, .option]).isEmpty, let typed = event.characters, typed == "[" || typed == "]" {
+                return stepSize(by: typed == "]" ? 1 : -1)
+            }
             guard
                 flags.subtracting([.shift, .capsLock]).isEmpty,
                 let character = event.charactersIgnoringModifiers?.lowercased().first
@@ -1980,12 +1988,6 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             if character == "i", editing == nil {
                 toggleColorPicker()
                 return true
-            }
-            if editing == nil, let digit = character.wholeNumberValue, (1...9).contains(digit) {
-                return chooseColor(at: digit - 1)
-            }
-            if editing == nil, character == "[" || character == "]" {
-                return stepSize(by: character == "]" ? 1 : -1)
             }
             guard
                 let tool = AnnotationTool.allCases.first(where: { $0.key == character }),
@@ -2059,8 +2061,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let isText = kind == .text
         let current = isText ? session.currentSettings.fontSize : session.currentSettings.lineWidth
         let index = sizes.firstIndex(of: StyleCapsule.nearest(current, in: sizes)) ?? 0
-        let size = sizes[min(max(index + step, 0), sizes.count - 1)]
-        guard size != current else { return true }
+        let next = min(max(index + step, 0), sizes.count - 1)
+        // At either end the size stays as it is, even one between the capsule's steps.
+        guard next != index else { return true }
+        let size = sizes[next]
         if isText {
             session.changeSettings(String(localized: "Text Size", bundle: .module)) { $0.fontSize = size }
         } else {
