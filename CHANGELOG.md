@@ -58,6 +58,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - A file opened with OhMyShot that it can't open now beeps and says so by the pointer, where it used to be passed over without a word.
 - A Shortcuts capture action hands its screenshot to the next action with Keep Captures at Never and Quick Access off, where the capture used to be deleted before the shortcut could read it. Nothing is kept once it has been handed on, but for a pinned capture, which is left as Capture Area and Pin leaves it.
 - Copy Link on a capture's card or in Capture History no longer copies a link that has expired, or one whose upload was deleted from its storage. It copies the link of the capture's newest upload that still works, and when none does, Copy Link leaves the menu, as it already did in Settings › Sharing.
+- Two projects with the same name from different folders, open at once, no longer share one picture: dragging out or saving a copy from either editor hands over its own.
 
 ## [0.3.0] - 2026-11-21
 
