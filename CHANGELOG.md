@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Annotate Area pins and uploads in place: Pin (⇧⌘P) and, once a destination is set up, Upload (⇧⌘U) stand between Save and Cancel. Pin lays the marked selection over the area it came from, a redaction drawn there included; Upload keeps and copies it as Copy does and sends it to the default destination.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
