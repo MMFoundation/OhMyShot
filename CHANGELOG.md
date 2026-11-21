@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- A capture whose Capture History record can't be written (on a full disk, say) no longer leaves its file behind in the history folder, where nothing showed it and Keep captures never removed it. A recording goes back where it was.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
