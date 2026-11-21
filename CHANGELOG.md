@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Self-Timer with several Shift-clicked windows captures those windows, each on its own and put together as without the timer, instead of the rectangle around them with whatever lay between or behind them. A chosen window closed during the countdown is no longer replaced by the screen where it was: nothing is captured, and a beep and the reading by where it was say so.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
