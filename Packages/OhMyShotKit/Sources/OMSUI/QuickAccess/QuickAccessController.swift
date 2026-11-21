@@ -338,10 +338,12 @@ public final class QuickAccessController {
     /// Shows on capture `id`'s card why a copy of it could not be saved, or made to be dragged out, shared, or uploaded,
     /// says it to VoiceOver, and holds the card from closing by itself until a copy is saved (or, for one to hand over,
     /// made) or the card is closed, as a failed upload holds it. False when the capture has no card on screen to say it,
-    /// so the caller can say it elsewhere.
+    /// so the caller can say it elsewhere; so too for a copy to hand over while the card says a copy could not be saved,
+    /// which stays said and held, since making one to hand over saves nothing.
     @discardableResult
     public func showFailure(_ failure: ExportFailure, for id: UUID) -> Bool {
         guard item(id) != nil, !isTrashing(id) else { return false }
+        guard failure.step == .saving || failures[id]?.step != .saving else { return false }
         failures[id] = failure
         stack?.setFailure(failure, for: id)
         hold(.failure, for: id, if: true)
@@ -358,6 +360,12 @@ public final class QuickAccessController {
         guard failures.removeValue(forKey: id) != nil else { return }
         stack?.setFailure(nil, for: id)
         hold(.failure, for: id, if: false)
+    }
+
+    /// A copy of capture `id` to hand over (dragged out, shared, or uploaded) was made after all: its card no longer says
+    /// one couldn't be. A copy that could not be saved is still said and held.
+    public func clearHandOverFailure(for id: UUID) {
+        if failures[id]?.step == .converting { clearFailure(for: id) }
     }
 
     /// Marks a capture saved elsewhere (from the editor) as saved on its card.
@@ -619,8 +627,7 @@ public final class QuickAccessController {
             guard let self else { return nil }
             switch actions.fileToHandOver(item) {
             case .success(let file):
-                // A copy that could not be made before can be now: the card no longer says it.
-                if failures[item.id]?.step == .converting { clearFailure(for: item.id) }
+                clearHandOverFailure(for: item.id)
                 return file
             case .failure(let failure):
                 showFailure(failure, for: item.id)

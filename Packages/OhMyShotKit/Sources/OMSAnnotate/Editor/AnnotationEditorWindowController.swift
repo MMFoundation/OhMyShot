@@ -796,8 +796,10 @@ final class DragOutView: NSView, NSDraggingSource, CaptureDragSource {
     override func mouseDragged(with event: NSEvent) {
         guard let start = mouseDownPoint else { return }
         let point = convert(event.locationInWindow, from: nil)
-        guard hypot(point.x - start.x, point.y - start.y) > 3, let url = prepare?() else { return }
+        guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+        // One try a press: a copy that can't be made is not made again, nor said again, at every move after it.
         mouseDownPoint = nil
+        guard let url = prepare?() else { return }
         let item = NSDraggingItem(pasteboardWriter: url as NSURL)
         let image = thumbnail.map { NSImage(cgImage: $0, size: bounds.size) } ?? NSImage()
         item.setDraggingFrame(bounds, contents: image)
