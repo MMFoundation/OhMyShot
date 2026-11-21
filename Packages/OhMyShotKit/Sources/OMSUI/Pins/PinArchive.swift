@@ -31,7 +31,7 @@ nonisolated final class PinArchive: Sendable {
 
     struct Manifest: Codable, Equatable, Sendable {
         var hidden: Bool
-        /// Oldest first, as they are stacked: the last is in front.
+        /// Back to front, as they are stacked: the last is in front.
         var pins: [Record]
     }
 
@@ -89,8 +89,10 @@ nonisolated final class PinArchive: Sendable {
     }
 
     /// Reads what was kept: the list, and each picture it names, decoded. A pin whose picture can't be read is left
-    /// out, and a picture no pin names (its pin closed as the app stopped) is removed. `done` runs on the main actor,
-    /// only when a pin was kept; with nothing kept this reads no more than that the list isn't there.
+    /// out, and a picture no pin names (its pin closed as the app stopped) is removed, as are pictures with no list at
+    /// all (the app stopped before writing it). A list that is there but can't be read now is left for the next
+    /// launch. `done` runs on the main actor, only when a pin was kept; with nothing kept this does no more than find
+    /// that the list isn't there.
     func load(_ done: @escaping @MainActor @Sendable (Manifest, [UUID: CGImage]) -> Void) {
         queue.async { [self] in
             guard let (manifest, pictures) = read() else { return }
@@ -110,7 +112,16 @@ nonisolated final class PinArchive: Sendable {
 
     /// On the queue: the list and its pictures, nil when no pin was kept.
     private func read() -> (Manifest, [UUID: CGImage])? {
-        guard let data = try? Data(contentsOf: manifestURL) else { return nil }
+        let data: Data
+        do {
+            data = try Data(contentsOf: manifestURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            try? FileManager.default.removeItem(at: folder)
+            return nil
+        } catch {
+            Log.app.error("Could not read the kept pins: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
         guard var manifest = try? JSONDecoder.records.decode(Manifest.self, from: data) else {
             Log.app.error("Could not read the kept pins")
             try? FileManager.default.removeItem(at: folder)

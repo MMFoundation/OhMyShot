@@ -65,6 +65,7 @@ public final class PinController {
 
     private let settings: SettingsStore
     private let actions: Actions
+    /// Back to front, as they are stacked: a pin opened or clicked goes last.
     private var windows: [PinWindow] = []
     private let textReader = PinTextReader()
     private var windowLease: ActiveResources.Lease?
@@ -143,6 +144,7 @@ public final class PinController {
         window.onCloseAll = { [weak self] in self?.closeAll() }
         window.onChange = { [weak self] in self?.changed() }
         window.onAdjust = { [weak self] in self?.scheduleSave() }
+        window.onRaise = { [weak self] in self?.raise($0) }
         windows.append(window)
         windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
         return window
@@ -161,7 +163,7 @@ public final class PinController {
         let screens = Self.screens
         for record in manifest.pins where !windows.contains(where: { $0.pin.id == record.id }) {
             guard let content = record.pinContent(picture: pictures[record.id]) else { continue }
-            let zoom = PinGeometry.clamp(record.zoom, to: PinGeometry.zoomRange)
+            let zoom = PinGeometry.keptZoom(record.zoom)
             let base = PinWindow.baseSize(of: content)
             // Its size from its own size and zoom, its top left corner where it was.
             let kept = CGRect(x: record.frame.minX, y: record.frame.maxY - base.height * zoom, width: base.width * zoom, height: base.height * zoom)
@@ -234,6 +236,13 @@ public final class PinController {
     public func appearanceChanged() {
         let appearance = appearance
         for window in windows { window.apply(appearance) }
+    }
+
+    /// A pin clicked is in front of the others, and is kept so.
+    private func raise(_ window: PinWindow) {
+        guard windows.last !== window, let index = windows.firstIndex(where: { $0 === window }) else { return }
+        windows.append(windows.remove(at: index))
+        scheduleSave()
     }
 
     private func close(_ window: PinWindow) {

@@ -204,4 +204,18 @@ extension PinViewTests {
         view.mouseDown(with: doubleClick)
         #expect(abs(pin.zoom - 1.5) < 0.01)
     }
+
+    @Test func aClickBringsThePinInFrontOfTheOthers() throws {
+        let (view, _) = try card("npm run dev")
+        let pin = try #require(view.pinWindow)
+        var raised: [PinWindow] = []
+        pin.onRaise = { raised.append($0) }
+        // At its bottom right corner, where a press only begins a resize.
+        let down = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: pin.frame.width - 3, y: 3), modifierFlags: [], timestamp: 0,
+            windowNumber: pin.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        pin.sendEvent(down)
+        #expect(raised.count == 1 && raised.first === pin)
+    }
 }

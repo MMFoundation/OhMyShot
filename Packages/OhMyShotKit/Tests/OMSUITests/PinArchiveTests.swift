@@ -102,4 +102,29 @@ struct PinArchiveTests {
         #expect(archive.loadNow() == nil)
         #expect(!FileManager.default.fileExists(atPath: archive.folder.path(percentEncoded: false)))
     }
+
+    @Test func picturesLeftWithoutAListAreRemoved() throws {
+        let archive = archive()
+        defer { try? FileManager.default.removeItem(at: archive.folder) }
+        // The app stopped after a pin's picture was written and before the list was.
+        archive.keepPicture(try picture(), id: UUID())
+        archive.finish()
+        #expect(archive.loadNow() == nil)
+        #expect(!FileManager.default.fileExists(atPath: archive.folder.path(percentEncoded: false)))
+    }
+
+    @Test func aListThatCantBeReadNowIsLeftForTheNextLaunch() throws {
+        let archive = archive()
+        defer { try? FileManager.default.removeItem(at: archive.folder) }
+        let image = try picture()
+        let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .clipboard)
+        archive.keepPicture(image, id: pin.id)
+        archive.save(PinArchive.Manifest(hidden: false, pins: [try record(pin)]), waits: true)
+        let list = archive.folder.appending(path: "Pins.json").path(percentEncoded: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: list)
+        #expect(archive.loadNow() == nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: list)
+        let (manifest, pictures) = try #require(archive.loadNow())
+        #expect(manifest.pins.map(\.id) == [pin.id] && pictures[pin.id] != nil)
+    }
 }

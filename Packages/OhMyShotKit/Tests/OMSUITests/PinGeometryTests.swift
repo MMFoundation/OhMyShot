@@ -104,6 +104,16 @@ struct PinGeometryTests {
         (CGRect(x: 1000, y: 0, width: 2000, height: 1200), CGRect(x: 1000, y: 0, width: 2000, height: 1175)),
     ]
 
+    @Test func aPinComesBackAtItsOwnZoomEvenBelowTheSmallestByHand() {
+        // A long scrolling capture, scaled down to fit as it opened.
+        let fitted = PinGeometry.initialFrame(size: CGSize(width: 400, height: 10_000), requested: nil, visible: screen)
+        #expect(fitted.zoom < PinGeometry.zoomRange.lowerBound)
+        #expect(PinGeometry.keptZoom(fitted.zoom) == fitted.zoom)
+        #expect(PinGeometry.keptZoom(2.5) == 2.5)
+        #expect(PinGeometry.keptZoom(40) == PinGeometry.zoomRange.upperBound)
+        #expect(PinGeometry.keptZoom(0) == 1 && PinGeometry.keptZoom(-1) == 1)
+    }
+
     @Test func aPinThatCanStillBeTakenHoldOfStays() {
         #expect(PinGeometry.recovered(CGRect(x: 1500, y: 400, width: 300, height: 200), on: displays) == nil)
         // Mostly past the edge of the screen, with 20 points of it still on it.

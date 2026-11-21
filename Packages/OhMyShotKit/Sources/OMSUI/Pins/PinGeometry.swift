@@ -24,6 +24,12 @@ enum PinGeometry {
         return (CGRect(x: visible.midX - fitted.width / 2, y: visible.midY - fitted.height / 2, width: fitted.width, height: fitted.height), fit)
     }
 
+    /// The zoom a pin brought back after a relaunch opens at: the one it had, which is below `zoomRange` when a long
+    /// picture was scaled down to fit its display as it opened, up to the largest; 100 percent when it has none.
+    static func keptZoom(_ zoom: CGFloat) -> CGFloat {
+        zoom > 0 ? min(zoom, zoomRange.upperBound) : 1
+    }
+
     /// Where a pin at `frame` goes when the displays change, or when it comes back after a relaunch: nil while enough of
     /// it to take hold of (`grip` points each way, or all of it when it is smaller) is on one of `screens` (frames and
     /// visible frames, global points). Else onto the screen nearest its center, inside that screen's visible frame, at the

@@ -11,7 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
-- Pins come back after OhMyShot quits, updates, or crashes: each where it was, at its zoom, opacity, and lock, hidden if the pins were hidden, with its picture, text, or color. Turn it off in Settings › Tools › Pins (Bring pins back after relaunch), which is off by default when Keep captures is Never. Closing a pin removes what was kept of it.
+- Pins come back after OhMyShot quits, updates, or crashes: each where it was, at its zoom, opacity, and lock, stacked as they were, hidden if the pins were hidden, with its picture, text, or color. Turn it off in Settings › Tools › Pins (Bring pins back after relaunch), which is off by default when Keep captures is Never. Closing a pin removes what was kept of it.
 
 ### Fixed
 

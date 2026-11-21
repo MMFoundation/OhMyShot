@@ -31,6 +31,8 @@ final class PinWindow: NSPanel, NSWindowDelegate {
     var onChange: (() -> Void)?
     /// Moved, zoomed, or faded: what is kept for the next launch follows.
     var onAdjust: (() -> Void)?
+    /// Clicked, so in front of the other pins: the order kept for the next launch follows.
+    var onRaise: ((PinWindow) -> Void)?
 
     /// `textReader` reads a picture's text for Live Text. `opacity` is the picture's, as a pin brought back after a
     /// relaunch had it.
@@ -103,6 +105,7 @@ final class PinWindow: NSPanel, NSWindowDelegate {
             // Key before the press is delivered: Live Text's text takes no first mouse, so on a pin that was
             // not key the first press on text only made it key.
             if canBecomeKey, !isKeyWindow { makeKey() }
+            if event.type == .leftMouseDown { onRaise?(self) }
         default:
             break
         }
