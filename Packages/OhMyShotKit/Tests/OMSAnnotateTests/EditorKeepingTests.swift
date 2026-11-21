@@ -120,6 +120,15 @@ struct EditorKeepingTests {
         #expect(controller.session.hasUnkeptChanges)
     }
 
+    /// A copy the app could not make in the format Settings choose leaves nothing to drag, not the file without it.
+    @Test func aCopyThatCannotBeMadeHandsNothingOver() {
+        var actions = AnnotationEditorWindowController.Actions(keep: { _, _, _ in nil }, save: { _ in nil })
+        actions.fileToHandOver = { _ in nil }
+        let controller = makeEditor(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        #expect(controller.fileForDragging() == nil)
+    }
+
     /// Edits that could not be kept stay unkept, and dragging out does not hand over the file without them.
     @Test func aFailedKeepLeavesTheEditsUnkeptAndHandsNothingOver() {
         let controller = makeEditor()

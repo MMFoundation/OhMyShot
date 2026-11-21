@@ -43,20 +43,11 @@ extension CompositionRoot {
                 self?.textCapture.openPanel(image: image, scale: scale, source: String(localized: "Pin"))
             },
             fileForDrag: { [weak self] pin in
-                guard let self, case .image = pin.content else { return nil }
-                switch pin.origin {
-                case .capture(let id):
-                    if let entry = history.item(id: id) {
-                        return files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
-                    }
-                case .file(let url):
-                    if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-                        return url
-                    }
-                case .clipboard:
-                    break
+                guard let self else { return nil }
+                if case .image = pin.content, case .capture(let id) = pin.origin, let entry = history.item(id: id) {
+                    return handedOverOrSaidWhy(files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint))
                 }
-                return nil
+                return pin.ownFile()
             }
         )
     }

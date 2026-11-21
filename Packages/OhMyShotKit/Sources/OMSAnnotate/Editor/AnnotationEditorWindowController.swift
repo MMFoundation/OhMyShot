@@ -22,8 +22,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// it was not saved. Nil when the editor offers no Save As.
         public var saveAs: ((_ file: URL) async -> URL?)?
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
-        /// copy of it in the format Settings choose.
-        public var fileToHandOver: (_ file: URL) -> URL = { $0 }
+        /// copy of it in the format Settings choose; nil when that copy could not be made, which the app says, and then
+        /// nothing goes.
+        public var fileToHandOver: (_ file: URL) -> URL? = { $0 }
         /// Puts the rendered picture on the clipboard and returns whether it succeeded. Without a callback, the PNG goes as it is.
         public var copy: ((_ image: CGImage, _ png: Data) async -> Bool)?
 
