@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Changed
+
+- Dragging a selected capture out of Capture History takes every selected capture with it, as in Finder, and Share… on it shares them all. A capture outside the selection still goes alone. When one of their copies can't be made, none goes and the reason shows by the pointer.
+
 ### Fixed
 
 - A save that fails says why instead of only beeping. A Quick Access card shows the reason in its badge ("Couldn’t save: the disk is full", "Couldn’t save: the folder isn’t available") and stays until a copy is saved or you close it, so it can't close by itself and take an unsaved capture with it. The editor, pins, Capture History, the recording window, Studio, and saving after a capture with Quick Access off show the same sentence by the pointer. VoiceOver reads it.
