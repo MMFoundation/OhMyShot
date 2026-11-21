@@ -349,6 +349,9 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     public var hasPendingProjectSave: Bool { studio.hasPendingSave }
 
+    /// Whether a GIF is being made, which closing stops and waits for.
+    public var isMakingGIF: Bool { makingGIF != nil }
+
     /// Whether a movie is being exported after the window closed (the menu bar shows how far along).
     public var isExportingAfterClosing: Bool {
         exporting != nil && window?.isVisible != true
@@ -395,16 +398,17 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     public func windowWillClose(_ notification: Notification) {
         didClose = true
-        makingGIF?.cancel()
+        let gif = makingGIF
+        gif?.cancel()
         player.pause()
         studio.isPlaying = false
-        if studio.hasUnexportedChanges {
-            // Exported after the window has gone, as the editor keeps marks; the menu bar shows how far along.
-            Task {
-                _ = await self.exportIfNeeded()
-                self.finishClosing()
-            }
-        } else {
+        guard gif != nil || studio.hasUnexportedChanges else { return finishClosing() }
+        // A GIF being made stops and removes its files first, so closing (and quitting, which waits for it) leaves nothing
+        // of it behind and its end doesn't touch the export's progress. The movie is exported after the window has gone, as
+        // the editor keeps marks; the menu bar shows how far along.
+        Task {
+            await gif?.value
+            if studio.hasUnexportedChanges { _ = await exportIfNeeded() }
             finishClosing()
         }
     }

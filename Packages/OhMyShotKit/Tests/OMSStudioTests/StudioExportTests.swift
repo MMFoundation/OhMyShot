@@ -583,6 +583,31 @@ struct StudioExportTests {
         #expect(!FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)))
     }
 
+    @Test func aGIFCancelledWhileItIsMadeLeavesNoMovieBehind() async throws {
+        let source = try await Self.movie(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: StudioProject(), duration: 1, recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [])
+        let boundary = StudioExportBoundary()
+        let read = MovieRead()
+        // Cancelled as a running task is, by closing the window, while the GIF is being made of the exported movie.
+        let task = Task {
+            try await StudioExporter.withMovie(current: nil, composition: { composition }, progress: { _ in }) { movie, _ in
+                read.url = movie
+                await boundary.arrive()
+                try await Task.sleep(for: .seconds(30))
+            }
+        }
+        await boundary.waitUntilArrived()
+        task.cancel()
+        await boundary.release()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        let movie = try #require(read.url)
+        #expect(!FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)))
+    }
+
     @Test func cancellingAfterPackagingRemovesTheMovieAndAllowsRetry() async throws {
         let source = try await Self.movie(seconds: 1)
         let output = FileManager.default.temporaryDirectory.appending(path: "OMSStudioCancel-\(UUID()).mp4")
@@ -676,6 +701,17 @@ private actor StudioExportBoundary {
     }
 
     func release() { resume?.resume(); resume = nil }
+}
+
+/// The movie a GIF was made from, told from the task making it.
+nonisolated private final class MovieRead: @unchecked Sendable {
+    private let lock = NSLock()
+    private var read: URL?
+
+    var url: URL? {
+        get { lock.withLock { read } }
+        set { lock.withLock { read = newValue } }
+    }
 }
 
 nonisolated private final class StudioExportCancellation: @unchecked Sendable {

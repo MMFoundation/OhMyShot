@@ -1146,7 +1146,8 @@ final class RecordingCoordinator {
             finishing += 1
             window.close { [weak self] in self?.finished() }
         }
-        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave {
+        // A GIF being made in Studio is stopped as its window closes, and its files removed before the app quits.
+        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave || window.isMakingGIF {
             finishing += 1
             window.closeIfSaved { [weak self] saved in self?.finished(permitsQuit: saved) }
         }
