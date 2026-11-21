@@ -118,8 +118,9 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     }
 
     /// - Parameters:
-    ///   - background: the background at the movie's size, for gradients (painted by the editor's code); nil
-    ///     draws the project's plain color, or white.
+    ///   - background: the background at the movie's size, for gradients (painted by the editor's code), or the
+    ///     project's picture (drawn covering the movie); nil draws the project's plain color, or white. The
+    ///     Blurred recording background is drawn from each frame of the recording instead.
     ///   - largestSide: the longest side the movie may have; the preview films it smaller than the export.
     ///   - ringColor: the clicks' rings, in sRGB: the user's accent, as the rings shown while recording.
     ///   - preparedTrack: a track already built from this telemetry for these motion settings; shared by preview and
@@ -150,7 +151,10 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         self.layout = layout
         let canvas = CGRect(origin: .zero, size: layout.canvas)
 
-        if let background {
+        if let background, case .picture = project.background {
+            // Covering the movie, centered, on white where the picture is clear.
+            self.background = Self.filling(CIImage(cgImage: background), into: canvas).composited(over: CIImage(color: .white).cropped(to: canvas))
+        } else if let background {
             let image = CIImage(cgImage: background)
             self.background = image.transformed(by: CGAffineTransform(
                 scaleX: layout.canvas.width / image.extent.width, y: layout.canvas.height / image.extent.height
@@ -310,7 +314,7 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             .cropped(to: frame)
             .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: mask, kCIInputBackgroundImageKey: CIImage.empty()])
 
-        var movie = background
+        var movie = project.background == .blur ? blurredBackground(source) : background
         if let shadow { movie = shadow.composited(over: movie) }
         if let pane = camera?.pane, let paneShadow = pane.shadow { movie = paneShadow.composited(over: movie) }
         movie = scene.composited(over: movie)
@@ -376,6 +380,47 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         )
     }
 
+    /// What the camera shows at `time` (the recording's seconds).
+    func view(at time: Double) -> View {
+        view(track.frame(at: time))
+    }
+
+    /// Whether the recording shows at `point` (the movie's pixels, y up) at `time`: inside its frame, and the camera
+    /// not filling it (no more than half faded in, on its way in or out).
+    func showsRecording(atMovie point: CGPoint, at time: Double) -> Bool {
+        guard layout.frame.contains(point) else { return false }
+        guard let camera, camera.pane == nil else { return true }
+        return camera.plan.levels(at: time).fill < 0.5
+    }
+
+    /// The spot of the recording drawn at `point` (the movie's pixels, y up) while the camera shows `view`; a point
+    /// outside the recording's frame gives a spot outside the recording.
+    func spot(atMovie point: CGPoint, in view: View) -> StudioProject.Zoom.Spot {
+        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+        guard width > 0, height > 0, view.scale > 0 else { return .init(x: 0.5, y: 0.5) }
+        let x = view.x + (point.x - layout.frame.minX) / view.scale
+        let y = view.y + (point.y - layout.frame.minY) / view.scale
+        return .init(x: x / width, y: 1 - y / height)
+    }
+
+    /// Where `spot` is drawn on the movie (its pixels, y up) while the camera shows `view`: `spot(atMovie:in:)`
+    /// the other way.
+    func moviePoint(of spot: StudioProject.Zoom.Spot, in view: View) -> CGPoint {
+        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+        return CGPoint(
+            x: layout.frame.minX + (spot.x * width - view.x) * view.scale,
+            y: layout.frame.minY + ((1 - spot.y) * height - view.y) * view.scale
+        )
+    }
+
+    /// The part of the recording a zoom at `scale` held on `spot` shows once it is fully in, kept inside the
+    /// recording as the framing keeps it, as spots: its top-left and bottom-right corners.
+    func shown(around spot: StudioProject.Zoom.Spot, scale: Double) -> (topLeft: StudioProject.Zoom.Spot, bottomRight: StudioProject.Zoom.Spot) {
+        let half = 0.5 / max(scale, 1)
+        let x = min(max(spot.x, half), 1 - half), y = min(max(spot.y, half), 1 - half)
+        return (.init(x: x - half, y: y - half), .init(x: x + half, y: y + half))
+    }
+
     /// The recording drawn as the camera shows it in `view`, cut to `rect` (the frame unless given), its edge
     /// pixels reaching past it so the frame's edge stays solid.
     private func screen(_ source: CIImage, _ view: View, cutTo rect: CGRect? = nil) -> CIImage {
@@ -438,6 +483,23 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     }
 
     // MARK: Pieces
+
+    /// The Blurred recording background: the recording's frame, the whole of it however it is zoomed, made
+    /// `blurSide` pixels on its longer side and blurred by `blurStrength` of that until only its colors are left (as
+    /// the editor's Blurred Capture is), covering the movie. Made that small first, it costs little at any size.
+    private func blurredBackground(_ source: CIImage) -> CIImage {
+        let extent = source.extent
+        guard extent.width > 0, extent.height > 0 else { return background }
+        let scale = min(1, Self.blurSide / max(extent.width, extent.height))
+        let small = source.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
+        let blurred = small.clampedToExtent().applyingGaussianBlur(sigma: Self.blurSide * Self.blurStrength).cropped(to: small.extent)
+        return Self.filling(blurred, into: CGRect(origin: .zero, size: layout.canvas))
+    }
+
+    /// The longer side the recording is made for the Blurred recording background, and how far it is blurred then,
+    /// as a share of that side: the editor's blurred capture, 48 pixels with three box passes of 5, spreads as far.
+    static let blurSide = 192.0
+    static let blurStrength = 0.05
 
     /// The camera's frame as it is shown: mirrored when the project says so.
     static func oriented(_ frame: CIImage, mirrored: Bool) -> CIImage {

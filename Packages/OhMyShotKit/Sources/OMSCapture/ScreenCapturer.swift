@@ -129,13 +129,17 @@ public final class ScreenCapturer {
         let sorted = Self.backToFront(targets, in: WindowCatalog.snapshot(layout: layout))
         var parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)] = []
         var displayID: CGDirectDisplayID = layout.display(at: CGPoint(x: first.frame.midX, y: first.frame.midY))?.id ?? layout.primary?.id ?? 0
+        var scale: CGFloat = 0
         for target in sorted {
             let captured = try await captureWindow(target, shadow: shadow, layout: layout, showsCursor: showsCursor)
-            let fallback = layout.primary?.pixelsPerPoint ?? 2
-            parts.append((captured.image, target.frame, layout.display(id: captured.displayID)?.pixelsPerPoint ?? fallback))
-            displayID = captured.displayID
+            let pixelsPerPoint = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
+            parts.append((captured.image, target.frame, pixelsPerPoint))
+            // The canvas takes the sharpest window's scale, and its display.
+            if pixelsPerPoint >= scale {
+                scale = pixelsPerPoint
+                displayID = captured.displayID
+            }
         }
-        let scale = layout.display(id: displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
         guard let composited = Self.compositeWindows(parts, scale: scale, displayID: displayID) else {
             throw CaptureError.emptyResult
         }
@@ -152,8 +156,9 @@ public final class ScreenCapturer {
             .sorted { (order.firstIndex(of: $0.id) ?? Int.max) > (order.firstIndex(of: $1.id) ?? Int.max) }
     }
 
-    /// Composites captured window images (in back-to-front order) onto a single transparent canvas at `scale` pixels per point,
-    /// each image read at the pixels per point of the display it was captured on.
+    /// Composites captured window images (in back-to-front order) onto a single transparent canvas at `scale` pixels per point.
+    /// Each image is at its own display's `pixelsPerPoint` and is drawn at its size in points, so windows from displays of
+    /// different scales keep their places and sizes.
     public static func compositeWindows(
         _ parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)], scale: CGFloat, displayID: CGDirectDisplayID
     ) -> CapturedFrame? {
@@ -172,6 +177,7 @@ public final class ScreenCapturer {
             space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return nil }
         context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
         for item in placed {
             let drawRect = CGRect(
                 x: (item.pictureRect.minX - totalPicture.minX) * scale,

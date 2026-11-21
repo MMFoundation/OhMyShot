@@ -94,7 +94,7 @@ final class CaptureCoordinator {
 
     /// The title of the front window of the app in front, for file names that use it; read before the overlay takes
     /// the focus. Nil when no pattern asks for it.
-    private func frontWindowTitle() -> String? {
+    func frontWindowTitle() -> String? {
         guard settings.fileNamePattern.contains(FilenameTemplate.Token.window.placeholder),
               let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
         return WindowCatalog.frontWindowTitle(ofProcess: pid)
@@ -104,6 +104,7 @@ final class CaptureCoordinator {
     private func configureCaptureOverlay() {
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
+        overlay.measureTolerance = settings.measureTolerance
         overlay.lastArea = lastArea ?? settings.allInOneArea?.area(in: displays.layout)
     }
 
@@ -117,6 +118,8 @@ final class CaptureCoordinator {
     var allInOneText: ((CGRect, CapturedFrame?) -> Void)?
     /// A scrolling capture of All-In-One's area, started at once.
     var allInOneScroll: ((CGRect) -> Void)?
+    /// All-In-One about to turn into Measure, with whether its session may touch the clipboard.
+    var allInOneWillMeasure: ((Bool) -> Void)?
     /// A recording All-In-One set up: what, where, with what, and the app in front.
     var onRecord: ((RecordingTarget, DisplayInfo, RecordingChoices, String?) -> Void)?
     /// A recording All-In-One set up was cancelled, leaving a camera preview to put away.
@@ -140,6 +143,7 @@ final class CaptureCoordinator {
         let options = OverlayController.SessionOptions(allInOne: .init(offersUpload: canUpload?() ?? false, showsCopy: !settings.copyAfterCapture))
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
         configureCaptureOverlay()
+        overlay.onWillMeasure = { [weak self] in self?.allInOneWillMeasure?(copiesToClipboard) }
         overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
             guard let self else { return }
             if let area = outcome.takenArea { lastArea = area }
@@ -219,30 +223,40 @@ final class CaptureCoordinator {
                 width: result.area.width, height: result.area.height
             ))
         }
-        let view = InPlaceAnnotationView(
-            frame: request.frame.image, scale: scale, size: host.bounds.size, selection: area,
-            actions: .init(
-                copy: { [weak self] result in
-                    // The overlay goes first, so the screen comes back at once; the result renders after.
-                    self?.overlay.finishAnnotation()
-                    Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
-                },
-                save: { [weak self] result in
-                    self?.overlay.finishAnnotation()
-                    Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
-                },
-                openInEditor: { [weak self] result in
-                    self?.overlay.finishAnnotation()
-                    Task { [weak self] in
-                        guard let self, let entry = await self.deliver(
-                            frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, copy: .never, showsCard: false, playsSound: false
-                        ) else { return }
-                        self.openInEditor?(entry, scale)
-                    }
-                },
-                cancel: { [weak self] in self?.overlay.cancel() }
-            )
+        var actions = InPlaceAnnotationView.Actions(
+            copy: { [weak self] result in
+                // The overlay goes first, so the screen comes back at once; the result renders after.
+                self?.overlay.finishAnnotation()
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
+            },
+            save: { [weak self] result in
+                self?.overlay.finishAnnotation()
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
+            },
+            openInEditor: { [weak self] result in
+                self?.overlay.finishAnnotation()
+                Task { [weak self] in
+                    guard let self, let entry = await self.deliver(
+                        frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, copy: .never, showsCard: false, playsSound: false
+                    ) else { return }
+                    self.openInEditor?(entry, scale)
+                }
+            },
+            cancel: { [weak self] in self?.overlay.cancel() }
         )
+        // Pin as Capture Area and Pin does (kept with the marks, no card, nothing copied), and Upload as the URL API's
+        // upload does, offered only while there is somewhere to upload to.
+        actions.pin = { [weak self] result in
+            self?.overlay.finishAnnotation()
+            Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, followUp: CaptureFollowUp(action: .pin)) }
+        }
+        if canUpload?() == true {
+            actions.upload = { [weak self] result in
+                self?.overlay.finishAnnotation()
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, followUp: CaptureFollowUp(action: .upload)) }
+            }
+        }
+        let view = InPlaceAnnotationView(frame: request.frame.image, scale: scale, size: host.bounds.size, selection: area, actions: actions)
         view.frame = host.bounds
         view.codeFinder = request.codes
         // Only the lens closure, not the request: that holds the whole frozen frame.
@@ -421,6 +435,12 @@ final class CaptureCoordinator {
         // Kept as captured: the background chosen for every screenshot pads by the picture's size and grows it to its
         // shape, which for a picture tens of thousands of pixels long is gigabytes; the editor still adds one.
         return await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard, background: .none)
+    }
+
+    /// Keeps the display Measure measured on, as its frozen frame shows it, with the measurement drawn on it as marks the
+    /// editor can change: History, the clipboard and a card as the settings say, the shutter, as any capture is kept.
+    func deliverMeasured(_ frame: CapturedFrame, marks: AnnotationDocument, appName: String?, windowTitle: String?, copiesToClipboard: Bool) async {
+        await deliver(frame, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: marks)
     }
 
     #if DEBUG
@@ -713,7 +733,17 @@ final class CaptureCoordinator {
             if action == .upload || (settings.uploadAfterCapture && carded) { uploadKept?(entry) }
             switch action {
             case .annotate: openInEditor?(entry, scale)
-            case .pin: onPin?(frame, entry)
+            case .pin:
+                // Marks drawn in place are on the pin too, or a redaction made there would show the original.
+                if let marks, !marks.items.isEmpty {
+                    if let pinned = await CaptureRendition.pinned(marks, on: frame.image) {
+                        onPin?(CapturedFrame(image: pinned, hdrImage: nil, displayID: frame.displayID, frame: frame.frame), entry)
+                    } else {
+                        NSSound.beep()
+                    }
+                } else {
+                    onPin?(frame, entry)
+                }
             case .copy, .save, .upload, nil: break
             }
             if carded {
