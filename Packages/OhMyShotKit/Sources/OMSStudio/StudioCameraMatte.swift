@@ -5,8 +5,8 @@ import OSLog
 import Vision
 
 /// Where the person is in the camera's frames, for the camera's Blur and Cutout backgrounds: Vision's person
-/// segmentation, on this Mac, with no model of our own. The preview asks for its balanced matte and the export
-/// for its accurate one.
+/// segmentation, on this Mac, with no model of our own. The preview asks for its fast matte, which leaves the
+/// frame builder room to keep up with the camera's 30 frames a second, and the export for its accurate one.
 ///
 /// One request is used for frame after frame, as Vision carries what it saw from one frame of a sequence to the
 /// next, so the edge holds steady as the movie plays; a frame that isn't the next (the playhead moved, or the
@@ -77,7 +77,7 @@ nonisolated final class StudioCameraMatte: @unchecked Sendable {
             request = current
         } else {
             request = VNGeneratePersonSegmentationRequest()
-            request.qualityLevel = quality == .export ? .accurate : .balanced
+            request.qualityLevel = quality == .export ? .accurate : .fast
             request.outputPixelFormat = kCVPixelFormatType_OneComponent8
             self.request = request
         }

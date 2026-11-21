@@ -28,6 +28,18 @@ struct StudioCameraBackgroundTests {
             .composited(over: CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 12)))
     }
 
+    /// The same as Vision hands it back: one byte a pixel, which Core Image reads into red alone.
+    nonisolated private static func visionLeftHalf() -> CIImage? {
+        var buffer: CVPixelBuffer?
+        CVPixelBufferCreate(kCFAllocatorDefault, 16, 12, kCVPixelFormatType_OneComponent8, nil, &buffer)
+        guard let buffer, CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer)?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        let row = CVPixelBufferGetBytesPerRow(buffer)
+        for y in 0..<12 { for x in 0..<16 { base[y * row + x] = x < 8 ? 255 : 0 } }
+        return CIImage(cvPixelBuffer: buffer)
+    }
+
     /// A green recording and a red camera, the person found by `segmenter` instead of Vision.
     private static func frame(
         of project: StudioProject, segmenter: (@Sendable (CIImage, Bool) -> CIImage?)? = { _, _ in leftHalf() }
@@ -153,6 +165,17 @@ struct StudioCameraBackgroundTests {
         let (original, _) = try Self.frame(of: Self.project(.sideBySide, background: .original))
         #expect(Self.isRed(try Self.color(of: original, x: pane.minX + pane.width * 0.8, y: pane.midY)))
         #expect(try Self.color(of: original, x: under.x, y: under.y)[2] < 245)
+    }
+
+    @Test func visionsOneChannelMatteKeepsThePerson() throws {
+        for background in [StudioProject.Camera.Background.cutout, .blur] {
+            let (image, renderer) = try Self.frame(of: Self.project(.sideBySide, background: background), segmenter: { _, _ in Self.visionLeftHalf() })
+            let pane = try #require(renderer.layout.camera)
+            #expect(Self.isRed(try Self.color(of: image, x: pane.minX + pane.width * 0.2, y: pane.midY)), "\(background)")
+        }
+        let (cut, renderer) = try Self.frame(of: Self.project(.sideBySide, background: .cutout), segmenter: { _, _ in Self.visionLeftHalf() })
+        let pane = try #require(renderer.layout.camera)
+        #expect(Self.isBlue(try Self.color(of: cut, x: pane.minX + pane.width * 0.8, y: pane.midY)))
     }
 
     // MARK: Matte
