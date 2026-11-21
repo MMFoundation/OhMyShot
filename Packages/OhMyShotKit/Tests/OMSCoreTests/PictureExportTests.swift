@@ -438,13 +438,18 @@ struct PictureExportTests {
             }
             done.signal()
         }
-        read.wait()
+        // Bounded, so a conversion that fails before reading fails the test rather than hanging it; and the worker is let go
+        // however the test ends.
+        try #require(read.wait(timeout: .now() + 30) == .success)
+        var resumed = false
+        defer { if !resumed { resume.signal() } }
         // ...which is kept, and dragged out, while that copy is still being made.
         try blue.write(to: file, options: .atomic)
         let current = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
         #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
         resume.signal()
-        done.wait()
+        resumed = true
+        try #require(done.wait(timeout: .now() + 30) == .success)
         let lateFile = try #require(try late.value?.get())
         #expect(try raw(decode(Data(contentsOf: lateFile)).image, 0, 0)[2] > 200)
         #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
