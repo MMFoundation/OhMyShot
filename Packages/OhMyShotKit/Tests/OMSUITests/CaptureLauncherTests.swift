@@ -180,6 +180,23 @@ struct CaptureLauncherTests {
         #expect(launcher.rows.map { $0.entries.map(\.title) }[1] == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…"])
     }
 
+    /// The launcher scrolling the arrow keys' command into view moves another under a pointer that stays still: that
+    /// one is not lit, and Return still presses the keys' command. A pointer that moves lights what it is over.
+    @Test func aCommandScrolledUnderAStillPointerLeavesTheKeysCommandLit() {
+        let highlight = LauncherHighlight()
+        let keys = CaptureLauncherModel.Cell(row: 5, column: 0)
+        let under = CaptureLauncherModel.Cell(row: 3, column: 1)
+        highlight.cell = keys
+        highlight.fromKeys = true
+        highlight.keysPointer = CGPoint(x: 600, y: 400)
+        highlight.hover(under, inside: true, pointer: CGPoint(x: 600, y: 400))
+        #expect(highlight.cell == keys && highlight.fromKeys)
+        highlight.hover(under, inside: true, pointer: CGPoint(x: 602, y: 400))
+        #expect(highlight.cell == under && !highlight.fromKeys)
+        highlight.hover(under, inside: false, pointer: CGPoint(x: 640, y: 400))
+        #expect(highlight.cell == nil)
+    }
+
     @Test func theLauncherIsAsTallAsItsRowsUpToTheRoomItHasAndThenScrolls() {
         func rows(_ count: Int) -> [StatusItemController.Entry] {
             (1 ... count).map { StatusItemController.Entry(title: "Row \($0)", systemImage: "viewfinder") {} }

@@ -153,6 +153,21 @@ final class LauncherHighlight {
     var fromKeys = false
     /// Counts Return and Space on the highlighted command; the command's own button answers each.
     var presses = 0
+    /// Where the pointer was when the arrow keys last moved the highlight.
+    var keysPointer: CGPoint?
+
+    /// The pointer at `pointer` going over `cell` lights it, and leaving lets go of it, unless the arrow keys have moved
+    /// on. Going over it with the pointer still where it was when the keys moved is the launcher scrolling the keys'
+    /// command into view under it, which leaves that command lit.
+    func hover(_ cell: CaptureLauncherModel.Cell, inside: Bool, pointer: CGPoint) {
+        if inside {
+            guard !fromKeys || pointer != keysPointer else { return }
+            self.cell = cell
+            fromKeys = false
+        } else if self.cell == cell, !fromKeys {
+            self.cell = nil
+        }
+    }
 }
 
 struct CaptureLauncherView: View {
@@ -217,12 +232,7 @@ struct CaptureLauncherView: View {
 
     /// The pointer lights the command it is over and lets go of it on leaving, unless the arrow keys have moved on.
     private func hover(_ cell: Cell, _ inside: Bool) {
-        if inside {
-            highlight.cell = cell
-            highlight.fromKeys = false
-        } else if highlight.cell == cell, !highlight.fromKeys {
-            highlight.cell = nil
-        }
+        highlight.hover(cell, inside: inside, pointer: NSEvent.mouseLocation)
     }
 
     private func row(_ entry: Entry, at cell: Cell, emphasized: Bool = false) -> some View {

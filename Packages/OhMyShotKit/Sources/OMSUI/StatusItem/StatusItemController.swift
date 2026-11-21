@@ -470,6 +470,7 @@ public final class StatusItemController {
             rows[cell.row].entries[cell.column].isEnabled?() != false
         }
         launcherHighlight.fromKeys = true
+        launcherHighlight.keysPointer = NSEvent.mouseLocation
         return true
     }
 
