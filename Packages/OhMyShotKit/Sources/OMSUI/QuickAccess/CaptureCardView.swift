@@ -500,6 +500,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         actions.append(action(String(localized: "Quick Look", bundle: .module)) { [weak self] in self?.onCommand?(.quickLook) })
         if isPicture {
             actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onCommand?(.recognizeText) })
+            actions.append(action(String(localized: "Copy Text", bundle: .module)) { [weak self] in self?.onCommand?(.copyText) })
             actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onCommand?(.pin) })
             let offer = pictureOffer()
             if offer.availability == .available {
@@ -592,6 +593,40 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         guard !isHovering, !isTrashing, let failure else { return noticeBadge.hide() }
         noticeBadge.show(failure.summary, symbol: "exclamationmark.triangle.fill", colors: [.systemOrange])
     }
+
+    /// Copy Text came to `copy`: "Copied 42 characters", or "No text found", in the notice over the card, which stays, and
+    /// said aloud. Under the pointer the notice stands where the Copy and Save capsules are, which make way for it.
+    func showTextCopy(_ copy: TextCopy) {
+        guard let message = copy.message, !isTrashing else { return }
+        if case .copied = copy {
+            noticeBadge.show(message, symbol: "checkmark.circle.fill", colors: [.white, .systemGreen])
+        } else {
+            noticeBadge.show(message, symbol: "text.magnifyingglass")
+        }
+        VoiceOver.announce(message, from: self)
+        if isHovering { actions.isHidden = true }
+        noticeReset?.cancel()
+        noticeReset = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled, let self, !isTrashing else { return }
+            showRestingNotice()
+            bringBackCapsules()
+        }
+    }
+
+    /// The Copy and Save capsules come back where the notice was, while the pointer is still over the card.
+    private func bringBackCapsules() {
+        guard isHovering, actions.isHidden else { return }
+        actions.alphaValue = 0
+        actions.isHidden = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
+            actions.animator().alphaValue = 1
+        }
+    }
+
+    /// What the notice over the card says while it shows.
+    var notice: String? { noticeBadge.isHidden ? nil : noticeBadge.text }
 
     func showSaved() {
         saveButton.title = String(localized: "Saved", bundle: .module)
@@ -714,7 +749,13 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     }
 
     override func scrollWheel(with event: NSEvent) {
-        applySwipePhase(event.phase, deltaX: event.scrollingDeltaX)
+        applySwipePhase(event.phase, deltaX: Self.fingerTravel(event.scrollingDeltaX, invertedFromDevice: event.isDirectionInvertedFromDevice))
+    }
+
+    /// How far the fingers moved right: a scroll's sign follows them only with Natural Scrolling on (AppKit reverses it
+    /// with the setting off), but a swipe follows the fingers either way.
+    static func fingerTravel(_ deltaX: CGFloat, invertedFromDevice: Bool) -> CGFloat {
+        invertedFromDevice ? deltaX : -deltaX
     }
 
     func applySwipePhase(_ phase: NSEvent.Phase, deltaX: CGFloat) {
@@ -729,7 +770,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             let offset = towardEdge ? swipeDistance : swipeDistance * 0.35
             setSwipeOffset(offset, animated: false)
         case .ended:
-            let shouldClose = abs(swipeDistance) > 50
+            // Only a swipe toward the card's own edge closes it; one the other way springs back.
+            let shouldClose = slidesFromLeft ? swipeDistance < -50 : swipeDistance > 50
             swipeDistance = 0
             if shouldClose {
                 onCommand?(.close)
@@ -834,6 +876,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
         if item.kind == .screenshot {
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
+            add(String(localized: "Copy Text", bundle: .module), "doc.plaintext", #selector(copyTextClicked), .copyText)
             addCodeItems(to: menu)
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
             add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)
@@ -1066,13 +1109,19 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         return fileToHandOver()
     }
 
-    @objc private func copyClicked() { onCommand?(.copy) }
+    @objc private func copyClicked() { onCommand?(Self.copyCommand(with: NSEvent.modifierFlags)) }
+
+    /// What Copy does when clicked with `modifiers` held: with Option, the card stays once copied, as ⌥⌘C keeps it.
+    static func copyCommand(with modifiers: NSEvent.ModifierFlags) -> CardCommand {
+        modifiers.contains(.option) ? .copyAndKeep : .copy
+    }
     @objc private func saveClicked() { onCommand?(.save) }
     @objc private func saveAsClicked() { onCommand?(.saveAs) }
     @objc private func openClicked() { onCommand?(.open) }
     @objc private func annotateClicked() { onCommand?(.annotate) }
     @objc private func revealClicked() { onCommand?(.reveal) }
     @objc private func recognizeTextClicked() { onCommand?(.recognizeText) }
+    @objc private func copyTextClicked() { onCommand?(.copyText) }
     @objc private func pinClicked() { onCommand?(.pin) }
     @objc private func printClicked() { onCommand?(.print) }
     @objc private func trashClicked() { onCommand?(.moveToTrash) }
