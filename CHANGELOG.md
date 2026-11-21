@@ -11,7 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
-- The system log no longer shows the names of captures and files, where they are kept, the text of errors about them, or the server a cloud reading goes to, so a file name made from a window's title or typed in Save As no longer turns up in a log collected for a bug report. Each error's domain and code still show, so the log still says what went wrong.
+- The system log no longer shows the names of captures and files, where they are kept, the text of errors about them, or the server a cloud reading goes to, so a file name made from a window's title or typed in Save As no longer turns up in a log collected for a bug report. Most errors still show their domain and code, so the log still says what went wrong; a failed Studio save or History text reading only says that it failed.
 
 ## [0.3.0] - 2026-11-21
 
