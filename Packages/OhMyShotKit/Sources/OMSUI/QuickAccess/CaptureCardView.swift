@@ -1033,7 +1033,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         service.perform(withItems: [file])
     }
 
-    @objc private func copyClicked() { onCommand?(.copy) }
+    /// With Option held, the card stays once copied, as ⌥⌘C keeps it.
+    @objc private func copyClicked() { onCommand?(NSEvent.modifierFlags.contains(.option) ? .copyAndKeep : .copy) }
     @objc private func saveClicked() { onCommand?(.save) }
     @objc private func saveAsClicked() { onCommand?(.saveAs) }
     @objc private func openClicked() { onCommand?(.open) }

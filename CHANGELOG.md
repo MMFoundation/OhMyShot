@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Option-clicking a Quick Access card's Copy, or pressing ⌥⌘C while the card has the keyboard, copies the capture, says "Copied", and keeps the card open. A plain Copy still closes it.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

@@ -104,6 +104,35 @@ struct QuickAccessCompletionTests {
         #expect(controller.isEmpty)
     }
 
+    /// Copy with Option (⌥⌘C, or Copy clicked with Option) says "Copied" as Copy does, and the card stays, to be
+    /// copied again.
+    @Test(arguments: [false, true])
+    func copyWithOptionConfirmsAndKeepsTheCard(keyed: Bool) async throws {
+        var actions = actions(succeeds: true)
+        var copies = 0, closed = 0
+        actions.copy = { _ in
+            copies += 1
+            return true
+        }
+        actions.closed = { _ in closed += 1 }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        card.setHovering(!keyed)
+        controller.perform(.copyAndKeep, on: capture, keyed: keyed)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(copies == 1)
+        #expect(card.copyButton.title == String(localized: "Copied", bundle: .module))
+        try await Task.sleep(for: .seconds(1.1))
+        #expect(controller.item(capture.id) != nil)
+        #expect(closed == 0)
+        controller.perform(.copyAndKeep, on: capture, keyed: keyed)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(copies == 2)
+    }
+
     @Test func failedCopyDoesNotConfirmAndCanBeRetried() async throws {
         var actions = actions(succeeds: false)
         var succeeds = false
