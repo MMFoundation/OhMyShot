@@ -15,6 +15,8 @@ struct StudioView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 PlayerArea(view: player)
+                    // The chosen zoom is aimed over the movie itself.
+                    .overlay { StudioZoomAim(document: document) }
                     .padding(20)
                     .overlay { previewState }
                     .background(Color(nsColor: .underPageBackgroundColor))
@@ -34,11 +36,13 @@ struct StudioView: View {
                 VStack(spacing: 10) {
                     ProgressView(value: progress)
                         .frame(width: 180)
-                    Text("Exporting…", bundle: .module)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Group {
+                        model.makesGIF ? Text("Making the GIF…", bundle: .module) : Text("Exporting…", bundle: .module)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     Button(role: .cancel) {
-                        model.controller?.cancelExport()
+                        if model.makesGIF { model.controller?.cancelGIF() } else { model.controller?.cancelExport() }
                     } label: {
                         Text("Cancel", bundle: .module)
                     }
@@ -142,6 +146,17 @@ struct StudioView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if model.controller?.canMakeGIF == true {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    model.controller?.makeGIF()
+                } label: {
+                    Label { Text("Make GIF", bundle: .module) } icon: { Image(systemName: "photo.stack") }
+                }
+                .help(Text("Make a GIF of the movie, without sound, as large as it was on screen", bundle: .module))
+                .disabled(model.progress != nil)
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button { model.controller?.saveMovieAs() } label: { Text("Save As…", bundle: .module) }
@@ -259,6 +274,14 @@ struct TransportBar: View {
                 .disabled(document.selectedRange == nil)
                 .help(Text("Leave the stretch chosen on the clip out of the movie (drag along the clip, or I and O)", bundle: .module))
             }
+            Menu {
+                SpeedChoices(document: document)
+            } label: {
+                Label { Text("Speed", bundle: .module) } icon: { Image(systemName: "gauge.with.dots.needle.67percent") }
+            }
+            .fixedSize()
+            .disabled(!document.canSetSpeed)
+            .help(Text("Play the stretch chosen on the clip faster or slower", bundle: .module))
         }
         .controlSize(.regular)
         .padding(.horizontal, 14)
@@ -285,6 +308,11 @@ struct TransportBar: View {
     /// A scale with one decimal: "2.0×".
     static func scale(_ value: Double) -> String {
         oneDecimal(value) + "×"
+    }
+
+    /// A speed, a decimal only where it has one: "2×", "0.5×".
+    static func speed(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...1))) + "×"
     }
 
     /// A time as the transport shows it, in the inspector's clock but rounded down: 0:12.34, 1:02:09.40.
@@ -331,6 +359,21 @@ struct StudioInspector: View {
                         value: Binding(get: { zoom.scale }, set: { scale in document.updateZoom(id) { $0.scale = scale } }),
                         range: 1.2...4, reading: { TransportBar.scale($0) }, document: document
                     )
+                    Picker(selection: Binding(
+                        get: { zoom.target == nil ? ZoomTarget.pointer : .spot },
+                        set: { document.setZoomTarget(id, $0 == .pointer ? nil : document.aim(of: id)) }
+                    )) {
+                        Text("Follow pointer", bundle: .module).tag(ZoomTarget.pointer)
+                        Text("Fixed spot", bundle: .module).tag(ZoomTarget.spot)
+                    } label: {
+                        Text("Target", bundle: .module)
+                    }
+                    .accessibilityLabel(Text("Zoom target", bundle: .module))
+                    if zoom.target != nil {
+                        Text("Click or drag on the preview to aim the zoom. With the preview focused, the arrow keys move it.", bundle: .module)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                     Button(role: .destructive) {
                         document.removeZoom(id)
                     } label: {
@@ -340,6 +383,34 @@ struct StudioInspector: View {
                     Text("Chosen Zoom", bundle: .module)
                 }
                 .id(Self.chosenZoomID)
+            }
+            // A stretch chosen on the clip, or a speed on the timeline: how fast it plays, beside Cut.
+            if let rate = document.chosenRate {
+                Section {
+                    Picker(selection: Binding(get: { rate }, set: { document.setSpeed($0) })) {
+                        Text("As recorded", bundle: .module).tag(1.0)
+                        ForEach(StudioProject.speedRates, id: \.self) { rate in
+                            Text(verbatim: TransportBar.speed(rate)).tag(rate)
+                        }
+                    } label: {
+                        Text("Speed", bundle: .module)
+                    }
+                    if let start = document.selectedSpeed {
+                        Button(role: .destructive) {
+                            document.removeSpeed(at: start)
+                        } label: {
+                            Text("Remove Speed", bundle: .module)
+                        }
+                    } else {
+                        Button {
+                            document.deleteSelection()
+                        } label: {
+                            Text("Cut", bundle: .module)
+                        }
+                    }
+                } header: {
+                    document.selectedSpeed == nil ? Text("Chosen Stretch", bundle: .module) : Text("Chosen Speed", bundle: .module)
+                }
             }
             Section {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 8), count: 5), spacing: 8) {
@@ -624,6 +695,18 @@ struct StudioInspector: View {
                 }
             }
 
+            // Each of the recording's sounds, set on its own: the system's and the microphone's where they were kept
+            // apart, else the recording's sound as one.
+            if !document.sounds.isEmpty {
+                Section {
+                    ForEach(document.sounds, id: \.self) { sound in
+                        SoundLevelRow(sound: sound, document: document)
+                    }
+                } header: {
+                    Text("Audio", bundle: .module)
+                }
+            }
+
             Section {
                 Picker(selection: Binding(get: { document.project.quality }, set: { document.setQuality($0) })) {
                     Text("Smaller file", bundle: .module).tag(StudioProject.Quality.smaller)
@@ -643,6 +726,13 @@ struct StudioInspector: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Where the chosen zoom looks, as the picker has it: following the pointer, or held on a spot of its own,
+    /// which choosing it puts where the zoom looks now.
+    private enum ZoomTarget: Hashable {
+        case pointer
+        case spot
     }
 
     /// How clicks show, as the picker has it: none, or an effect. Clicks off are `showsClicks`; the effect is
@@ -821,6 +911,89 @@ struct LabeledSlider: View {
             title
         }
         .accessibilityValue(Text(verbatim: reading(value)))
+    }
+}
+
+/// The speeds a chosen stretch can play at, each checked while it does, and Remove Speed for one played so already:
+/// the transport's Speed menu.
+struct SpeedChoices: View {
+    let document: StudioDocument
+
+    var body: some View {
+        ForEach(StudioProject.speedRates, id: \.self) { rate in
+            Toggle(isOn: Binding(get: { document.chosenRate == rate }, set: { _ in document.setSpeed(rate) })) {
+                Text(verbatim: TransportBar.speed(rate))
+            }
+        }
+        if document.selectedSpeed != nil {
+            Divider()
+            Button {
+                document.setSpeed(1)
+            } label: {
+                Text("Remove Speed", bundle: .module)
+            }
+        }
+    }
+}
+
+/// One of the recording's sounds: Mute, a toggle, and how loud it plays, with the reading in secondary ink with
+/// monospaced digits. A drag is taken back by Undo as one change.
+struct SoundLevelRow: View {
+    let sound: StudioSound
+    @Bindable var document: StudioDocument
+
+    var body: some View {
+        let level = document.project.audio[sound]
+        LabeledContent {
+            HStack(spacing: 8) {
+                Toggle(isOn: Binding(get: { level.isMuted }, set: { document.setMuted($0, sound) })) {
+                    Image(systemName: level.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .frame(width: 18)
+                }
+                .toggleStyle(.button)
+                .buttonStyle(.borderless)
+                .help(muteLabel)
+                .accessibilityLabel(muteLabel)
+                Slider(value: $document.project.audio[sound].volume, in: 0...1) { editing in
+                    if editing { document.beginContinuousChange() } else { document.endContinuousChange() }
+                }
+                .labelsHidden()
+                .disabled(level.isMuted)
+                .accessibilityLabel(volumeLabel)
+                .accessibilityValue(Text(verbatim: StudioInspector.percent(level.volume)))
+                Text(verbatim: StudioInspector.percent(level.volume))
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
+                    .accessibilityHidden(true)
+            }
+        } label: {
+            title
+        }
+    }
+
+    private var title: Text {
+        switch sound {
+        case .system: Text("System sound", bundle: .module)
+        case .microphone: Text("Microphone", bundle: .module)
+        case .recorded: Text("Sound", bundle: .module)
+        }
+    }
+
+    private var muteLabel: Text {
+        switch sound {
+        case .system: Text("Mute system sound", bundle: .module)
+        case .microphone: Text("Mute microphone", bundle: .module)
+        case .recorded: Text("Mute sound", bundle: .module)
+        }
+    }
+
+    private var volumeLabel: Text {
+        switch sound {
+        case .system: Text("System sound volume", bundle: .module)
+        case .microphone: Text("Microphone volume", bundle: .module)
+        case .recorded: Text("Sound volume", bundle: .module)
+        }
     }
 }
 

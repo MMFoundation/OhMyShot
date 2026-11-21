@@ -31,6 +31,9 @@ public final class StudioDocument {
     public let folder: URL
     /// The camera's movie, recorded beside the recording; nil when none was.
     public let cameraMovie: URL?
+    /// The recording's sounds kept apart, each in a file of its own; empty when they weren't, and the recording's own
+    /// sound plays as one.
+    let soundFiles: [(sound: StudioSound, url: URL)]
 
     public var project: StudioProject {
         didSet {
@@ -69,6 +72,10 @@ public final class StudioDocument {
     /// The stretch of the recording chosen to cut.
     public var selectedRange: ClosedRange<Double>? {
         if case .range(let range) = selection { range } else { nil }
+    }
+    /// The stretch played faster or slower chosen on the timeline, by its start.
+    public var selectedSpeed: Double? {
+        if case .speed(let start) = selection { start } else { nil }
     }
     /// The movie the preview plays now; nil until it is first made.
     public private(set) var composition: StudioComposition?
@@ -131,6 +138,7 @@ public final class StudioDocument {
         self.background = background
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
+        soundFiles = StudioSound.files(in: folder)
         hasUnexportedChanges = !hasBeenExported
         if self.project == project, FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path) {
             savedRevision = 0
@@ -168,6 +176,19 @@ public final class StudioDocument {
     /// Whether the camera showed while recording but couldn't be recorded, or its movie is gone since.
     public var cameraFailed: Bool {
         !hasCamera && (telemetry.cameraFailed == true || telemetry.camera != nil)
+    }
+
+    /// The sounds the movie can play, each set on its own; empty for a recording without sound, or before the
+    /// preview is first made.
+    public var sounds: [StudioSound] {
+        composition?.sounds ?? []
+    }
+
+    /// Mutes `sound`, or plays it again, as one step that Undo names.
+    public func setMuted(_ muted: Bool, _ sound: StudioSound) {
+        change(named: muted ? String(localized: "Mute", bundle: .module) : String(localized: "Unmute", bundle: .module)) {
+            project.audio[sound].isMuted = muted
+        }
     }
 
     /// Whether keys were written down while recording, so they can be shown.
@@ -265,8 +286,8 @@ public final class StudioDocument {
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
         return try await Self.assemble(
             project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
-            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, background: background, ringColor: ringColor,
-            cameraMatte: cameraMatte
+            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, soundFiles: soundFiles, background: background,
+            ringColor: ringColor, cameraMatte: cameraMatte
         )
     }
 
@@ -286,7 +307,7 @@ public final class StudioDocument {
     @concurrent
     private static func assemble(
         project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
-        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?,
+        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, soundFiles: [(sound: StudioSound, url: URL)],
         background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor, cameraMatte: StudioCameraMatte?
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
@@ -302,7 +323,10 @@ public final class StudioDocument {
         )
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
-        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
+        let sounds = soundFiles.map { StudioComposition.SoundSource(sound: $0.sound, asset: AVURLAsset(url: $0.url)) }
+        return try await StudioComposition.make(
+            source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, speeds: project.speeds, camera: camera, sounds: sounds
+        )
     }
 
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
@@ -420,15 +444,95 @@ public final class StudioDocument {
         return project.zooms.first { $0.id == id }.map { $0.start...$0.end }
     }
 
+    /// Holds a zoom on `target`, kept inside the recording, or has it follow the pointer again (nil). Aimed by hand,
+    /// an automatic zoom is no longer placed again with the others, as with any other change to it.
+    public func setZoomTarget(_ id: UUID, _ target: StudioProject.Zoom.Spot?) {
+        updateZoom(id) { $0.target = target?.clamped }
+    }
+
+    /// Where a zoom looks as the movie is now: its spot, or, following the pointer, where the camera looks in the
+    /// frame the preview shows while the zoom is fully in there, else halfway through it, which is fully in; the
+    /// middle of the recording until a movie is made.
+    public func aim(of id: UUID) -> StudioProject.Zoom.Spot {
+        guard let zoom = project.zooms.first(where: { $0.id == id }) else { return .init(x: 0.5, y: 0.5) }
+        if let target = zoom.target { return target }
+        guard let track = composition?.renderer.track, track.width > 0, track.height > 0 else { return .init(x: 0.5, y: 0.5) }
+        let frame = track.frame(at: isFullyIn(zoom) ? shownTime : (zoom.start + zoom.end) / 2)
+        return StudioProject.Zoom.Spot(x: frame.centerX / track.width, y: frame.centerY / track.height).clamped
+    }
+
+    /// The recording's time of the frame the preview shows: the playhead's, or, inside a cut, the cut's end.
+    public var shownTime: Double {
+        recordingTime(movieTime(time))
+    }
+
+    /// Whether `zoom` is fully in in the frame the preview shows: there, done coming in, and not under a stronger one.
+    func isFullyIn(_ zoom: StudioProject.Zoom) -> Bool {
+        guard let track = composition?.renderer.track else { return false }
+        let time = shownTime
+        return time >= zoom.start && time <= zoom.end && abs(track.frame(at: time).zoom - zoom.scale) < 0.01
+    }
+
     /// Removes the chosen zoom or camera layout, takes back the chosen cut, or cuts the chosen stretch.
     public func deleteSelection() {
         switch selection {
         case .zoom(let id): removeZoom(id)
         case .cameraSegment(let id): removeCameraSegment(id)
         case .cut(let start): restoreCut(at: start)
+        case .speed(let start): removeSpeed(at: start)
         case .range(let range): cut(range)
         case .none: break
         }
+    }
+
+    // MARK: Speed
+
+    /// Whether Speed has a stretch to set: one chosen on the clip, or a speed chosen on the timeline.
+    public var canSetSpeed: Bool {
+        selectedRange != nil || selectedSpeed != nil
+    }
+
+    /// The speed the chosen stretch plays at: the chosen speed's, or 1 for a stretch chosen on the clip.
+    public var chosenRate: Double? {
+        if let start = selectedSpeed { return project.speeds.first { $0.start == start }?.rate }
+        return selectedRange == nil ? nil : 1
+    }
+
+    /// Plays what is chosen, a stretch of the clip or a speed on the timeline, at `rate` (1 as recorded), as one
+    /// step that Undo names. A stretch takes the speeds it overlaps out of where it is; the speed it becomes is chosen.
+    public func setSpeed(_ rate: Double) {
+        let range: ClosedRange<Double>
+        if let start = selectedSpeed, let speed = project.speeds.first(where: { $0.start == start }) {
+            range = speed.start...speed.end
+        } else if let chosen = selectedRange {
+            range = chosen
+        } else {
+            return
+        }
+        let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
+        // A new stretch is at least a twentieth of a second; a speed already set changes, or goes, however short it was left.
+        guard upper > lower, selectedSpeed != nil || upper - lower >= 0.05 else { return }
+        // What the others keep outside the stretch, then the stretch itself.
+        var speeds = project.speeds.flatMap { speed -> [StudioProject.Speed] in
+            guard speed.end > lower, speed.start < upper else { return [speed] }
+            return [
+                StudioProject.Speed(start: speed.start, end: lower, rate: speed.rate),
+                StudioProject.Speed(start: upper, end: speed.end, rate: speed.rate),
+            ]
+        }
+        speeds.append(StudioProject.Speed(start: lower, end: upper, rate: rate))
+        change(named: rate == 1 ? String(localized: "Remove Speed", bundle: .module) : String(localized: "Change Speed", bundle: .module)) {
+            project.speeds = StudioProject.normalizedSpeeds(speeds, duration: duration)
+        }
+        selection = rate == 1 ? .none : .speed(lower)
+    }
+
+    /// Plays the stretch that starts at `start` as recorded again.
+    public func removeSpeed(at start: Double) {
+        change(named: String(localized: "Remove Speed", bundle: .module)) {
+            project.speeds.removeAll { $0.start == start }
+        }
+        if selection == .speed(start) { selection = .none }
     }
 
     // MARK: Camera layout
@@ -605,7 +709,7 @@ public final class StudioDocument {
     /// time and the movie's are read through the same parts the compositor draws each frame from, so the
     /// playhead is never anywhere but on the frame shown.
     private var keptSegments: [StudioComposition.Segment] {
-        StudioComposition.keptSegments(duration: duration, cuts: project.cuts)
+        StudioComposition.keptSegments(duration: duration, cuts: project.cuts, speeds: project.speeds)
     }
 
     /// The movie's time for the recording's `time`: the end of a cut for a time inside one.
@@ -686,13 +790,16 @@ public final class StudioDocument {
         let gone = switch selection {
         case .zoom(let id): !project.zooms.contains { $0.id == id }
         case .cut(let start): !project.cuts.contains { $0.lowerBound == start }
+        case .speed(let start): !project.speeds.contains { $0.start == start }
         case .cameraSegment(let id): !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains { $0.id == id }
         case .range, .none: false
         }
         if gone { selection = .none }
-        // The preview isn't encoded, so the movie's quality is no reason to film it again.
+        // The preview isn't encoded, so the movie's quality is no reason to film it again, and the player sets how
+        // loud each sound plays as it plays.
         var seen = project
         seen.quality = old.quality
+        seen.audio = old.audio
         if seen != old { scheduleComposition() }
     }
 
@@ -718,4 +825,7 @@ nonisolated public enum StudioFiles {
     public static let project = "project.json"
     /// The camera, recorded in a movie of its own while the screen was.
     public static let camera = "camera.mov"
+    /// The system's sound and the microphone, each as recorded, in a file of its own (`StudioSound`).
+    public static let systemAudio = "system audio.m4a"
+    public static let microphone = "microphone.m4a"
 }
