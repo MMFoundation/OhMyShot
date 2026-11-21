@@ -122,10 +122,24 @@ struct StudioZoomTargetTests {
         let track = StudioTrack(telemetry: Self.telemetry(), project: project, duration: 8)
         // One stretch, handed over without pulling back, framed at 4×.
         #expect(stride(from: 2.0, through: 4.5, by: 0.05).allSatisfy { track.frame(at: $0).zoom >= 2 - 1e-9 })
-        for (time, scale) in [(2.0, 4.0), (4.5, 2.0)] {
+        for (time, scale) in [(2.0, 4.0), (4.4, 2.0)] {
+            #expect(abs(track.frame(at: time).zoom - scale) < 1e-9)
+        }
+        // Fully in at 4×, handing over to 2×, and fully in at 2×, the spot stays in the middle.
+        for time in stride(from: 1.55, through: 4.45, by: 1.0 / 60) {
             let frame = track.frame(at: time)
-            #expect(abs(frame.zoom - scale) < 1e-9)
-            #expect(abs(frame.centerX - spot.x * Self.width) < 1e-6 && abs(frame.centerY - spot.y * Self.height) < 1e-6)
+            #expect(abs(frame.centerX - spot.x * Self.width) < 1e-6 && abs(frame.centerY - spot.y * Self.height) < 1e-6, "at \(time)")
+        }
+        // Coming in to 4× and going out from 2×, each about one point, which stays where it is drawn.
+        for (times, scale) in [(stride(from: 1.0, through: 1.5, by: 1.0 / 60), 4.0), (stride(from: 4.5, through: 5.0, by: 1.0 / 60), 2.0)] {
+            let pivot = (x: (spot.x * Self.width * scale - Self.width / 2) / (scale - 1), y: (spot.y * Self.height * scale - Self.height / 2) / (scale - 1))
+            for time in times {
+                let frame = track.frame(at: time)
+                guard frame.zoom > 1.001 else { continue }
+                let drawnX = (pivot.x - frame.centerX) * frame.zoom + Self.width / 2
+                let drawnY = (pivot.y - frame.centerY) * frame.zoom + Self.height / 2
+                #expect(abs(drawnX - pivot.x) < 1e-6 && abs(drawnY - pivot.y) < 1e-6, "at \(time)")
+            }
         }
     }
 
