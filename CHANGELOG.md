@@ -23,6 +23,11 @@ Each entry links its implementation commits or merged pull request and credits v
 - Pins come back after OhMyShot quits, updates, or crashes: each where it was, at its zoom, opacity, and lock, stacked as they were, hidden if the pins were hidden, with its picture, text, or color. Turn it off in Settings › Tools › Pins (Bring pins back after relaunch), which is off by default when Keep captures is Never. Closing a pin removes what was kept of it.
 - Pin from Clipboard, Hide or Show Pins, and Restore Recently Closed can each have a global shortcut, set in Settings › Shortcuts (none has keys until chosen), and are tiles in the menu bar launcher, which on a display too short to hold every tile stops above the Dock and scrolls. The URL scheme adds `pin-from-clipboard` and `toggle-pins`.
 
+### Changed
+
+- In the editor, Escape in Crop leaves Crop when the frame and its shape are as they began, as Escape leaves Background; a frame that was changed is put back first, as before.
+- A two-finger swipe closes a Quick Access card only toward the card's own edge of the screen; a swipe the other way puts it back.
+
 ### Fixed
 
 - When the Math Formulas or VLM pack can't read a picture's formulas or tables, Copy Text and the Recognize Text in Image shortcut still give the text Vision read, instead of finding none.
@@ -30,6 +35,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Capture Text, Capture Formula, and Translate Area read only the windows picked with Shift, also when Option opens them in the OCR panel. What lies between or around the windows is no longer read, copied, or sent to a cloud model.
 - A screenshot of several windows on displays with different scales keeps each window at its size, instead of drawing the one from the lower-scale display too small.
 - A pin left on a display that was unplugged, or past the edge after the displays were rearranged, moves onto the nearest display.
+- All-In-One's Area, Window, and Screen tooltips name their keys (A, W, and F), as Text, Scrolling, Record, and Measure do.
 
 ## [0.3.0] - 2026-11-21
 
