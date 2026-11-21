@@ -24,8 +24,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
         /// copy of it in the format Settings choose.
         public var fileToHandOver: (_ file: URL) -> URL = { $0 }
-        /// Puts the rendered picture on the clipboard and returns whether it succeeded. Without a callback, the PNG goes as it is.
-        public var copy: ((_ image: CGImage, _ png: Data) async -> Bool)?
+        /// Puts the rendered picture on the clipboard, with its pixels per point, and returns whether it succeeded. Without a
+        /// callback, the PNG goes as it is.
+        public var copy: ((_ image: CGImage, _ png: Data, _ scale: CGFloat) async -> Bool)?
         /// Pins the picture as it looks now over the screen, at its pixels per point. Nil when the editor offers no Pin to Screen.
         public var pin: ((_ image: CGImage, _ scale: CGFloat) -> Void)?
         /// What the editor offers for uploading, asked each time the window comes forward: nothing without a destination.
@@ -33,6 +34,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// Uploads the capture's file, its edits kept, to the default destination (nil) or the one chosen. Nil when the
         /// editor offers no Upload.
         public var upload: ((_ file: URL, _ destination: UUID?) -> Void)?
+        /// Whether the capture is uploading now. A capture uploads once at a time, so Upload waits for that one to end.
+        public var isUploading: () -> Bool = { false }
 
         public init(keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?) {
             self.keep = keep
@@ -385,7 +388,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             }
             let copied: Bool
             if let copy = actions.copy {
-                copied = await copy(rendered.image, rendered.png)
+                copied = await copy(rendered.image, rendered.png, rendered.document.scale)
             } else {
                 copied = PasteboardWriter.write(png: rendered.png, image: rendered.image)
             }
@@ -438,7 +441,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.endEditing()
         return Task {
             guard let upload = actions.upload else { return }
-            guard let file = await exportAndKeep() else { return NSSound.beep() }
+            guard !actions.isUploading(), let file = await exportAndKeep() else { return NSSound.beep() }
             upload(file, destination)
         }
     }
@@ -629,11 +632,12 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 }
 
 extension AnnotationEditorWindowController: NSMenuItemValidation {
-    /// Pin to Screen while the editor offers it, and Upload once a destination is set up, as cards offer it.
+    /// Pin to Screen while the editor offers it, and Upload once a destination is set up, as cards offer it, except while
+    /// the capture is uploading.
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(pinToScreen(_:)): offersPin
-        case #selector(uploadCapture(_:)): actions.upload != nil && !actions.uploadMenu().isHidden
+        case #selector(uploadCapture(_:)): actions.upload != nil && !actions.uploadMenu().isHidden && !actions.isUploading()
         default: true
         }
     }

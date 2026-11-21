@@ -29,6 +29,29 @@ struct EditorOutcomesTests {
         NSMenuItem(title: "", action: action, keyEquivalent: "")
     }
 
+    /// Copy hands on the scale of the picture it copies, which it renders before keeping: after a kept resize is undone,
+    /// the restored picture's, not the resized one's.
+    @Test func copyHandsOnThePicturesOwnScale() async {
+        var copied: [CGFloat] = []
+        var actions = AnnotationEditorWindowController.Actions(keep: { [kept] _, _, _ in kept }, save: { _ in nil })
+        actions.copy = { _, _, scale in
+            copied.append(scale)
+            return true
+        }
+        let controller = makeEditor(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        let session = controller.session
+        session.undoManager.beginUndoGrouping()
+        session.apply(.resize(to: CGSize(width: 100, height: 50)))
+        session.undoManager.endUndoGrouping()
+
+        await controller.copy().value
+        session.undo()
+        await controller.copy().value
+
+        #expect(copied == [1, 2])
+    }
+
     @Test func pinKeepsTheEditsAndPinsThePictureAsItLooks() async throws {
         var keptDocument: AnnotationDocument?
         var pinned: (image: CGImage, scale: CGFloat)?
@@ -74,6 +97,29 @@ struct EditorOutcomesTests {
         #expect(uploaded.map(\.file) == [kept, kept])
         #expect(uploaded.map(\.destination) == [destination, nil])
         #expect(!controller.session.hasUnkeptChanges)
+    }
+
+    /// A capture uploads once at a time: while it is uploading, Upload is off in the File menu, and from Save Options it
+    /// beeps and sends nothing, rather than starting an upload that would be turned away.
+    @Test func uploadWaitsForTheOneUnderWay() async {
+        var uploading = true
+        var uploaded = 0
+        var actions = AnnotationEditorWindowController.Actions(keep: { [kept] _, _, _ in kept }, save: { _ in nil })
+        actions.upload = { _, _ in uploaded += 1 }
+        actions.uploadMenu = { .upload }
+        actions.isUploading = { uploading }
+        let controller = makeEditor(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        let upload = menuItem(#selector(AnnotationEditorWindowController.uploadCapture(_:)))
+
+        #expect(!controller.validateMenuItem(upload))
+        await controller.upload().value
+        #expect(uploaded == 0)
+
+        uploading = false
+        #expect(controller.validateMenuItem(upload))
+        await controller.upload().value
+        #expect(uploaded == 1)
     }
 
     /// Edits that could not be kept are not in the file: uploading it would send the picture without them.

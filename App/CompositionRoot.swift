@@ -409,6 +409,7 @@ final class CompositionRoot {
         annotations.uploadFile = { [weak self] id, file, destination, scale in
             self?.upload(captureID: id, fileURL: file, to: destination, scale: scale)
         }
+        annotations.isUploading = { [weak self] id in self?.uploads.isUploading(id) ?? false }
 
         displays.onChange = { [weak self] _ in
             guard let self else { return }
