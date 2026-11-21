@@ -59,7 +59,9 @@ extension CompositionRoot {
         let scale = history.item(id: captureID)?.pixelsPerPoint
         Task {
             switch await files.exportedFile(forPictureData: data, named: name, scale: scale) {
-            case .success(let file): uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
+            case .success(let file):
+                quickAccess.clearHandOverFailure(for: captureID)
+                uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
             case .failure(let failure): showSaveFailure(failure, onCardOf: captureID)
             }
         }
