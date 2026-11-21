@@ -350,4 +350,87 @@ struct EraseCanvasTests {
         session.commit(document, actionName: "Move")
         #expect(try shown() == alone)
     }
+
+    /// While cropping, the whole picture shows, and an erasure reaching past the canvas covers what it covers there
+    /// too, as it will once a wider crop is kept; the crop put down, it keeps inside the canvas again.
+    @Test func whileCroppingAnErasureCoversPastTheCanvas() throws {
+        let width = 120, height = 80
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let base = try #require(context.makeImage())
+        let session = AnnotationSession(image: base, scale: 1, tool: .select, defaults: scratch.make())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let canvas = AnnotationCanvasView(session: session)
+        canvas.frame = try #require(window.contentView).bounds
+        window.contentView?.addSubview(canvas)
+        canvas.layoutSubtreeIfNeeded()
+
+        let erasure = Annotation(shape: .redaction(Redaction(rect: CGRect(x: 40, y: 24, width: 50, height: 22), method: .erase)), style: Style(color: .black, shadow: false))
+        var document = session.document
+        document.canvas = CGRect(x: 0, y: 0, width: 60, height: 80)
+        document.items = [erasure]
+        session.commit(document, actionName: "Add Redaction")
+        func covered() throws -> CGRect? {
+            guard case let .filtered(_, rect) = try #require(canvas.markLayer(for: erasure.id)).coverage else { return nil }
+            return rect
+        }
+        #expect(try covered() == CGRect(x: 40, y: 24, width: 20, height: 22))
+        session.tool = .crop
+        #expect(try covered() == CGRect(x: 40, y: 24, width: 50, height: 22))
+        session.tool = .select
+        #expect(session.document.canvas == CGRect(x: 0, y: 0, width: 60, height: 80))
+        #expect(try covered() == CGRect(x: 40, y: 24, width: 20, height: 22))
+    }
+
+    /// During a drag an erasure is not filled again at each step: its last fill stretches over the box, so nothing
+    /// under it shows, and it is filled for where it lies once the drag ends.
+    @Test func anErasureIsFilledAgainOnceADragEnds() throws {
+        let width = 120, height = 80
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 0.2, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 60, height: height))
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.fill(CGRect(x: 60, y: 0, width: 60, height: height))
+        let base = try #require(context.makeImage())
+        let session = AnnotationSession(image: base, scale: 1, tool: .select, defaults: scratch.make())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let canvas = AnnotationCanvasView(session: session)
+        canvas.frame = try #require(window.contentView).bounds
+        window.contentView?.addSubview(canvas)
+        canvas.layoutSubtreeIfNeeded()
+
+        let erasure = Annotation(shape: .redaction(Redaction(rect: CGRect(x: 10, y: 20, width: 30, height: 20), method: .erase)), style: Style(color: .black, shadow: false))
+        var document = session.document
+        document.items = [erasure]
+        session.commit(document, actionName: "Add Redaction")
+        func coverage() throws -> (image: CGImage, rect: CGRect)? {
+            guard case let .filtered(image, rect) = try #require(canvas.markLayer(for: erasure.id)).coverage else { return nil }
+            return (image, rect)
+        }
+        let dark = try #require(try coverage())
+        // Dragged onto the light half.
+        session.beginLiveChange()
+        let moved = CGRect(x: 75, y: 20, width: 40, height: 20)
+        document.items = [Annotation(id: erasure.id, shape: .redaction(Redaction(rect: moved, method: .erase)), style: erasure.style)]
+        session.updateLive(document)
+        let dragging = try #require(try coverage())
+        #expect(dragging.image === dark.image && dragging.rect == moved)
+        session.endLiveChange(actionName: "Move")
+        let light = try #require(try coverage())
+        #expect(light.rect == moved && light.image !== dark.image)
+        let fresh = Redactor.coverage(for: Redaction(rect: moved, method: .erase), id: erasure.id, source: .init(base: base), scale: 1, canvas: session.document.canvas)
+        guard case let .filtered(expected, _)? = fresh else { Issue.record("No fill"); return }
+        #expect(Pixels(light.image).region(CGRect(x: 0, y: 0, width: 40, height: 20)) == Pixels(expected).region(CGRect(x: 0, y: 0, width: 40, height: 20)))
+    }
 }
