@@ -77,6 +77,18 @@ struct MeasurementMarksTests {
         #expect(edge[1].frame.maxX < 1590.5)
     }
 
+    /// Against the bottom edge there is no room under the length across, so the length down sits beside it rather than
+    /// cover it.
+    @Test func labelsAtTheBottomEdgeSitSideBySide() {
+        let display = CGSize(width: 800, height: 600)
+        let inside = CGRect(origin: .zero, size: display).insetBy(dx: 5.5, dy: 5.5)
+        let read = labels(AnnotationDocument(
+            pixelSize: display, measurement: RulerMeasurement(shape: .lines(x: 20, y: 599, across: 10...40, down: 560...599), unit: .points, pixelsPerPoint: 1)
+        ))
+        #expect(read.allSatisfy { inside.contains($0.frame) })
+        #expect(!read[0].frame.intersects(read[1].frame), "\(read.map(\.frame))")
+    }
+
     @Test func theMarksAreDrawnOnTheCapture() throws {
         let base = makeBase(width: 200, height: 100)
         let measured = AnnotationDocument(

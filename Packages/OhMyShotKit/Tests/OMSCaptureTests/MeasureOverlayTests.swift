@@ -228,6 +228,47 @@ struct MeasureOverlayTests {
         #expect(overlay.imprint == nil)
     }
 
+    /// At a fractional scale a box snapped to what it holds keeps those pixels through the trip to points and back,
+    /// so F keeps the box and the size the ruler reads.
+    @Test func aSnappedBoxKeepsItsPixelsAtAFractionalScale() async throws {
+        var grown: [String] = []
+        for scale in [1.25, 1.5, 1.75, 2.25] as [CGFloat] {
+            let width = Int(100 * scale), height = Int(60 * scale)
+            for offset in 0..<8 {
+                let dark = CGRect(x: 30 + offset * 3, y: 25 + offset * 2, width: 37 + offset, height: 23 + offset)
+                let context = try #require(CGContext(
+                    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ))
+                context.setFillColor(CGColor(gray: 1, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+                context.setFillColor(CGColor(gray: 0, alpha: 1))
+                // Core Graphics counts up from the bottom, the measurement down from the top.
+                context.fill(CGRect(x: dark.minX, y: CGFloat(height) - dark.maxY, width: dark.width, height: dark.height))
+                let image = try #require(context.makeImage())
+                let points = CGRect(x: 0, y: 0, width: 100, height: 60)
+                let display = DisplayInfo(
+                    id: 1, name: "Fixture", frame: points, pixelSize: CGSize(width: width, height: height), backingScale: scale,
+                    maximumPotentialEDR: 1
+                )
+                let overlay = MeasureOverlay(display: display)
+                defer { overlay.clear() }
+                overlay.show(CapturedFrame(image: image, hdrImage: nil, displayID: 1, frame: points))
+                overlay.movePointer(to: CGPoint(x: 5, y: 5))
+                try await waitForPixels(overlay)
+                overlay.unit = .pixels
+                overlay.beginBox(at: CGPoint(x: 2, y: 2))
+                overlay.dragBox(to: CGPoint(x: 98, y: 58))
+                overlay.endBox()
+                let measured = overlay.imprint?.measurement
+                if measured?.shape != .box(dark) || overlay.measurement != "\(Int(dark.width)) × \(Int(dark.height)) px" {
+                    grown.append("\(scale)× \(dark): \(String(describing: measured?.shape)), \(overlay.measurement ?? "-")")
+                }
+            }
+        }
+        #expect(grown.isEmpty, "\(grown)")
+    }
+
     @Test func clearingCancelsDelayedPixelsAndHidesEveryReading() async throws {
         let overlay = try overlay(scale: 2)
         overlay.clear()

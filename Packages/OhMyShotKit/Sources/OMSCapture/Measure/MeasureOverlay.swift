@@ -451,9 +451,16 @@ final class MeasureOverlay {
         CGRect(x: pixels.minX / scale, y: size.height - pixels.maxY / scale, width: pixels.width / scale, height: pixels.height / scale)
     }
 
-    /// A rectangle in pixels from the top left, from points.
+    /// A rectangle in pixels from the top left, from points: the pixels it touches. An edge that lies on a pixel's
+    /// edge but for conversion noise, as a box from pixels does at a fractional scale, is taken to that edge first, so
+    /// the noise never widens it by a pixel.
     private func pixelRect(_ points: CGRect) -> CGRect {
-        CGRect(x: points.minX * scale, y: (size.height - points.maxY) * scale, width: points.width * scale, height: points.height * scale).integral
+        func settled(_ value: CGFloat) -> CGFloat {
+            abs(value - value.rounded()) < 0.001 ? value.rounded() : value
+        }
+        let left = settled(points.minX * scale), right = settled(points.maxX * scale)
+        let top = settled((size.height - points.maxY) * scale), bottom = settled((size.height - points.minY) * scale)
+        return CGRect(x: left, y: top, width: right - left, height: bottom - top).integral
     }
 
     private func pixelAligned(_ points: CGRect) -> CGRect {

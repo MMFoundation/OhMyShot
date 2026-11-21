@@ -50,6 +50,13 @@ nonisolated extension AnnotationDocument {
                 heightFrame.origin.y = max(row + gap, widthFrame.maxY + 4 * scale)
                 heightFrame = clamped(heightFrame)
             }
+            // Against the bottom edge there is no room under it, so the length down sits beside the length across, right
+            // of it or left of it near the right edge.
+            if widthFrame.insetBy(dx: -2 * scale, dy: -2 * scale).intersects(heightFrame) {
+                heightFrame.origin = CGPoint(x: widthFrame.maxX + 4 * scale, y: widthFrame.minY)
+                if heightFrame.maxX > pixelSize.width - margin { heightFrame.origin.x = widthFrame.minX - 4 * scale - heightFrame.width }
+                heightFrame = clamped(heightFrame)
+            }
             items = [
                 Annotation(shape: .arrow(Arrow(start: CGPoint(x: left, y: row), end: CGPoint(x: right, y: row), head: .double)), style: ink),
                 Annotation(shape: .arrow(Arrow(start: CGPoint(x: column, y: top), end: CGPoint(x: column, y: bottom), head: .double)), style: ink),
