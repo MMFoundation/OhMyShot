@@ -11,7 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
-- Studio's inspector has an Audio section. A recording's system sound and microphone each have their own Mute and volume, heard as you set them and exported that way. Recordings made before this, or with only one sound, get one Sound row. The recording in Capture History still has both sounds mixed into one track, so it plays everywhere.
+- Studio's inspector has an Audio section. A recording's system sound and microphone each have their own Mute and volume, heard as you set them and exported that way. Recordings made before this get one Sound row; one that recorded only the system sound or only the microphone gets a row for that one. The recording in Capture History still has both sounds mixed into one track, so it plays everywhere.
 
 ## [0.3.0] - 2026-11-21
 

@@ -818,7 +818,8 @@ final class RecordingCoordinator {
                 let keptMovie = RecordingDrafts.Info.KeptMovie.measure(at: history.fileURL(for: entry))
                 var keptDraft = draft
                 do {
-                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie)
+                    // The draft's movie stays until its sounds are kept apart: it is the only copy with them in tracks of their own.
+                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie, removingMovie: false)
                 } catch {
                     Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 }
@@ -828,6 +829,8 @@ final class RecordingCoordinator {
                 project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
                 project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
                 await keepStudioSounds(from: keptDraft.movieURL, for: entry)
+                // Linked to the history, the draft needs its movie no longer; unlinked, recovery keeps it again from the movie.
+                if keptDraft.info?.keptHistoryID != nil { try? FileManager.default.removeItem(at: keptDraft.movieURL) }
                 let saveResult = saveStudioProject(resolvedTelemetry, project: project, camera: keptDraft.cameraURL, for: entry)
                 if saveResult.isComplete {
                     drafts.remove(keptDraft)
