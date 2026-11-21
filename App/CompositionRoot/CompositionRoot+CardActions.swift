@@ -244,9 +244,9 @@ extension CompositionRoot {
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
                     if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: item.fileURL)) {
-                        // Saved, as from the editor: the capture's card shows it, no longer says a copy couldn't be, and
-                        // Save and Close does not save another.
-                        self.quickAccess.markSaved(entry.id, at: url)
+                        // A copy is saved after all: the capture's card no longer says one couldn't be. It is not the
+                        // card's own copy, which the card's Move to Trash takes with the capture.
+                        self.quickAccess.clearFailure(for: entry.id)
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }
