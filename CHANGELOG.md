@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- A zoom in Studio can hold on a spot of its own instead of following the pointer: choose the zoom, then click or drag on the preview where it should look, or choose Fixed spot under Target in the inspector and move it with the arrow keys. The camera stays on that spot whatever the pointer does, never past the recording's edges, and frames the same spot in the preview and the exported movie whatever its shape, padding, or camera layout. Zooms in projects made before keep following the pointer.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

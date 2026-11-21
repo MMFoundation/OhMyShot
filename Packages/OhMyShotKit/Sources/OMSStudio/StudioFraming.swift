@@ -9,7 +9,9 @@ import Foundation
 /// `AutoZoom.margin` around it, as automatic zooms are sized to. The camera holds still on a shot, centered on
 /// what happens in it, and moves from one shot to the next as a hand reaches for something (minimum jerk, Flash
 /// and Hogan 1985), arriving `arriveEarly` before the next shot's first event. A stretch with nothing happening
-/// in it is framed on the cursor as the zoom has fully come in.
+/// in it is framed on the cursor as the zoom has fully come in. A zoom aimed at a spot (`StudioProject.Zoom.target`)
+/// is a shot of its own, from its start to its end, held on that spot: what happens in it, and the cursor, never
+/// move the camera off it.
 ///
 /// While a zoom is fully in and the cursor shows, the cursor is kept `margin` inside what the camera shows:
 /// wherever it would come nearer the edge, the camera moves by the least that keeps it there, that move widened
@@ -48,9 +50,13 @@ nonisolated enum StudioFraming {
         var maxY: Double
 
         init(_ event: AutoZoom.Event) {
-            first = event.time; last = event.time
-            minX = event.x; maxX = event.x
-            minY = event.y; maxY = event.y
+            self.init(first: event.time, last: event.time, x: event.x, y: event.y)
+        }
+
+        init(first: Double, last: Double, x: Double, y: Double) {
+            self.first = first; self.last = last
+            minX = x; maxX = x
+            minY = y; maxY = y
         }
     }
 
@@ -98,8 +104,31 @@ nonisolated enum StudioFraming {
             (min(max(point.x, half.x), width - half.x), min(max(point.y, half.y), height - half.y))
         }
 
-        // The shots, and where the camera holds on each.
-        let shots = Self.shots(events[eventRange(events, from: start, to: end)], half: half)
+        // The zooms aimed at a spot, each a shot held there from its start to its end, and the frames they hold.
+        let aimed = zooms.filter { $0.target != nil && $0.start <= end && $0.end >= start }.sorted { $0.start < $1.start }
+        func isAimed(_ time: Double) -> Bool { aimed.contains { time >= $0.start && time <= $0.end } }
+        let held = range.map { isAimed(Double($0) / rate) }
+
+        // The shots, and where the camera holds on each: what happens outside the aimed zooms, cut into shots
+        // between them, and the aimed zooms in their places.
+        var shots: [Shot] = []
+        var run: [AutoZoom.Event] = []
+        var nextAimed = 0
+        func aimedShot(_ zoom: StudioProject.Zoom) -> Shot {
+            let target = zoom.target ?? .init(x: 0.5, y: 0.5)
+            return Shot(first: zoom.start, last: zoom.end, x: target.x * width, y: target.y * height)
+        }
+        for event in events[eventRange(events, from: start, to: end)] where !isAimed(event.time) {
+            while nextAimed < aimed.count, aimed[nextAimed].start <= event.time {
+                shots += Self.shots(run[...], half: half)
+                run = []
+                shots.append(aimedShot(aimed[nextAimed]))
+                nextAimed += 1
+            }
+            run.append(event)
+        }
+        shots += Self.shots(run[...], half: half)
+        shots += aimed[nextAimed...].map(aimedShot)
         var holds = shots.map { inside((($0.minX + $0.maxX) / 2, ($0.minY + $0.maxY) / 2)) }
         if holds.isEmpty {
             let settled = range.first { steady[$0] } ?? (range.lowerBound + range.upperBound) / 2
@@ -136,7 +165,7 @@ nonisolated enum StudioFraming {
         let room = (x: half.x * (1 - 2 * margin), y: half.y * (1 - 2 * margin))
         var right = [Double](repeating: 0, count: count), left = right, down = right, up = right
         var followed = false
-        for offset in 0..<count where follows(frames[range.lowerBound + offset], steady: steady[range.lowerBound + offset]) {
+        for offset in 0..<count where !held[offset] && follows(frames[range.lowerBound + offset], steady: steady[range.lowerBound + offset]) {
             let cursor = frames[range.lowerBound + offset]
             right[offset] = max(0, cursor.cursorX - (base[offset].x + room.x))
             left[offset] = max(0, (base[offset].x - room.x) - cursor.cursorX)
@@ -151,11 +180,15 @@ nonisolated enum StudioFraming {
         }
 
         // Where the camera looks: the shots, moved for the cursor, never letting it nearer the edge than
-        // `hardMargin`, inside the recording.
+        // `hardMargin`, inside the recording; held where a zoom is aimed.
         let hard = (x: half.x * (1 - 2 * hardMargin), y: half.y * (1 - 2 * hardMargin))
         var centers = base
         for offset in 0..<count {
             let index = range.lowerBound + offset
+            guard !held[offset] else {
+                centers[offset] = inside(base[offset])
+                continue
+            }
             var center = (x: base[offset].x + right[offset] - left[offset], y: base[offset].y + down[offset] - up[offset])
             if followed, follows(frames[index], steady: steady[index]) {
                 center.x = min(max(center.x, frames[index].cursorX - hard.x), frames[index].cursorX + hard.x)

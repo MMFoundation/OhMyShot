@@ -276,6 +276,10 @@ nonisolated public struct StudioTrack: Sendable {
         guard zooms.count > 1, width > 0, height > 0 else { return [:] }
         var edges: [UUID: (before: Double, after: Double)] = [:]
         func focusBounds(of zoom: StudioProject.Zoom, atEnd: Bool) -> (minX: Double, maxX: Double, minY: Double, maxY: Double) {
+            // A zoom held on a spot frames that spot from start to end.
+            if let target = zoom.target {
+                return (target.x * width, target.x * width, target.y * height, target.y * height)
+            }
             let inside = events.filter { $0.time >= zoom.start && $0.time <= zoom.end }
             if let event = atEnd ? inside.last : inside.first {
                 return (event.x, event.x, event.y, event.y)
