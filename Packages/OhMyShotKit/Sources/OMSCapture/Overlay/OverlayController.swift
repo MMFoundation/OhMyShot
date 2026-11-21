@@ -202,6 +202,9 @@ public final class OverlayController {
     /// The ruler's measurement to copy, where the crosshair is (global space), and whether the overlay is
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
+    /// The display's frozen frame and what the ruler measured on it, to keep as a capture (F). The overlay has
+    /// closed by then.
+    public var onCaptureMeasurement: ((CapturedFrame, RulerMeasurement) -> Void)?
     private let cursorVisibility = OverlayCursorVisibility()
 
     public private(set) var isActive = false
@@ -868,6 +871,7 @@ public final class OverlayController {
         )
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
         setup.codeFinder = codes
+        setup.edgeTolerance = measureTolerance
         setup.onChoose = { [weak self, weak setup] choice, area in
             guard let self else { return }
             if sizing {
@@ -1288,6 +1292,14 @@ extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) {
         onCopyMeasurement?(text, pointer ?? NSEvent.mouseLocation, ending)
         if ending { end(.cancelled) }
+    }
+
+    func overlayView(_ view: OverlayView, didCaptureMeasurement measurement: RulerMeasurement, of frame: CapturedFrame) {
+        // The overlay goes first, so the screen comes back at once; the capture is kept after. Ending the session lets
+        // its handlers go, so this one is held first.
+        let capture = onCaptureMeasurement
+        end(.cancelled)
+        capture?(frame, measurement)
     }
 
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) {
