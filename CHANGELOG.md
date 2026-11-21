@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- On a frozen screen, B fits a framed area to the edges of what it holds, as Measure fits a box, so a rough drag around a card, a button, or a picture lands on it. It works in All-In-One's framed area and in Capture Area's size control (Tab), and it keeps the shape the area keeps. Press B again, or Command-Z, to put the area back.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One
