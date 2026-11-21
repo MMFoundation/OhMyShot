@@ -19,8 +19,8 @@ struct QuickAccessCompletionTests {
 
     private func actions(succeeds: Bool) -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
-            copy: { _ in succeeds }, save: { _, _ in succeeds ? URL(filePath: "/tmp/saved.png") : nil },
-            saveAs: { _ in succeeds ? URL(filePath: "/tmp/saved-as.png") : nil },
+            copy: { _ in succeeds }, save: { _, _ in succeeds ? .saved(URL(filePath: "/tmp/saved.png")) : .cancelled },
+            saveAs: { _ in succeeds ? .saved(URL(filePath: "/tmp/saved-as.png")) : .cancelled },
             open: { _ in }, annotate: { _ in }, reveal: { _ in }, recognizeText: { _ in },
             pin: { _ in succeeds }, moveToTrash: { _ in }, closed: { _ in }
         )
@@ -150,7 +150,7 @@ struct QuickAccessCompletionTests {
         let successful = try item(), failed = try item()
         actions.save = { item, asks in
             #expect(!asks)
-            return item.id == successful.id ? URL(filePath: "/tmp/saved.png") : nil
+            return item.id == successful.id ? .saved(URL(filePath: "/tmp/saved.png")) : .failed(Self.diskFull)
         }
         let controller = QuickAccessController(actions: actions)
         controller.add(successful)
@@ -159,6 +159,64 @@ struct QuickAccessCompletionTests {
         for _ in 0..<20 { await Task.yield() }
         #expect(controller.itemIDs == [failed.id])
         controller.dismissAll()
+    }
+
+    private static let diskFull = ExportFailure(cause: .diskFull, summary: "Couldn’t save: the disk is full", detail: "The disk is full.")
+
+    private func card(in controller: QuickAccessController) throws -> CaptureCardView {
+        try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+    }
+
+    @Test(arguments: [CardCommand.save, .saveAs])
+    func failedSaveSaysWhyAndHoldsTheCardUntilASaveWorks(command: CardCommand) async throws {
+        var actions = actions(succeeds: false)
+        var outcome = SaveOutcome.failed(Self.diskFull)
+        actions.save = { _, _ in outcome }
+        actions.saveAs = { _ in outcome }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(command, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        let card = try card(in: controller)
+        #expect(card.failure == Self.diskFull)
+        #expect(card.accessibilityValue() as? String == Self.diskFull.summary)
+        #expect(card.saveButton.toolTip == Self.diskFull.detail)
+        // Long past its time, the card is still held.
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+
+        outcome = .saved(URL(filePath: "/tmp/saved.png"))
+        controller.perform(command, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(controller.isEmpty)
+    }
+
+    @Test func aCancelledSaveIsNoFailure() async throws {
+        var actions = actions(succeeds: false)
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(.save, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(try card(in: controller).failure == nil)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.isEmpty)
+    }
+
+    @Test func aFailureIsShownOnlyOnACardOnScreen() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        #expect(!controller.showFailure(Self.diskFull, for: capture.id))
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        controller.markSaved(capture.id, at: URL(filePath: "/tmp/saved.png"))
+        #expect(try card(in: controller).failure == nil)
     }
 
     @Test func trashFailureLeavesTheCardAvailableForRetry() throws {

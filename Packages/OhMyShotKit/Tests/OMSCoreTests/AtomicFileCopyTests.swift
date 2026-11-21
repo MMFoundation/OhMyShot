@@ -72,6 +72,29 @@ struct AtomicFileCopyTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == ["existing-folder", "source.mp4"])
     }
 
+    @Test func savingAsOverAMovieWhoseRecordingIsGoneKeepsTheMovieAndSaysWhy() async throws {
+        let directory = try folder()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let target = directory.appending(path: "movie.mp4")
+        let old = Data("the movie that was there".utf8)
+        try old.write(to: target)
+        let outcome = await AtomicFileCopy.save(directory.appending(path: "gone.mp4"), as: target)
+        #expect(outcome.failure?.cause == .sourceMissing)
+        #expect(try Data(contentsOf: target) == old)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["movie.mp4"])
+    }
+
+    @Test func savingARecordingAsItselfKeepsIt() async throws {
+        let directory = try folder()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "recording.mp4")
+        let bytes = Data((0..<4096).map { UInt8($0 % 251) })
+        try bytes.write(to: source)
+        #expect(await AtomicFileCopy.save(source, as: source) == .saved(source))
+        #expect(try Data(contentsOf: source) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["recording.mp4"])
+    }
+
     @Test func savingOntoTheSourceAndReplacingASymlinkAreSafe() async throws {
         let directory = try folder()
         defer { try? FileManager.default.removeItem(at: directory) }

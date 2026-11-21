@@ -9,6 +9,11 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- A save that fails says why instead of only beeping. A Quick Access card shows the reason in its badge ("Couldn’t save: the disk is full", "Couldn’t save: the folder isn’t available") and stays until a copy is saved or you close it, so it can't close by itself and take an unsaved capture with it. The editor, pins, Capture History, the recording window, Studio, and saving after a capture with Quick Access off show the same sentence by the pointer. VoiceOver reads it.
+- Save As… for a recording on a Quick Access card keeps the movie it replaces until the new copy is complete, and choosing the recording's own file no longer deletes it.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

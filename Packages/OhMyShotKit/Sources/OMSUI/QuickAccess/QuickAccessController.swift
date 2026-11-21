@@ -8,12 +8,13 @@ import OMSDesign
 public final class QuickAccessController {
     public struct Actions {
         public var copy: (QuickAccessItem) async -> Bool
-        /// Saves a copy to the export location and returns where it went; nil when it was not saved. Converting a
-        /// large capture takes a while, so a card marks itself saved when this returns. `asks`: whether it may ask for
-        /// the name first, as Settings say; false for a save nobody waits at (Save All, a card closing by itself).
-        public var save: (QuickAccessItem, _ asks: Bool) async -> URL?
-        /// Asks where to save a copy.
-        public var saveAs: (QuickAccessItem) async -> URL?
+        /// Saves a copy to the export location and says how it went: where it went, cancelled, or why it failed, which
+        /// the card then shows. Converting a large capture takes a while, so a card marks itself saved when this returns.
+        /// `asks`: whether it may ask for the name first, as Settings say; false for a save nobody waits at (Save All, a
+        /// card closing by itself).
+        public var save: (QuickAccessItem, _ asks: Bool) async -> SaveOutcome
+        /// Asks where to save a copy, and says how it went.
+        public var saveAs: (QuickAccessItem) async -> SaveOutcome
         public var open: (QuickAccessItem) -> Void
         /// Opens the capture in the annotation editor.
         public var annotate: (QuickAccessItem) -> Void
@@ -72,8 +73,8 @@ public final class QuickAccessController {
 
         public init(
             copy: @escaping (QuickAccessItem) async -> Bool,
-            save: @escaping (QuickAccessItem, _ asks: Bool) async -> URL?,
-            saveAs: @escaping (QuickAccessItem) async -> URL?,
+            save: @escaping (QuickAccessItem, _ asks: Bool) async -> SaveOutcome,
+            saveAs: @escaping (QuickAccessItem) async -> SaveOutcome,
             open: @escaping (QuickAccessItem) -> Void,
             annotate: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
@@ -164,7 +165,9 @@ public final class QuickAccessController {
     private var stack: CardStackView?
     /// The saves under way, by capture: a second request for one joins it instead of saving again, so a double ⌘S, or a
     /// card closing by itself under a Save being asked for, saves once and takes one number.
-    private let saves = SingleFlight<UUID, URL?>()
+    private let saves = SingleFlight<UUID, SaveOutcome>()
+    /// Why a copy of a card's capture could not be saved, by capture, while its card says so and is held from closing.
+    private var failures: [UUID: ExportFailure] = [:]
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [(item: QuickAccessItem, evicted: Bool)] = []
     private static let hiddenThumbnail: CGImage = {
@@ -331,11 +334,31 @@ public final class QuickAccessController {
         return task
     }
 
+    /// Shows on capture `id`'s card why a copy of it could not be saved, says it to VoiceOver, and holds the card from
+    /// closing by itself until a copy is saved or the card is closed, as a failed upload holds it. False when the
+    /// capture has no card on screen to say it, so the caller can say it elsewhere.
+    @discardableResult
+    public func showFailure(_ failure: ExportFailure, for id: UUID) -> Bool {
+        guard item(id) != nil, !isTrashing(id) else { return false }
+        failures[id] = failure
+        stack?.setFailure(failure, for: id)
+        hold(.failure, for: id, if: true)
+        return true
+    }
+
+    /// Capture `id`'s card no longer has a failure to show: a copy was saved after all.
+    public func clearFailure(for id: UUID) {
+        guard failures.removeValue(forKey: id) != nil else { return }
+        stack?.setFailure(nil, for: id)
+        hold(.failure, for: id, if: false)
+    }
+
     /// Marks a capture saved elsewhere (from the editor) as saved on its card.
     public func markSaved(_ id: UUID, at url: URL) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].savedURL = url
             stack?.markSaved(id, at: url)
+            clearFailure(for: id)
         } else if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
             recentlyClosed[index].item.savedURL = url
         }
@@ -441,7 +464,7 @@ public final class QuickAccessController {
             for item in saving {
                 await finish(item) { [self] in
                     if item.savedURL != nil { return true }
-                    return await save(item, .quiet) != nil
+                    return await save(item, .quiet).url != nil
                 }
             }
         }
@@ -453,6 +476,7 @@ public final class QuickAccessController {
         thumbnailUpdates.removeValue(forKey: id)?.cancel()
         if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         completing[id] = nil
+        failures[id] = nil
         recentlyClosed.removeAll { $0.item.id == id }
         if let index = trashing.firstIndex(where: { $0.id == id }) { trashing.remove(at: index).sender.cancel() }
         guard items.contains(where: { $0.id == id }) else { return }
@@ -497,6 +521,7 @@ public final class QuickAccessController {
     private func close(_ item: QuickAccessItem, evicted: Bool = false) {
         if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
         completing[item.id] = nil
+        failures[item.id] = nil
         recentlyClosed.append((item, evicted))
         if recentlyClosed.count > 20 {
             let oldest = recentlyClosed.removeFirst()
@@ -588,6 +613,7 @@ public final class QuickAccessController {
         stack.hasLink = sharing.hasLink
         stack.canDeleteFromStorage = sharing.canDeleteFromStorage
         stack.currentUpload = sharing.current
+        stack.currentFailure = { [weak self] item in self?.failures[item.id] }
         stack.pictureOffer = actions.pictureChangeOffer
         stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
         stack.onHold = { [weak self] id, hold, on in
@@ -617,19 +643,23 @@ public final class QuickAccessController {
         case quiet
     }
 
-    /// Saves a capture, and marks its card saved once it is; the copy's URL, or nil when none was saved. A second
-    /// request for a capture still being saved waits for the first and has its answer, whatever kind it is, so a
-    /// capture is saved once however many ways ask.
+    /// Saves a capture, and marks its card saved once it is, or has it say why it was not. A second request for a
+    /// capture still being saved waits for the first and has its answer, whatever kind it is, so a capture is saved
+    /// once however many ways ask.
     @discardableResult
-    private func save(_ item: QuickAccessItem, _ kind: SaveKind) async -> URL? {
+    private func save(_ item: QuickAccessItem, _ kind: SaveKind) async -> SaveOutcome {
         await saves.run(item.id) { [self] in
-            let url = switch kind {
+            let outcome = switch kind {
             case .save: await actions.save(item, true)
             case .saveAs: await actions.saveAs(item)
             case .quiet: await actions.save(item, false)
             }
-            if let url { markSaved(item.id, at: url) }
-            return url
+            switch outcome {
+            case .saved(let url): markSaved(item.id, at: url)
+            case .failed(let failure): showFailure(failure, for: item.id)
+            case .cancelled: break
+            }
+            return outcome
         }
     }
 
@@ -739,7 +769,7 @@ public final class QuickAccessController {
                 Task {
                     let saved = await save(item, .quiet)
                     guard self.item(id) != nil else { return }
-                    guard saved != nil else { return schedule.keepOpen(id) }
+                    guard saved.url != nil else { return schedule.keepOpen(id) }
                     dismiss(id)
                 }
                 continue
@@ -886,11 +916,11 @@ public final class QuickAccessController {
                     actions.reveal(item)
                     return true
                 }
-                return await save(item, .save) != nil
+                return await save(item, .save).url != nil
             }
         case .saveAs:
             if keyed { endKeyboard() }
-            complete(item) { [self] in await save(item, .saveAs) != nil }
+            complete(item) { [self] in await save(item, .saveAs).url != nil }
         case .annotate:
             if keyed { endKeyboard() }
             actions.annotate(item)

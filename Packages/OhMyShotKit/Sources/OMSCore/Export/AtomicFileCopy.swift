@@ -11,6 +11,15 @@ public enum AtomicFileCopy {
         })
     }
 
+    /// Saves a copy of `source` at `destination`, chosen in a Save panel, and says how it went: a file already there stays
+    /// as it was until the copy is whole, and choosing `source` itself leaves it as it is.
+    public static func save(_ source: URL, as destination: URL) async -> SaveOutcome {
+        await SaveOutcome.saving(into: destination.deletingLastPathComponent()) {
+            try await copy(from: source, to: destination)
+            return destination
+        }
+    }
+
     /// The copy boundary is injectable for partial-write and cancellation tests; the commit always uses
     /// the filesystem's atomic rename, including when a destination already exists.
     static func perform(
