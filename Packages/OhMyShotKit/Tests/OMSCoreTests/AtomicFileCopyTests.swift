@@ -98,7 +98,14 @@ struct AtomicFileCopyTests {
         try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: directory)
         #expect(await AtomicFileCopy.save(source, as: alias.appending(path: "recording.mp4")).url == nil)
         #expect(try Data(contentsOf: source) == bytes)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == ["alias", "recording.mp4"])
+        // A link to it is a file of its own: replaced by a copy, the recording left as it is.
+        let link = directory.appending(path: "link.mp4")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
+        #expect(await AtomicFileCopy.save(source, as: link) == .saved(link))
+        #expect(try link.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == false)
+        #expect(try Data(contentsOf: link) == bytes)
+        #expect(try Data(contentsOf: source) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == ["alias", "link.mp4", "recording.mp4"])
     }
 
     @Test func savingOntoTheSourceAndReplacingASymlinkAreSafe() async throws {
