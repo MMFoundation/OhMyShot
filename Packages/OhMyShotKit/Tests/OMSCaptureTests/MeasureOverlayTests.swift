@@ -204,6 +204,30 @@ struct MeasureOverlayTests {
         #expect(overlay.measurement == "60 × 38 pt")
     }
 
+    /// What F keeps: the lines through the pointer's pixel, or else the box, in the frame's pixels from its top left,
+    /// in the unit shown, with the frame they were measured on.
+    @Test func whatIsMeasuredIsHandedOnInTheFramesPixels() async throws {
+        let (display, frame) = try fixture(scale: 2)
+        let overlay = MeasureOverlay(display: display)
+        defer { overlay.clear() }
+        overlay.show(frame)
+        overlay.movePointer(to: CGPoint(x: 45.25, y: 40.25))
+        try await waitForPixels(overlay)
+        let lines = try #require(overlay.imprint)
+        #expect(lines.frame.image === frame.image)
+        #expect(lines.measurement == RulerMeasurement(shape: .lines(x: 90, y: 39, across: 60...139, down: 20...59), unit: .points, pixelsPerPoint: 2))
+        overlay.unit = .pixels
+        drag(overlay)
+        #expect(overlay.imprint?.measurement == RulerMeasurement(shape: .box(CGRect(x: 60, y: 20, width: 80, height: 40)), unit: .pixels, pixelsPerPoint: 2))
+        // A click clears the box, and the lines are what is measured again.
+        overlay.beginBox(at: CGPoint(x: 45.25, y: 40.25))
+        overlay.endBox()
+        overlay.movePointer(to: CGPoint(x: 45.25, y: 40.25))
+        #expect(overlay.imprint?.measurement.shape == .lines(x: 90, y: 39, across: 60...139, down: 20...59))
+        overlay.clear()
+        #expect(overlay.imprint == nil)
+    }
+
     @Test func clearingCancelsDelayedPixelsAndHidesEveryReading() async throws {
         let overlay = try overlay(scale: 2)
         overlay.clear()

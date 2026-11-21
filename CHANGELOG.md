@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Press F while measuring to take the screen as a screenshot with the measurement on it: each line as a double-headed arrow with its length, or the box as a rectangle with its size, in points or pixels as shown. The marks stay editable in the editor, and the screenshot goes to your Quick Access card, clipboard, or folder as your After screenshot settings say. Return and ⌘C still copy the reading.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

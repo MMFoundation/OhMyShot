@@ -91,7 +91,7 @@ final class CaptureCoordinator {
 
     /// The title of the front window of the app in front, for file names that use it; read before the overlay takes
     /// the focus. Nil when no pattern asks for it.
-    private func frontWindowTitle() -> String? {
+    func frontWindowTitle() -> String? {
         guard settings.fileNamePattern.contains(FilenameTemplate.Token.window.placeholder),
               let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
         return WindowCatalog.frontWindowTitle(ofProcess: pid)
@@ -441,6 +441,12 @@ final class CaptureCoordinator {
         // Kept as captured: the background chosen for every screenshot pads by the picture's size and grows it to its
         // shape, which for a picture tens of thousands of pixels long is gigabytes; the editor still adds one.
         return await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard, background: .none)
+    }
+
+    /// Keeps the display Measure measured on, as its frozen frame shows it, with the measurement drawn on it as marks the
+    /// editor can change: History, the clipboard and a card as the settings say, the shutter, as any capture is kept.
+    func deliverMeasured(_ frame: CapturedFrame, marks: AnnotationDocument, appName: String?, windowTitle: String?, copiesToClipboard: Bool) async {
+        await deliver(frame, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: marks)
     }
 
     #if DEBUG

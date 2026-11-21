@@ -121,7 +121,7 @@ final class CompositionRoot {
         return packs
     }()
     lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
-    lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
+    lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker, captures: captures)
     lazy var recordings = RecordingCoordinator(
         settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions, files: files
     )
