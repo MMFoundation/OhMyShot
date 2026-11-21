@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import OMSCore
@@ -111,6 +112,23 @@ struct StudioZoomTargetTests {
         #expect(pulled.isEmpty)
     }
 
+    @Test func anAimedZoomBesideAStrongerOneIsStillHeldOnItsSpot() {
+        let spot = StudioProject.Zoom.Spot(x: 0.3, y: 0.4)
+        var project = StudioProject(zooms: [
+            .init(start: 1, end: 3, scale: 4, isAutomatic: false, target: spot),
+            .init(start: 3, end: 5, scale: 2, isAutomatic: false, target: spot),
+        ])
+        project.cursor.hidesWhenIdle = false
+        let track = StudioTrack(telemetry: Self.telemetry(), project: project, duration: 8)
+        // One stretch, handed over without pulling back, framed at 4×.
+        #expect(stride(from: 2.0, through: 4.5, by: 0.05).allSatisfy { track.frame(at: $0).zoom >= 2 - 1e-9 })
+        for (time, scale) in [(2.0, 4.0), (4.5, 2.0)] {
+            let frame = track.frame(at: time)
+            #expect(abs(frame.zoom - scale) < 1e-9)
+            #expect(abs(frame.centerX - spot.x * Self.width) < 1e-6 && abs(frame.centerY - spot.y * Self.height) < 1e-6)
+        }
+    }
+
     // MARK: Preview and export
 
     @Test func thePreviewAndTheExportFrameTheSameSpot() throws {
@@ -203,6 +221,37 @@ struct StudioZoomTargetTests {
         #expect(document.project.zooms.contains { $0.id == zoom.id && $0.target == .init(x: 1, y: 0) })
         document.setZoomTarget(zoom.id, nil)
         #expect(document.project.zooms.first { $0.id == zoom.id }?.target == nil)
+    }
+
+    @Test func aZoomFollowingThePointerIsAimedWhereItLooksAtThePlayhead() async throws {
+        let zoom = StudioProject.Zoom(start: 1, end: 6, scale: 2, isAutomatic: false)
+        let document = document(zooms: [zoom])
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: document.project, duration: 8,
+            recordingSize: CGSize(width: 3200, height: 2000), background: nil
+        )
+        let configuration = AVVideoComposition.Configuration(
+            customVideoCompositorClass: StudioCompositor.self, frameDuration: CMTime(value: 1, timescale: 60),
+            instructions: [], renderSize: renderer.layout.canvas
+        )
+        let movie = StudioComposition(
+            asset: AVMutableComposition(), videoComposition: AVVideoComposition(configuration: configuration),
+            renderer: renderer, duration: 8, colors: .init(of: nil)
+        )
+        document.compositionLoader = { _, _ in movie }
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        await document.makeComposition()
+        func spot(at time: Double) -> StudioProject.Zoom.Spot {
+            let frame = renderer.track.frame(at: time)
+            return StudioProject.Zoom.Spot(x: frame.centerX / Self.width, y: frame.centerY / Self.height).clamped
+        }
+        // Paused after the camera went over to the clicks, it holds what shows.
+        #expect(abs(renderer.track.frame(at: 5).zoom - 2) < 1e-9 && spot(at: 5) != spot(at: 3.5))
+        document.time = 5
+        #expect(document.aim(of: zoom.id) == spot(at: 5))
+        // Outside the zoom, where it is fully in halfway through.
+        document.time = 7
+        #expect(document.aim(of: zoom.id) == spot(at: 3.5))
     }
 
     @Test func aimingByDragIsTakenBackAsOne() {

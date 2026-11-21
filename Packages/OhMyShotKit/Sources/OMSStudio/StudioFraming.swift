@@ -10,8 +10,8 @@ import Foundation
 /// what happens in it, and moves from one shot to the next as a hand reaches for something (minimum jerk, Flash
 /// and Hogan 1985), arriving `arriveEarly` before the next shot's first event. A stretch with nothing happening
 /// in it is framed on the cursor as the zoom has fully come in. A zoom aimed at a spot (`StudioProject.Zoom.target`)
-/// is a shot of its own, from its start to its end, held on that spot: what happens in it, and the cursor, never
-/// move the camera off it.
+/// is a shot of its own, from its start to its end, held on that spot at its own scale: what happens in it, the
+/// cursor, and a stronger zoom beside it never move the camera off it.
 ///
 /// While a zoom is fully in and the cursor shows, the cursor is kept `margin` inside what the camera shows:
 /// wherever it would come nearer the edge, the camera moves by the least that keeps it there, that move widened
@@ -114,9 +114,18 @@ nonisolated enum StudioFraming {
         var shots: [Shot] = []
         var run: [AutoZoom.Event] = []
         var nextAimed = 0
+        // An aimed zoom's spot, kept inside the recording at the zoom's own scale, as the center at the stretch's
+        // scale that gives the same pivot, so its spot is in the middle at its own scale beside a stronger zoom too.
         func aimedShot(_ zoom: StudioProject.Zoom) -> Shot {
             let target = zoom.target ?? .init(x: 0.5, y: 0.5)
-            return Shot(first: zoom.start, last: zoom.end, x: target.x * width, y: target.y * height)
+            func center(_ spot: Double, length: Double) -> Double {
+                guard zoom.scale > 1 else { return length / 2 }
+                let half = length / zoom.scale / 2
+                let shown = min(max(spot * length, half), length - half)
+                let pivot = (shown * zoom.scale - length / 2) / (zoom.scale - 1)
+                return (pivot * (scale - 1) + length / 2) / scale
+            }
+            return Shot(first: zoom.start, last: zoom.end, x: center(target.x, length: width), y: center(target.y, length: height))
         }
         for event in events[eventRange(events, from: start, to: end)] where !isAimed(event.time) {
             while nextAimed < aimed.count, aimed[nextAimed].start <= event.time {
