@@ -121,7 +121,7 @@ final class CompositionRoot {
         return packs
     }()
     lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
-    lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
+    lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker, captures: captures)
     lazy var recordings = RecordingCoordinator(
         settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions, files: files
     )
@@ -168,6 +168,11 @@ final class CompositionRoot {
             historyWindow?.reload()
         }
     )
+    /// Copy Text on a Quick Access card or in Capture History: the picture read on this Mac, with Settings' line breaks.
+    lazy var textCopier = TextCopier { [weak self] url in
+        guard let self else { return nil }
+        return try? await textCapture.text(ofPictureAt: url, joinLines: !settings.textRecognitionKeepsLineBreaks)
+    }
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
         permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,
@@ -346,7 +351,7 @@ final class CompositionRoot {
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
         }
-        overlay.onWillMeasure = { [weak self] in self?.measurer.configureOverlay() }
+        captures.allInOneWillMeasure = { [weak self] copiesToClipboard in self?.measurer.configureOverlay(copiesToClipboard: copiesToClipboard) }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
             self?.pins.pin(color: pinned)
@@ -698,6 +703,7 @@ final class CompositionRoot {
             openHistory: { [weak self] in self?.showHistory() },
             showOnboarding: { [weak self] in self?.replayOnboarding() },
             expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 },
             destinations: uploads.destinations,
             uploadRecords: uploads.records,
             recordActions: SettingsDependencies.UploadRecordActions(
