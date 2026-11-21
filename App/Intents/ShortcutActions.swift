@@ -85,9 +85,10 @@ final class ShortcutActions {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
             throw ShortcutFailure.unreadableImage
         }
-        // Without the text reader in the app, read it here from memory, as nothing then needs it in a file.
+        // Without the text reader in the app, read it here from memory, as nothing then needs it in a file; decoded off
+        // the main thread, as a large photo takes a while.
         guard packs.helper != nil else {
-            guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutFailure.unreadableImage }
+            guard let loaded = await TextCaptureCoordinator.load(.data(data), fallbackScale: 1) else { throw ShortcutFailure.unreadableImage }
             return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
         }
         let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")

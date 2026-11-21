@@ -122,6 +122,8 @@ struct QuickAccessCopyTextTests {
         for _ in 0..<20 { await Task.yield() }
         controller.perform(.moveToTrash, on: capture, keyed: false)
         #expect(controller.undoTrash(capture.id))
+        // Brought back, the card asks where the pointer is; one resting where the card stands would hold it too.
+        try card(of: controller).setHovering(false)
         controller.closeDueCards(at: .greatestFiniteMagnitude)
         #expect(controller.item(capture.id) != nil)
         try #require(resume).resume(returning: .copied(characters: 1))

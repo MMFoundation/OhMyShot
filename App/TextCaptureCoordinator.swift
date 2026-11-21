@@ -1047,7 +1047,7 @@ final class TextCaptureCoordinator {
     }
 
     /// Decodes off the main thread: a large photo takes a while.
-    @concurrent private nonisolated static func load(_ content: PasteboardImage.Content, fallbackScale: CGFloat) async -> ImageLoader.Loaded? {
+    @concurrent nonisolated static func load(_ content: PasteboardImage.Content, fallbackScale: CGFloat) async -> ImageLoader.Loaded? {
         switch content {
         case .file(let url): ImageLoader.load(contentsOf: url, fallbackScale: fallbackScale)
         case .data(let data): ImageLoader.load(data: data, fallbackScale: fallbackScale)
