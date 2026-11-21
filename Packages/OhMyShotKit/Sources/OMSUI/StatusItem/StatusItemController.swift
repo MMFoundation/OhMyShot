@@ -417,8 +417,15 @@ public final class StatusItemController {
             self?.showLauncherMenu(entry, below: anchor)
         }
         let host = NSHostingController(rootView: view)
-        // The popover takes the launcher's own height, so nothing in it scrolls.
+        // The popover takes the launcher's own height, so nothing in it scrolls, unless the display is too short to hold
+        // it under the menu bar and above the Dock, with room for the popover's arrow: then it stops there and scrolls.
         host.sizingOptions = [.preferredContentSize]
+        if let window = button.window, let screen = window.screen {
+            let room = window.frame.minY - screen.visibleFrame.minY - 24
+            if host.sizeThatFits(in: CGSize(width: 420, height: CGFloat.greatestFiniteMagnitude)).height > room {
+                host.rootView.maxHeight = room
+            }
+        }
         launcher.contentViewController = host
         launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         button.highlight(true)

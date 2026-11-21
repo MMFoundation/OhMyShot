@@ -166,6 +166,8 @@ struct CaptureLauncherView: View {
     let perform: (Entry) -> Void
     /// Opens a row's submenu under the row, whose frame is given in `space`.
     let showMenu: (Entry, CGRect) -> Void
+    /// How tall the launcher may be on a display too short to hold it, where it scrolls; nil while it fits.
+    var maxHeight: CGFloat?
 
     var body: some View {
         // Only alive while the popover is open. Re-read countdowns, cancellations, and menu availability.
@@ -177,7 +179,7 @@ struct CaptureLauncherView: View {
             let moreRow = toolRow + tools.chunked(CaptureLauncherModel.tileColumns).count
             let imageRow = moreRow + more.chunked(CaptureLauncherModel.rowColumns).count
             let appRow = imageRow + images.chunked(CaptureLauncherModel.rowColumns).count
-            VStack(alignment: .leading, spacing: 0) {
+            let content = VStack(alignment: .leading, spacing: 0) {
                 header
                 if !active.isEmpty {
                     VStack(spacing: 4) {
@@ -199,6 +201,19 @@ struct CaptureLauncherView: View {
             .padding(8)
             .frame(width: 420)
             .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if let maxHeight {
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) { content }
+                            .frame(width: 420, height: maxHeight)
+                            .onChange(of: highlight.cell) { _, cell in
+                                if highlight.fromKeys, let cell { proxy.scrollTo(cell) }
+                            }
+                    }
+                } else {
+                    content
+                }
+            }
             .coordinateSpace(.named(Self.space))
         }
     }
@@ -217,6 +232,7 @@ struct CaptureLauncherView: View {
         LauncherRow(entry: entry, emphasized: emphasized, isHighlighted: highlight.cell == cell,
                     isRinged: highlight.cell == cell && highlight.fromKeys, presses: highlight.presses,
                     hover: { hover(cell, $0) }, perform: perform, showMenu: showMenu)
+            .id(cell)
     }
 
     private var header: some View {
@@ -254,6 +270,7 @@ struct CaptureLauncherView: View {
                                 model.editShortcut(shortcut)
                             })
                         }
+                        .id(cell)
                     }
                     // A short row keeps four columns, so its tiles are as wide as the rest.
                     ForEach(row.count ..< columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 0) }

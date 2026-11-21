@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import OMSUI
 
@@ -177,5 +178,14 @@ struct CaptureLauncherTests {
         #expect(launcher.moreRows.isEmpty)
         #expect(launcher.imageRows.map(\.title) == ["From Clipboard", "Pins"])
         #expect(launcher.rows.map { $0.entries.map(\.title) }[1] == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…"])
+    }
+
+    @Test func onADisplayTooShortTheLauncherScrollsAtTheHeightItHas() {
+        let rows = (1 ... 40).map { StatusItemController.Entry(title: "Row \($0)", systemImage: "viewfinder") {} }
+        let host = NSHostingController(rootView: CaptureLauncherView(model: model([], tools: rows), perform: { _ in }, showMenu: { _, _ in }))
+        let unbounded = CGSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
+        #expect(host.sizeThatFits(in: unbounded).height > 500)
+        host.rootView.maxHeight = 300
+        #expect(host.sizeThatFits(in: unbounded) == CGSize(width: 420, height: 300))
     }
 }

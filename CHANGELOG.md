@@ -11,7 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
-- Pin from Clipboard, Hide or Show Pins, and Restore Recently Closed can each have a global shortcut, set in Settings › Shortcuts (none has keys until chosen), and are tiles in the menu bar launcher. The URL scheme adds `pin-from-clipboard` and `toggle-pins`.
+- Pin from Clipboard, Hide or Show Pins, and Restore Recently Closed can each have a global shortcut, set in Settings › Shortcuts (none has keys until chosen), and are tiles in the menu bar launcher, which on a display too short to hold every tile stops above the Dock and scrolls. The URL scheme adds `pin-from-clipboard` and `toggle-pins`.
 
 ## [0.3.0] - 2026-11-21
 
