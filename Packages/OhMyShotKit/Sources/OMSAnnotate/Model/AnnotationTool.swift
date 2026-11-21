@@ -218,17 +218,17 @@ nonisolated extension AnnotationTool {
             }
             var magnifier = Magnifier(source: start, radius: radius(at: start), zoom: settings.zoom)
             var lens = constrained ? Geometry.snapped(end, from: start) : end
-            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius {
-                if let room, !room.isNull, !room.contains(lens) {
-                    if constrained, room.contains(start) {
-                        let dx = lens.x - start.x, dy = lens.y - start.y
-                        let across = dx == 0 ? 1 : ((dx > 0 ? room.maxX : room.minX) - start.x) / dx
-                        let down = dy == 0 ? 1 : ((dy > 0 ? room.maxY : room.minY) - start.y) / dy
-                        lens = CGPoint(x: start.x + dx * min(across, down), y: start.y + dy * min(across, down))
-                    } else {
-                        lens = CGPoint(x: min(max(lens.x, room.minX), room.maxX), y: min(max(lens.y, room.minY), room.maxY))
-                    }
+            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius, let room, !room.isNull, !room.contains(lens) {
+                if constrained, room.contains(start) {
+                    let dx = lens.x - start.x, dy = lens.y - start.y
+                    let across = dx == 0 ? 1 : ((dx > 0 ? room.maxX : room.minX) - start.x) / dx
+                    let down = dy == 0 ? 1 : ((dy > 0 ? room.maxY : room.minY) - start.y) / dy
+                    lens = CGPoint(x: start.x + dx * min(across, down), y: start.y + dy * min(across, down))
+                } else {
+                    lens = CGPoint(x: min(max(lens.x, room.minX), room.maxX), y: min(max(lens.y, room.minY), room.maxY))
                 }
+            }
+            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius {
                 magnifier.center = lens
                 magnifier.radius = radius(at: lens)
             }

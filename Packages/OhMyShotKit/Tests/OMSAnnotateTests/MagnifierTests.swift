@@ -334,6 +334,10 @@ struct MagnifierTests {
         guard case .magnifier(let byTheEdge) = AnnotationTool.magnifier.mark(from: edge, to: edge, constrained: false, settings: settings, room: room)?.shape
         else { Issue.record("No magnifier"); return }
         #expect(byTheEdge.center == edge && byTheEdge.source == edge)
+        // Nor does a drag out past the edge that the room holds within what the lens shows.
+        let outward = AnnotationTool.magnifier.mark(from: CGPoint(x: 188, y: 24), to: CGPoint(x: 210, y: 24), constrained: false, settings: settings, room: room)
+        guard case .magnifier(let held) = outward?.shape else { Issue.record("No magnifier"); return }
+        #expect(held.center == CGPoint(x: 188, y: 24) && held.radius == Magnifier.smallestRadius)
         // Too short a selection for the smallest lens: it stays over the spot clicked, at its smallest.
         let short = CGRect(x: 8.5, y: 8.5, width: 283, height: 1)
         guard case .magnifier(let clicked) = AnnotationTool.magnifier.mark(
