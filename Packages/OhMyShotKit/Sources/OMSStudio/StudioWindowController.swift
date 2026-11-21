@@ -74,8 +74,9 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// Runs once the window has closed and its movie is kept.
     private var closeCompletions: [(Bool) -> Void] = []
     private var preparingToClose: Task<Void, Never>?
-    /// A picture being kept for the background, which closing waits for so it is saved and exported.
+    /// A picture being kept for the background, which closing and quitting wait for so it is saved and exported.
     private var choosingPicture: Task<Void, Never>?
+    private var picturesBeingKept = 0
     private var didClose = false
     private var finishedClosing = false
 
@@ -309,11 +310,13 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         }
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            Task { @MainActor [weak self] in
-                guard let self, !didClose else { return }
+            // Counted as the sheet goes, so a quit straight after waits for it.
+            MainActor.assumeIsolated {
+                guard let self, !self.didClose else { return }
                 // After any chosen before it, so the last one chosen is the one kept.
-                let before = choosingPicture
-                choosingPicture = Task {
+                let before = self.choosingPicture
+                self.picturesBeingKept += 1
+                self.choosingPicture = Task {
                     await before?.value
                     do {
                         try await self.studio.choosePicture(at: url)
@@ -321,6 +324,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
                         Log.studio.error("Choosing a Studio background picture failed: \(String(describing: error), privacy: .public)")
                         NSSound.beep()
                     }
+                    self.picturesBeingKept -= 1
                 }
             }
         }
@@ -333,7 +337,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         studio.hasUnexportedChanges
     }
 
-    public var hasPendingProjectSave: Bool { studio.hasPendingSave }
+    /// Whether the project has changes not yet saved, or a picture chosen for its background not yet kept.
+    public var hasPendingProjectSave: Bool { studio.hasPendingSave || picturesBeingKept > 0 }
 
     /// Whether a movie is being exported after the window closed (the menu bar shows how far along).
     public var isExportingAfterClosing: Bool {

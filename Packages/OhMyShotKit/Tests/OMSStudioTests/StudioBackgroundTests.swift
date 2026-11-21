@@ -117,6 +117,7 @@ struct StudioBackgroundTests {
         let used = try StudioBackgroundPicture.keep(first, in: folder)
         let aside = try StudioBackgroundPicture.keep(second, in: folder)
         try Data("{}".utf8).write(to: folder.appending(path: StudioFiles.telemetry))
+        try JSONEncoder().encode(StudioProject(background: .picture(used))).write(to: folder.appending(path: StudioFiles.project))
         let document = StudioDocument(
             source: folder.appending(path: "none.mp4"), telemetry: StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2),
             project: StudioProject(background: .picture(used)), duration: 4, recordingSize: CGSize(width: 320, height: 200), folder: folder,
@@ -129,6 +130,57 @@ struct StudioBackgroundTests {
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.telemetry).path(percentEncoded: false)))
         // Its tile is read once, no larger than the tile: this one is smaller than that already.
         #expect(document.pictureThumbnail(used)?.width == 64)
+    }
+
+    @Test func picturesStayWhileTheProjectCantBeRead() throws {
+        let first = try Self.picture(width: 64, height: 40)
+        let second = try Self.picture(width: 40, height: 64)
+        let folder = try Self.folder()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: first.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: second.deletingLastPathComponent())
+        }
+        let named = try StudioBackgroundPicture.keep(first, in: folder)
+        let aside = try StudioBackgroundPicture.keep(second, in: folder)
+        func open() {
+            _ = StudioDocument(
+                source: folder.appending(path: "none.mp4"), telemetry: StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2),
+                project: StudioProject(), duration: 4, recordingSize: CGSize(width: 320, height: 200), folder: folder,
+                hasBeenExported: true, background: { _, _ in nil }
+            )
+        }
+        func kept(_ name: String) -> Bool { FileManager.default.fileExists(atPath: folder.appending(path: name).path(percentEncoded: false)) }
+        // Opened on defaults with no project to read, every picture stays.
+        open()
+        #expect(kept(named) && kept(aside))
+        // A project from a newer version, naming its picture in a form this one can't read, keeps that picture.
+        try Data(#"{"background":{"video":"\#(named)"}}"#.utf8).write(to: folder.appending(path: StudioFiles.project))
+        open()
+        #expect(kept(named) && !kept(aside))
+    }
+
+    @Test func aPictureGoneFromTheFolderGivesWayToTheDefaultInTheProject() async throws {
+        let chosen = try Self.picture(width: 64, height: 40)
+        let folder = try Self.folder()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: chosen.deletingLastPathComponent())
+        }
+        let name = try StudioBackgroundPicture.keep(chosen, in: folder)
+        try FileManager.default.removeItem(at: folder.appending(path: name))
+        let document = StudioDocument(
+            source: folder.appending(path: "none.mp4"), telemetry: StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2),
+            project: StudioProject(background: .picture(name)), duration: 4, recordingSize: CGSize(width: 320, height: 200), folder: folder,
+            hasBeenExported: true, background: { _, _ in nil }
+        )
+        // The movie in the history was made with the picture: it is made again.
+        #expect(document.project.background == .gradient(StudioDocument.missingPictureGradient))
+        #expect(document.hasUnexportedChanges && document.lastPicture == nil)
+        // Choosing the same picture again is a change of its own.
+        document.markExported()
+        try await document.choosePicture(at: chosen)
+        #expect(document.project.background == .picture(name) && document.hasUnexportedChanges)
     }
 
     @Test func theNewBackgroundsAreKeptWithTheProject() throws {

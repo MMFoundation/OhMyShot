@@ -71,9 +71,9 @@ nonisolated enum StudioBackgroundPicture {
     }
 
     /// Removes the pictures kept in `folder` but `used`.
-    static func removeUnused(in folder: URL, keeping used: Set<String>) {
+    static func removeUnused(in folder: URL, keeping used: (String) -> Bool) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)) else { return }
-        for name in names where name.hasPrefix(prefix) && !used.contains(name) {
+        for name in names where name.hasPrefix(prefix) && !used(name) {
             try? FileManager.default.removeItem(at: url(named: name, in: folder))
         }
     }

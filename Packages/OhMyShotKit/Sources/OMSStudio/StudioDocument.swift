@@ -127,7 +127,16 @@ public final class StudioDocument {
         self.source = source
         self.telemetry = telemetry
         // The times the camera filled what was recorded become stretches on the timeline; the movie is the same.
-        self.project = project.opened(for: telemetry, duration: duration)
+        var opened = project.opened(for: telemetry, duration: duration)
+        // A background picture gone from the folder gives way to the default gradient in the project itself, so the
+        // movie made with the picture is made again, and choosing the picture again is a change.
+        var pictureGone = false
+        if case .picture(let name) = opened.background,
+           !FileManager.default.fileExists(atPath: StudioBackgroundPicture.url(named: name, in: folder).path(percentEncoded: false)) {
+            opened.background = .gradient(Self.missingPictureGradient)
+            pictureGone = true
+        }
+        self.project = opened
         self.duration = duration
         self.recordingSize = recordingSize
         sourceByteCount = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -135,11 +144,16 @@ public final class StudioDocument {
         self.background = background
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
-        hasUnexportedChanges = !hasBeenExported
+        hasUnexportedChanges = !hasBeenExported || pictureGone
         // Pictures chosen for the background the last time it was open and since put aside can't be taken back
-        // with Undo any more: only the one in use stays.
+        // with Undo any more: only the one in use stays, with any the project as saved names, in a form this
+        // version may not read. Opened on defaults because the project couldn't be read, every picture stays.
         if case .picture(let name) = self.project.background { lastPicture = name }
-        StudioBackgroundPicture.removeUnused(in: folder, keeping: Set([lastPicture].compactMap(\.self)))
+        if let saved = try? Data(contentsOf: folder.appending(path: StudioFiles.project)) {
+            let text = String(decoding: saved, as: UTF8.self)
+            let kept = lastPicture
+            StudioBackgroundPicture.removeUnused(in: folder) { $0 == kept || text.contains($0) }
+        }
         if self.project == project, FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path) {
             savedRevision = 0
         } else {
