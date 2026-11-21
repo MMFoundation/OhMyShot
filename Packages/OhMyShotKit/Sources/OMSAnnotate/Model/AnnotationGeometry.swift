@@ -358,8 +358,8 @@ nonisolated extension Annotation {
         return copy
     }
 
-    /// The mark as a drag on it moves it by `delta` pixels: a magnifier's lens alone, what it magnifies staying
-    /// where it is (back over it, the lens settles there); any other mark whole.
+    /// The mark as a drag on it alone moves it by `delta` pixels: a magnifier's lens alone, what it magnifies
+    /// staying where it is (back over it, the lens settles there); any other mark whole.
     public func dragged(by delta: CGSize) -> Annotation {
         guard case .magnifier(var magnifier) = shape else { return translated(by: delta) }
         let center = CGPoint(x: magnifier.center.x + delta.width, y: magnifier.center.y + delta.height)

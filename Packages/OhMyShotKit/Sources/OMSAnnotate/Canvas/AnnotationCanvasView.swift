@@ -213,6 +213,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
         session.observe { [weak self] event in self?.sessionChanged(event) }
         syncMarks()
+        // Magnifiers in a document opened with them show what is under them from the start.
+        updateLenses()
         // An editor that opens with the redaction tool in hand reads the capture for its suggestions now,
         // and one that opens with the highlighter for its lines of text.
         if session.tool == .redact { session.findRedactionsIfNeeded() }
@@ -896,7 +898,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
         let picture = session.redactionSource ?? (session.picture, .zero)
         for (layer, magnifier) in magnifiers {
-            layer.lens = MagnifierPainter.lensPicture(for: magnifier, picture: picture, redactions: redactions, scale: session.document.scale)
+            layer.lens = MagnifierPainter.lensPicture(
+                for: magnifier, picture: picture, canvas: session.document.canvas, redactions: redactions, scale: session.document.scale
+            )
         }
     }
 
@@ -1428,9 +1432,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else {
                 selectionLayer.alignmentGuides = []
             }
+            // A magnifier dragged on its own moves its lens alone; moved with other marks, it moves whole.
             for original in originals {
                 guard let index = document.index(of: original.id) else { continue }
-                document.items[index] = original.dragged(by: delta)
+                document.items[index] = originals.count == 1 ? original.dragged(by: delta) : original.translated(by: delta)
             }
             session.updateLive(document)
         case .reshaping(let handle, let original):

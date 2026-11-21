@@ -206,6 +206,22 @@ struct MagnifierTests {
         if method == .solid { #expect(shown[0] == shown[1]) }
     }
 
+    /// What a crop leaves out never shows in a lens, as it never shows in the picture.
+    @Test func aLensShowsNothingACropLeavesOut() throws {
+        let lens = Magnifier(source: CGPoint(x: 30, y: 60), center: CGPoint(x: 150, y: 60), radius: 30, zoom: .two)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 120), scale: 1)
+        document.items = [Annotation(shape: .magnifier(lens), style: Style())]
+        // Kept from x 100 on: the lens stays, the spot it magnifies is cut off.
+        document.canvas = CGRect(x: 100, y: 0, width: 100, height: 120)
+        let output = Pixels(try #require(AnnotationRenderer.flatten(document, base: noise())))
+        #expect(output.width == 100)
+        var shown = 0
+        for (point, _) in lensSamples(of: lens) where !close(output[point.x - 100, point.y], (255, 255, 255, 255)) {
+            shown += 1
+        }
+        #expect(shown == 0, "\(shown) lens pixels show what the crop leaves out")
+    }
+
     // MARK: On the canvas
 
     @MainActor
@@ -233,6 +249,34 @@ struct MagnifierTests {
         canvas.mouseDown(with: try event(.leftMouseDown, at: start))
         if let end { canvas.mouseDragged(with: try event(.leftMouseDragged, at: end)) }
         canvas.mouseUp(with: try event(.leftMouseUp, at: end ?? start))
+    }
+
+    /// A document opened with magnifiers in it, as one reopened from History is, shows what is under them at once.
+    @MainActor
+    @Test func aReopenedLensShowsThePictureAtOnce() throws {
+        let magnifier = Annotation(shape: .magnifier(Magnifier(source: CGPoint(x: 55, y: 60), center: CGPoint(x: 150, y: 60), radius: 40)), style: Style())
+        let document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 120), scale: 1, items: [magnifier])
+        let session = AnnotationSession(image: noise(), scale: 1, document: document, tool: .select, defaults: scratch.make())
+        let canvas = AnnotationCanvasView(session: session)
+        #expect(canvas.markLayer(for: magnifier.id)?.lens != nil)
+    }
+
+    /// Dragged on its own, a magnifier moves its lens alone; dragged with other marks, it moves whole.
+    @MainActor
+    @Test func movedWithOtherMarksAMagnifierMovesWhole() throws {
+        let (canvas, session, window) = try makeCanvas(base: noise(), tool: .select)
+        defer { window.close() }
+        let magnifier = Annotation(shape: .magnifier(Magnifier(source: CGPoint(x: 40, y: 40), center: CGPoint(x: 140, y: 60), radius: 30)), style: Style())
+        let box = Annotation(shape: .rectangle(Box(rect: CGRect(x: 10, y: 90, width: 30, height: 20))), style: Style())
+        var document = session.document
+        document.items = [magnifier, box]
+        session.commit(document, actionName: "Add")
+        session.select([magnifier.id, box.id])
+        try press(canvas, in: window, from: CGPoint(x: 140, y: 60), to: CGPoint(x: 150, y: 70))
+        guard case .magnifier(let moved) = session.document.item(magnifier.id)?.shape else { Issue.record("The magnifier is gone"); return }
+        #expect(moved.center == CGPoint(x: 150, y: 70))
+        #expect(moved.source == CGPoint(x: 50, y: 50))
+        #expect(session.document.item(box.id)?.shape == .rectangle(Box(rect: CGRect(x: 20, y: 100, width: 30, height: 20))))
     }
 
     @MainActor

@@ -266,7 +266,7 @@ nonisolated public enum AnnotationRenderer {
             case .redaction:
                 coverage = redactions.first { $0.item.id == item.id }?.coverage
             case .magnifier(let magnifier):
-                lens = MagnifierPainter.lensPicture(for: magnifier, picture: picture, redactions: redactions, scale: document.scale)
+                lens = MagnifierPainter.lensPicture(for: magnifier, picture: picture, canvas: document.canvas, redactions: redactions, scale: document.scale)
             default:
                 if item.multiplies {
                     ground = HighlightGround.under(item, in: picture.image, origin: picture.origin, scale: document.scale)

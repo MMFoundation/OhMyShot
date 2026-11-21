@@ -35,13 +35,15 @@ nonisolated enum MagnifierPainter {
     }
 
     /// What a magnifier shows: `picture`'s pixels in its `lensArea` (the capture with any combined images, and
-    /// where it lies), on white beyond the picture, with every redaction drawn over them as it is drawn on the
-    /// picture, so a lens never shows what a redaction hides, whatever lies above or below it. `redactions` are
-    /// the document's redactions with what each draws (`Redactor.coverage`); no other mark is shown. Nil when
-    /// no such picture can be made, which leaves the lens white.
+    /// where it lies), with every redaction drawn over them as it is drawn on the picture, so a lens never shows
+    /// what a redaction hides, whatever lies above or below it. Only what lies inside `canvas` (the document's,
+    /// which a crop or Annotate Area's selection makes) is shown, so a lens never shows what the picture leaves
+    /// out either; beyond it, and beyond the picture, the lens is white. `redactions` are the document's
+    /// redactions with what each draws (`Redactor.coverage`); no other mark is shown. Nil when no such picture
+    /// can be made, which leaves the lens white.
     static func lensPicture(
-        for magnifier: Magnifier, picture: (image: CGImage, origin: CGPoint), redactions: [(item: Annotation, coverage: Redactor.Coverage?)],
-        scale: CGFloat
+        for magnifier: Magnifier, picture: (image: CGImage, origin: CGPoint), canvas: CGRect,
+        redactions: [(item: Annotation, coverage: Redactor.Coverage?)], scale: CGFloat
     ) -> CGImage? {
         let area = lensArea(of: magnifier)
         guard
@@ -58,6 +60,7 @@ nonisolated enum MagnifierPainter {
         context.translateBy(x: -area.minX, y: -area.minY)
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(area)
+        context.clip(to: canvas.standardized)
         let bounds = CGRect(origin: picture.origin, size: CGSize(width: picture.image.width, height: picture.image.height))
         let shown = area.intersection(bounds)
         if !shown.isNull, let part = picture.image.cropping(to: shown.offsetBy(dx: -bounds.minX, dy: -bounds.minY)) {
