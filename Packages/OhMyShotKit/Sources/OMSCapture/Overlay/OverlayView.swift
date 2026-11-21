@@ -809,6 +809,10 @@ final class OverlayView: NSView {
             }
             delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
         case 36, 76: // Return, and Enter on the keypad
+            if mode == .area, isAllInOne, purpose == .screenshot, !selectedWindows.isEmpty {
+                delegate?.overlayView(self, didSelectWindows: selectedWindows, modifiers: event.modifierFlags.subtracting(.shift))
+                return
+            }
             if mode == .window {
                 var targets = selectedWindows
                 if targets.isEmpty, let hoveredWindow { targets = [hoveredWindow] }
@@ -889,6 +893,21 @@ final class OverlayView: NSView {
         guard window != highlightedWindow else { return }
         highlightedWindow = window
         withoutAnimation { updateSelectionLayers() }
+    }
+
+    /// Keeps the windows selected by All-In-One's area-mode Shift-clicks visible on every display.
+    func setSelectedWindows(_ windows: [WindowTarget]) {
+        guard selectedWindows != windows else { return }
+        selectedWindows = windows
+        withoutAnimation { updateSelectionLayers() }
+    }
+
+    static func roundedWindowPath(_ rects: [CGRect]) -> CGPath {
+        let path = CGMutablePath()
+        for rect in rects where !rect.isNull && !rect.isEmpty {
+            path.addPath(CGPath.continuousRoundedRect(rect, radius: 12))
+        }
+        return path
     }
 
     /// Shows the screen as it is now instead of as it was frozen, for a recording set up from a frozen All-In-One.
@@ -1067,7 +1086,14 @@ final class OverlayView: NSView {
         let element = mode == .window ? pickedElement : nil
         // All-In-One's window under the pointer stands for the selection until a drag makes one.
         let highlighted = mode == .area && selection.isTooSmall ? highlightedWindow : nil
-        let target = mode == .window ? (element?.frame ?? windowBounds)?.intersection(display.frame) : highlighted?.area ?? selection.rect
+        var roundedWindows = mode == .area ? selectedWindows.map { $0.frame.intersection(display.frame) } : []
+        if let highlighted, !selectedWindows.contains(highlighted.window) {
+            roundedWindows.append(highlighted.area)
+        }
+        let selectedBounds = roundedWindows.dropFirst().reduce(roundedWindows.first) { $0?.union($1) }
+        let target = mode == .window
+            ? (element?.frame ?? windowBounds)?.intersection(display.frame)
+            : (selection.isTooSmall ? selectedBounds : selection.rect)
         guard let globalRect = target, !globalRect.isNull, !globalRect.isEmpty else {
             room.path = roomPath
             outline.path = nil
@@ -1078,9 +1104,10 @@ final class OverlayView: NSView {
             return
         }
         let rect = local(globalRect)
-        roomPath.addRect(rect)
+        let windowPath = Self.roundedWindowPath(roundedWindows.map(local))
+        roomPath.addPath(windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath)
         room.path = roomPath
-        let edge = CGPath(rect: rect, transform: nil)
+        let edge = windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath
         let inset = Self.textSelectionEdge(increasedContrast: increasedContrast) / 2
         let drawn = purpose == .text ? rect.integral.insetBy(dx: inset, dy: inset) : rect
         border.path = purpose == .text ? CGPath(rect: drawn, transform: nil) : edge

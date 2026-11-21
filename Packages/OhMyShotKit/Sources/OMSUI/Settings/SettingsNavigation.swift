@@ -71,10 +71,10 @@ extension SettingsTab {
                 ]),
                 SettingsSearchRow(String(localized: "Self-Timer", bundle: .module)),
                 SettingsSearchRow(String(localized: "Windows", bundle: .module), terms: [
-                    String(localized: "Capture the shadow", bundle: .module),
-                    String(localized: "Window background", bundle: .module),
-                    String(localized: "Same background as screenshots", bundle: .module),
-                    String(localized: "No background", bundle: .module),
+                    String(localized: "Include window shadow", bundle: .module),
+                    String(localized: "Background around windows", bundle: .module),
+                    String(localized: "Screenshot background", bundle: .module),
+                    String(localized: "Transparent background", bundle: .module),
                     String(localized: "Desktop wallpaper", bundle: .module),
                 ]),
             ]

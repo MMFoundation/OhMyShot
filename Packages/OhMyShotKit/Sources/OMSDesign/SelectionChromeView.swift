@@ -22,6 +22,11 @@ public final class SelectionChromeView: NSView {
     public var selection: CGRect = .zero {
         didSet { if selection != oldValue { relayout() } }
     }
+    /// An optional outline for a window selection. When set, the dimmed room and frame follow the individual
+    /// window shapes instead of the union rectangle; area adjustments clear it in the owning setup view.
+    public var selectionPath: CGPath? {
+        didSet { relayout() }
+    }
     public var reading = "" {
         didSet { if reading != oldValue { relayout() } }
     }
@@ -157,13 +162,22 @@ public final class SelectionChromeView: NSView {
         for layer in [armsOutline, arms] { layer.isHidden = !showsHandles }
         let dimmed = CGMutablePath()
         dimmed.addRect(bounds)
-        dimmed.addRect(rect)
+        if let selectionPath {
+            dimmed.addPath(selectionPath)
+        } else {
+            dimmed.addRect(rect)
+        }
         room.path = dimmed
 
         // Where the selection meets the display's edge, the frame steps in, so its edge and corners stay
         // on screen to be seen and grabbed.
         let frame = Self.drawnFrame(for: rect, in: bounds)
-        let edgePath = CGPath(rect: frame.insetBy(dx: -0.75, dy: -0.75), transform: nil)
+        let edgePath: CGPath
+        if let selectionPath {
+            edgePath = selectionPath
+        } else {
+            edgePath = CGPath(rect: frame.insetBy(dx: -0.75, dy: -0.75), transform: nil)
+        }
         outline.path = edgePath
         edge.path = edgePath
         thirds.isHidden = !showsThirds

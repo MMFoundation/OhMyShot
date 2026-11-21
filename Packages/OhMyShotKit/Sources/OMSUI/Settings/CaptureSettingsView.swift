@@ -86,18 +86,18 @@ struct CaptureSettingsView: View {
             SettingsDivider()
 
             SettingsRow(String(localized: "Windows", bundle: .module), help: [
-                HelpTopic(String(localized: "Windows", bundle: .module), Text("Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper.", bundle: .module)),
+                HelpTopic(String(localized: "Windows", bundle: .module), Text("Include window shadow captures the window’s native shadow. Background around windows is added outside the window afterward. Screenshot background uses the automatic background selected under Screenshots, except Rounded corners and shadow is skipped for window captures: windows already have native rounded corners, and their native shadow is controlled by Include window shadow. Hold Shift as you click a window to switch between transparent background and desktop wallpaper.", bundle: .module)),
             ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(isOn: $settings.windowShadow) {
-                        Text("Capture the shadow", bundle: .module)
+                        Text("Include window shadow", bundle: .module)
                     }
                     Picker(selection: $settings.windowBackground) {
-                        Text("Same background as screenshots", bundle: .module).tag(WindowBackground.asScreenshots)
-                        Text("No background", bundle: .module).tag(WindowBackground.transparent)
+                        Text("Screenshot background", bundle: .module).tag(WindowBackground.asScreenshots)
+                        Text("Transparent background", bundle: .module).tag(WindowBackground.transparent)
                         Text("Desktop wallpaper", bundle: .module).tag(WindowBackground.desktopWallpaper)
                     } label: {
-                        Text("Window background", bundle: .module)
+                        Text("Background around windows", bundle: .module)
                     }
                     .labelsHidden()
                     .fixedSize()

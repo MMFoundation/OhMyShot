@@ -36,9 +36,12 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     var onChoose: ((AllInOneChoice, CGRect) -> Void)?
     /// A shape was chosen on the ratio chip of Capture Area's size control: the shape Shift keeps from now on.
     var onShapeKept: ((AspectRatio) -> Void)?
+    /// Called when the initial window selection becomes an edited area.
+    var onAreaAdjusted: ((CGRect) -> Void)?
 
     private let offersUpload: Bool
     private let kind: Kind
+    private var windowFrames: [CGRect]
     /// The area in global points.
     private(set) var area: CGRect
     /// The shape kept while the area is resized or a size typed; nil for any shape.
@@ -47,9 +50,13 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     /// `ratio` is the shape already kept when the frame opens; the area is not reshaped to it here.
     /// `showsCopy`: whether the bar has a Copy chip, which only while Settings don't copy every capture says more than
     /// Capture does; Command-C copies either way.
-    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
+    init(
+        display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne,
+        ratio: AspectRatio? = nil, windowFrames: [CGRect] = []
+    ) {
         self.offersUpload = offersUpload
         self.kind = kind
+        self.windowFrames = windowFrames
         self.area = area
         self.ratio = ratio
         super.init(display: display, bar: AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing))
@@ -92,6 +99,10 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     override func areaAdjusted(_ area: CGRect) {
         self.area = area
+        if !windowFrames.isEmpty {
+            windowFrames = []
+            onAreaAdjusted?(area)
+        }
         update()
     }
 
@@ -123,7 +134,10 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     private func update() {
         chrome.selection = frameRect
-        chrome.showsHandles = true
+        chrome.selectionPath = windowFrames.isEmpty
+            ? nil
+            : OverlayView.roundedWindowPath(windowFrames.map { AreaFrame.local($0.intersection(display.frame), on: display) })
+        chrome.showsHandles = windowFrames.isEmpty
         bar.show(pixelSize: pixelSize, ratio: ratio)
         placeBar()
         setAccessibilityValue(pixelReading)

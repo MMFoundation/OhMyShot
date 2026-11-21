@@ -5539,7 +5539,7 @@
         }
       }
     },
-    "Capture the shadow" : {
+    "Include window shadow" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5562,13 +5562,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "截取阴影"
+            "value" : "包含窗口阴影"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "擷取陰影"
+            "value" : "視窗陰影"
           }
         }
       }
@@ -9249,12 +9249,12 @@
         }
       }
     },
-    "Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper." : {
+    "Include window shadow captures the window’s native shadow. Background around windows is added outside the window afterward. Screenshot background uses the automatic background selected under Screenshots, except Rounded corners and shadow is skipped for window captures: windows already have native rounded corners, and their native shadow is controlled by Include window shadow. Hold Shift as you click a window to switch between transparent background and desktop wallpaper." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“Fondo de escritorio” coloca una ventana sobre la imagen de escritorio que la rodea, tal como se ve en pantalla. Mantén pulsada Mayúsculas al hacer clic en una ventana para capturarla de la otra forma: sin fondo o sobre el fondo de escritorio."
+            "value" : "La sombra de la ventana es su sombra nativa y se captura junto con ella. El fondo alrededor de las ventanas se añade después, por fuera. «Fondo de capturas» usa el fondo elegido en Capturas, excepto «Esquinas redondeadas y sombra»: las ventanas conservan sus esquinas redondeadas y su sombra nativas para evitar duplicarlas. Mantén pulsada Mayúsculas al hacer clic en una ventana para alternar entre fondo transparente y fondo de escritorio."
           }
         },
         "fr" : {
@@ -9272,7 +9272,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“桌面墙纸”会将窗口放在其周围的桌面图片上，与屏幕显示的一样。点按窗口时按住 Shift 键可采用另一种方式：无背景，或放在桌面墙纸上。"
+            "value" : "启用“包含窗口阴影”后，会在窗口截图中保留窗口自身的原生阴影。窗口周围背景会在捕获后添加到窗口之外。“截图背景”使用“截图”设置中的自动背景，但窗口截图会跳过“圆角与阴影”预设：窗口已有原生圆角，原生阴影则由“包含窗口阴影”控制。点按窗口时按住 Shift，可在透明背景和桌面墙纸之间切换。"
           }
         },
         "zh-Hant" : {
@@ -17006,7 +17006,7 @@
         }
       }
     },
-    "No background" : {
+    "Transparent background" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -17029,7 +17029,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无背景"
+            "value" : "透明背景"
           }
         },
         "zh-Hant" : {
@@ -19988,7 +19988,7 @@
         }
       }
     },
-    "Puts each new screenshot on a background. Rounded corners and shadow rounds an area’s or a display’s corners and lays a soft shadow around it on clear room, which JPEG fills with white; a window keeps its own. Save others as presets with the editor’s Background tool." : {
+    "Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture > Windows. Screenshot background uses a saved preset here, but skips Rounded corners and shadow for windows to avoid duplicating the window’s appearance. Other saved presets can be used around windows." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -20011,7 +20011,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "为每张新截图添加背景。“圆角与阴影”会为区域或整个显示器的截图加上圆角，并在透明边距上围绕它铺一圈柔和阴影（JPEG 会把透明处填成白色）；窗口截图保留自身的圆角和阴影。可使用编辑器的“背景”工具将其他背景存储为预设。"
+            "value" : "为新截图设置自动背景。“圆角与阴影”会为区域和显示器截图添加圆角和柔和阴影。窗口截图保留原生圆角；是否保留原生阴影由“Capture > Windows”中的“包含窗口阴影”单独控制。“截图背景”会使用此处选定的预设，但窗口截图会跳过“圆角与阴影”，以免重复处理窗口外观。其他保存的预设可用于窗口周围背景。"
           }
         },
         "zh-Hant" : {
@@ -22803,7 +22803,7 @@
         }
       }
     },
-    "Same background as screenshots" : {
+    "Screenshot background" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -22826,13 +22826,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与截图使用相同背景"
+            "value" : "截图背景"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "與截圖相同的背景"
+            "value" : "截圖背景"
           }
         }
       }
@@ -30993,7 +30993,7 @@
         }
       }
     },
-    "Window background" : {
+    "Background around windows" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -31016,7 +31016,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "窗口背景"
+            "value" : "窗口周围背景"
           }
         },
         "zh-Hant" : {

@@ -142,22 +142,9 @@ final class CaptureCoordinator {
             if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .allInOne(let choice, let rect, let display, let frozen):
-                remember(rect, on: display)
-                switch choice {
-                case .screenshot(let action):
-                    previousArea = rect
-                    let followUp = CaptureFollowUp(action: action)
-                    let window = overlay.window(framing: rect)
-                    let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
-                    if let frozen {
-                        Task { await self.deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
-                    } else {
-                        Task { await self.captureArea(rect, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
-                    }
-                case .text: allInOneText?(rect, frozen)
-                case .scroll: allInOneScroll?(rect)
-                case .record: break
-                }
+                handleAllInOne(choice, windows: [], area: rect, display: display, frozen: frozen, app: app, title: title, copiesToClipboard: copiesToClipboard)
+            case .allInOneWindows(let choice, let targets, let rect, let display, let frozen):
+                handleAllInOne(choice, windows: targets, area: rect, display: display, frozen: frozen, app: app, title: title, copiesToClipboard: copiesToClipboard)
             case .window(let target, let modifiers):
                 Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
             case .windows(let targets, let modifiers):
@@ -176,6 +163,34 @@ final class CaptureCoordinator {
             case .region, .annotated, .scroll:
                 break
             }
+        }
+    }
+
+    private func handleAllInOne(
+        _ choice: AllInOneChoice, windows: [WindowTarget], area: CGRect, display: DisplayInfo, frozen: CapturedFrame?,
+        app: String?, title: String?, copiesToClipboard: Bool
+    ) {
+        remember(area, on: display)
+        switch choice {
+        case .screenshot(let action):
+            previousArea = area
+            let followUp = CaptureFollowUp(action: action)
+            if !windows.isEmpty {
+                Task { await captureWindows(windows, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                return
+            }
+            let window = overlay.window(framing: area)
+            let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
+            if let window {
+                Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+            } else if let frozen {
+                Task { await deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+            } else {
+                Task { await captureArea(area, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+            }
+        case .text: allInOneText?(area, frozen)
+        case .scroll: allInOneScroll?(area)
+        case .record: break
         }
     }
 
@@ -313,7 +328,7 @@ final class CaptureCoordinator {
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
-            case .annotated, .record, .scroll, .allInOne, .cancelled:
+            case .annotated, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
                 followUp.finish(nil)
             }
         }
@@ -485,7 +500,7 @@ final class CaptureCoordinator {
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
-            case .annotated, .record, .scroll, .allInOne, .cancelled:
+            case .annotated, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
                 followUp.finish(nil)
             }
         }

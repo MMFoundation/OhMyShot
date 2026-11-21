@@ -31,6 +31,32 @@ struct AllInOneSetupTests {
         #expect(result.chose.first?.1 == Self.area)
     }
 
+    @Test func selectedWindowsKeepRoundedSetupChrome() {
+        let front = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let back = CGRect(x: 180, y: 260, width: 220, height: 140)
+        let view = AllInOneSetupView(
+            display: Self.display, area: front.union(back), offersUpload: true, windowFrames: [front, back]
+        )
+        view.layoutSubtreeIfNeeded()
+        let path = view.chrome.selectionPath
+        #expect(path != nil)
+        let expected = AreaFrame.local(front, on: Self.display).union(AreaFrame.local(back, on: Self.display))
+        #expect(path?.boundingBox == expected)
+        let localFront = AreaFrame.local(front, on: Self.display)
+        #expect(path?.contains(CGPoint(x: localFront.minX, y: localFront.minY)) == false)
+        #expect(path?.contains(CGPoint(x: localFront.midX, y: localFront.minY)) == true)
+        #expect(view.chrome.showsHandles == false)
+    }
+
+    @Test func editingSelectedWindowsTurnsTheirOutlineIntoAnAreaFrame() {
+        let front = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let view = AllInOneSetupView(display: Self.display, area: front, offersUpload: true, windowFrames: [front])
+        #expect(view.chrome.selectionPath != nil)
+        _ = view.debugAct("right")
+        #expect(view.chrome.selectionPath == nil)
+        #expect(view.chrome.showsHandles)
+    }
+
     @Test func commandCAndCommandSCopyAndSave() {
         #expect(run(["cmd-c"]).chose.map(\.0) == [.screenshot(.copy)])
         #expect(run(["cmd-s"]).chose.map(\.0) == [.screenshot(.save)])

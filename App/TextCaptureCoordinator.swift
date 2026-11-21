@@ -178,7 +178,7 @@ final class TextCaptureCoordinator {
                 } else {
                     done?(nil)
                 }
-            case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
+            case .annotated, .color, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
                 done?(nil)
             }
         }
@@ -603,7 +603,7 @@ final class TextCaptureCoordinator {
                 } else {
                     done?(nil)
                 }
-            case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
+            case .annotated, .color, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
                 done?(nil)
             }
         }
@@ -718,7 +718,7 @@ final class TextCaptureCoordinator {
                     self?.highlight.show(union)
                     Task { await self?.translate(region: union, frozen: nil, inPanel: modifiers.contains(.option)) }
                 }
-            case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
+            case .annotated, .color, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
                 break
             }
         }
