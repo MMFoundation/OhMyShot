@@ -259,6 +259,37 @@ struct QuickAccessCompletionTests {
         #expect(try card(in: controller).failure == nil)
     }
 
+    /// Moved to the Trash and brought back, a card whose copy could not be saved still says so and is still held.
+    @Test func aCardThatFailedToSaveIsStillHeldAfterUndoingTheTrash() async throws {
+        var actions = actions(succeeds: false)
+        actions.save = { _, _ in .failed(Self.diskFull) }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(.save, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        #expect(controller.undoTrash(capture.id))
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+        #expect(try card(in: controller).failure == Self.diskFull)
+    }
+
+    /// A card that failed to save and then went to the Trash leaves nothing of its failure behind.
+    @Test func aCardSentToTheTrashTakesItsFailureWithIt() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        controller.finishTrashingNow()
+        #expect(controller.isEmpty)
+        #expect(controller.failure(for: capture.id) == nil)
+    }
+
     @Test func trashFailureLeavesTheCardAvailableForRetry() throws {
         var actions = actions(succeeds: true)
         var attempts = 0

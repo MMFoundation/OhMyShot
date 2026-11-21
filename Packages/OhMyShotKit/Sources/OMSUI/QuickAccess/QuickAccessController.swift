@@ -348,6 +348,11 @@ public final class QuickAccessController {
         return true
     }
 
+    /// Why capture `id`'s card says a copy of it could not be saved, while it does.
+    func failure(for id: UUID) -> ExportFailure? {
+        failures[id]
+    }
+
     /// Capture `id`'s card no longer has a failure to show: a copy was saved, or made to hand over, after all.
     public func clearFailure(for id: UUID) {
         guard failures.removeValue(forKey: id) != nil else { return }
@@ -452,8 +457,10 @@ public final class QuickAccessController {
         let pending = trashing.remove(at: index)
         pending.sender.cancel()
         stack?.setTrashing(false, for: pending.id)
-        // Brought back, it starts its time again, as a card restored from Recently Closed does.
+        // Brought back, it starts its time again, as a card restored from Recently Closed does; one whose copy could not
+        // be saved is held again, as it was before it went.
         schedule.restart(pending.id)
+        if failures[pending.id] != nil { hold(.failure, for: pending.id, if: true) }
         updateCountdowns()
         return true
     }
@@ -626,7 +633,7 @@ public final class QuickAccessController {
         stack.hasLink = sharing.hasLink
         stack.canDeleteFromStorage = sharing.canDeleteFromStorage
         stack.currentUpload = sharing.current
-        stack.currentFailure = { [weak self] item in self?.failures[item.id] }
+        stack.currentFailure = { [weak self] item in self?.failure(for: item.id) }
         stack.pictureOffer = actions.pictureChangeOffer
         stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
         stack.onHold = { [weak self] id, hold, on in
@@ -721,6 +728,7 @@ public final class QuickAccessController {
             do {
                 try actions.moveToTrash(item)
                 items.removeAll { $0.id == item.id }
+                failures[item.id] = nil
                 return
             } catch {
                 message = String(localized: "Couldn’t Move to Trash", bundle: .module)
