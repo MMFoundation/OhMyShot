@@ -48,24 +48,30 @@ nonisolated final class PinArchive: Sendable {
 
     /// Writes a pin's picture, once, as it opens or as keeping begins.
     func keepPicture(_ image: CGImage, id: UUID) {
-        let url = pictureURL(id)
-        queue.async { [folder] in
-            do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: url)
-            } catch {
-                Log.app.error("Could not keep a pin's picture: \(error.localizedDescription, privacy: .public)")
-            }
+        queue.async { [self] in writePicture(image, id: id) }
+    }
+
+    /// On the queue: writes a pin's picture.
+    private func writePicture(_ image: CGImage, id: UUID) {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: pictureURL(id))
+        } catch {
+            Log.app.error("Could not keep a pin's picture: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    /// Writes the list of pins, or with none removes everything kept. `waits` when the app is about to quit: until the
-    /// list is written, and every picture asked for before it.
-    func save(_ manifest: Manifest, waits: Bool = false) {
-        let write: @Sendable () -> Void = { [folder, manifestURL] in
+    /// Writes the list of pins, and each of `pictures` (the open picture pins', by pin) that isn't on disk, as one whose
+    /// first write failed; or with no pin removes everything kept. `waits` when the app is about to quit: until the list
+    /// is written, and every picture asked for before it.
+    func save(_ manifest: Manifest, pictures: [UUID: CGImage] = [:], waits: Bool = false) {
+        let write: @Sendable () -> Void = { [self] in
             if manifest.pins.isEmpty {
                 try? FileManager.default.removeItem(at: folder)
                 return
+            }
+            for (id, image) in pictures where !FileManager.default.fileExists(atPath: pictureURL(id).path(percentEncoded: false)) {
+                writePicture(image, id: id)
             }
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -147,8 +153,8 @@ nonisolated final class PinArchive: Sendable {
 
 @MainActor
 extension PinArchive.Record {
-    /// A pin as it is kept, with its window's place, zoom, opacity, and lock; nil for a color whose color space has no
-    /// name to keep it by.
+    /// A pin as it is kept, with its window's place, zoom, opacity, and lock. A color whose color space has no name to keep
+    /// it by (a profile of its own) is kept as it looks, in extended sRGB; nil when it can't be.
     init?(_ pin: PinController.Pin, frame: CGRect, zoom: CGFloat, opacity: CGFloat, locked: Bool) {
         let content: Content
         switch pin.content {
@@ -157,7 +163,10 @@ extension PinArchive.Record {
         case .text(let text):
             content = .text(text)
         case .color(let color):
-            guard let space = color.original.colorSpace?.name as String?, let components = color.original.components else { return nil }
+            let named = color.original.colorSpace?.name == nil
+                ? CGColorSpace(name: CGColorSpace.extendedSRGB).flatMap { color.original.converted(to: $0, intent: .defaultIntent, options: nil) }
+                : color.original
+            guard let named, let space = named.colorSpace?.name as String?, let components = named.components else { return nil }
             content = .color(space: space, components: components)
         }
         self.init(id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked)

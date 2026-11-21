@@ -30,14 +30,20 @@ enum PinGeometry {
         zoom > 0 ? min(zoom, zoomRange.upperBound) : 1
     }
 
+    /// The zooms a pin at `zoom` can go to: `zoomRange`, reaching down to its own zoom when it was fitted below it as it
+    /// opened, so zooming out never makes it larger.
+    static func zoomRange(from zoom: CGFloat) -> ClosedRange<CGFloat> {
+        min(zoomRange.lowerBound, zoom) ... zoomRange.upperBound
+    }
+
     /// Where a pin at `frame` goes when the displays change, or when it comes back after a relaunch: nil while enough of
     /// it to take hold of (`grip` points each way, or all of it when it is smaller) is on one of `screens` (frames and
-    /// visible frames, global points). Else onto the screen nearest its center, inside that screen's visible frame, at the
+    /// visible frames, global points), in its visible frame: under the menu bar or the Dock it can't be taken. Else onto the screen nearest its center, inside that screen's visible frame, at the
     /// same size: as near as it fits to where it was, and its top left corner first when it is larger.
     static func recovered(_ frame: CGRect, on screens: [(frame: CGRect, visible: CGRect)], grip: CGFloat = 20) -> CGRect? {
         let needed = CGSize(width: min(grip, frame.width), height: min(grip, frame.height))
         let shown = screens.contains { screen in
-            let part = screen.frame.intersection(frame)
+            let part = screen.visible.intersection(frame)
             return !part.isNull && part.width >= needed.width && part.height >= needed.height
         }
         guard !shown else { return nil }
@@ -64,7 +70,7 @@ enum PinGeometry {
     /// The zoom after scrolling up (positive) or down by `delta`: points from a trackpad, lines from a
     /// wheel, about 10 percent a line.
     static func zoom(_ zoom: CGFloat, scrolledBy delta: CGFloat, precise: Bool) -> CGFloat {
-        clamp(zoom * exp(delta * (precise ? 0.005 : 0.1)), to: zoomRange)
+        clamp(zoom * exp(delta * (precise ? 0.005 : 0.1)), to: zoomRange(from: zoom))
     }
 
     /// The opacity after scrolling up (more opaque) or down by `delta`: 5 percent a wheel line.
@@ -127,6 +133,6 @@ enum PinGeometry {
         let dx = abs(point.x - anchor.x)
         let dy = abs(point.y - anchor.y)
         let scale = max(dx / max(baseSize.width, 1), dy / max(baseSize.height, 1))
-        return (clamp(scale, to: zoomRange), anchor)
+        return (clamp(scale, to: zoomRange(from: frame.width / max(baseSize.width, 1))), anchor)
     }
 }

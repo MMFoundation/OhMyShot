@@ -103,6 +103,32 @@ struct PinArchiveTests {
         #expect(!FileManager.default.fileExists(atPath: archive.folder.path(percentEncoded: false)))
     }
 
+    @Test func aPictureWhoseFirstWriteFailedIsWrittenWithTheNextList() throws {
+        let archive = archive()
+        defer { try? FileManager.default.removeItem(at: archive.folder) }
+        let image = try picture()
+        let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .clipboard)
+        // No keepPicture: as if its write had failed when the pin opened.
+        archive.save(PinArchive.Manifest(hidden: false, pins: [try record(pin)]), pictures: [pin.id: image], waits: true)
+        let (manifest, pictures) = try #require(archive.loadNow())
+        #expect(manifest.pins.map(\.id) == [pin.id] && pictures[pin.id]?.width == image.width)
+    }
+
+    @Test func aColorWithAProfileOfItsOwnComesBackAsItLooked() throws {
+        let space = try #require(CGColorSpace(calibratedGrayWhitePoint: [0.9505, 1, 1.089], blackPoint: [0, 0, 0], gamma: 2.2))
+        #expect(space.name == nil)
+        let gray = try #require(CGColor(colorSpace: space, components: [0.4, 0.8]))
+        let color = try #require(PinColor(gray))
+        let pin = PinController.Pin(id: UUID(), content: .color(color), origin: .clipboard)
+        let kept = try #require(PinArchive.Record(pin, frame: CGRect(x: 0, y: 0, width: 128, height: 128), zoom: 1, opacity: 1, locked: false))
+        guard case .color(let back) = try #require(kept.pinContent(picture: nil)) else {
+            Issue.record("not a color")
+            return
+        }
+        #expect(abs(back.red - color.red) < 0.001 && abs(back.green - color.green) < 0.001 && abs(back.blue - color.blue) < 0.001)
+        #expect(abs(back.alpha - 0.8) < 0.001)
+    }
+
     @Test func picturesLeftWithoutAListAreRemoved() throws {
         let archive = archive()
         defer { try? FileManager.default.removeItem(at: archive.folder) }

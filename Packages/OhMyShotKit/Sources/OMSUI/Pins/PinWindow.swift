@@ -150,7 +150,7 @@ final class PinWindow: NSPanel, NSWindowDelegate {
 
     /// Zooms to `newZoom`, keeping `anchor` (global points; the pin's center when nil) where it is.
     func setZoom(_ newZoom: CGFloat, around anchor: CGPoint? = nil) {
-        let clamped = PinGeometry.clamp(newZoom, to: PinGeometry.zoomRange)
+        let clamped = PinGeometry.clamp(newZoom, to: PinGeometry.zoomRange(from: zoom))
         guard abs(clamped - zoom) > 0.0001 else { return }
         let point = anchor ?? CGPoint(x: frame.midX, y: frame.midY)
         let next = PinGeometry.zoomed(frame, to: CGSize(width: baseSize.width * clamped, height: baseSize.height * clamped), around: point)

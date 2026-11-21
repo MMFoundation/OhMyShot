@@ -205,6 +205,16 @@ extension PinViewTests {
         #expect(abs(pin.zoom - 1.5) < 0.01)
     }
 
+    @Test func zoomingOutAPinFittedBelowTheSmallestZoomLeavesItAsItIs() throws {
+        let (view, _) = try card("npm run dev", zoom: 0.05)
+        let pin = try #require(view.pinWindow)
+        let frame = pin.frame
+        pin.setZoom(pin.zoom / 1.25)
+        #expect(pin.zoom == 0.05 && pin.frame == frame)
+        pin.setZoom(0.08)
+        #expect(pin.zoom == 0.08)
+    }
+
     @Test func aClickBringsThePinInFrontOfTheOthers() throws {
         let (view, _) = try card("npm run dev")
         let pin = try #require(view.pinWindow)

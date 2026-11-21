@@ -285,7 +285,11 @@ public final class PinController {
         pendingSave?.cancel()
         pendingSave = nil
         guard isKeeping else { return }
-        archive.save(PinArchive.Manifest(hidden: areHidden, pins: windows.compactMap(\.record)), waits: waits)
+        var pictures: [UUID: CGImage] = [:]
+        for window in windows {
+            if case .image(let image, _) = window.pin.content { pictures[window.pin.id] = image }
+        }
+        archive.save(PinArchive.Manifest(hidden: areHidden, pins: windows.compactMap(\.record)), pictures: pictures, waits: waits)
     }
 
     #if DEBUG

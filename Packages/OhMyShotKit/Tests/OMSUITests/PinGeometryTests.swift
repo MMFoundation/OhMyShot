@@ -114,6 +114,29 @@ struct PinGeometryTests {
         #expect(PinGeometry.keptZoom(0) == 1 && PinGeometry.keptZoom(-1) == 1)
     }
 
+    @Test func aPinFittedBelowTheSmallestZoomNeverGrowsWhenZoomedOut() {
+        #expect(PinGeometry.zoomRange(from: 1) == PinGeometry.zoomRange)
+        #expect(PinGeometry.zoomRange(from: 0.064) == 0.064 ... PinGeometry.zoomRange.upperBound)
+        #expect(PinGeometry.zoom(0.064, scrolledBy: -5, precise: false) == 0.064)
+        #expect(PinGeometry.zoom(0.064, scrolledBy: 1, precise: false) > 0.064)
+        // Its bottom right corner dragged in toward its top left one.
+        let base = CGSize(width: 400, height: 10_000)
+        let frame = CGRect(x: 100, y: 100, width: 400 * 0.064, height: 10_000 * 0.064)
+        let (zoom, _) = PinGeometry.resizedZoom(dragging: .bottomRight, of: frame, baseSize: base, to: CGPoint(x: 110, y: 700))
+        #expect(abs(zoom - 0.064) < 0.0001)
+    }
+
+    @Test func aPinThatCanBeTakenHoldOfOnlyUnderTheMenuBarOrTheDockComesOut() throws {
+        let alone = [displays[0]]
+        // Its display above the built-in one went, leaving 20 points of it behind the menu bar.
+        let menuBar = try #require(PinGeometry.recovered(CGRect(x: 100, y: 780, width: 300, height: 200), on: alone))
+        #expect(menuBar == CGRect(x: 100, y: 575, width: 300, height: 200))
+        let dock = try #require(PinGeometry.recovered(CGRect(x: 100, y: -180, width: 300, height: 200), on: alone))
+        #expect(dock == CGRect(x: 100, y: 70, width: 300, height: 200))
+        // 25 points of it below the menu bar are enough.
+        #expect(PinGeometry.recovered(CGRect(x: 100, y: 750, width: 300, height: 200), on: alone) == nil)
+    }
+
     @Test func aPinThatCanStillBeTakenHoldOfStays() {
         #expect(PinGeometry.recovered(CGRect(x: 1500, y: 400, width: 300, height: 200), on: displays) == nil)
         // Mostly past the edge of the screen, with 20 points of it still on it.
