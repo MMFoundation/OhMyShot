@@ -49,6 +49,29 @@ struct AllInOneWindowHoverTests {
         #expect(onRight?.area == CGRect(x: 800, y: 100, width: 390, height: 300))
     }
 
+    @Test func onlyAnUnchangedFramedWindowRetainsItsWindowTarget() {
+        let framed = (window: Self.front, area: Self.front.frame)
+        #expect(OverlayController.framedWindow(framed, matching: Self.front.frame) == Self.front)
+        #expect(OverlayController.framedWindow(framed, matching: Self.front.frame.offsetBy(dx: 1, dy: 0)) == nil)
+        #expect(OverlayController.framedWindow(nil, matching: Self.front.frame) == nil)
+    }
+
+    @Test func shiftSelectionAddsAndRemovesHoveredWindowsInOrder() {
+        let selected = OverlayController.toggledWindow(Self.back, in: [])
+        #expect(selected == [Self.back])
+        let both = OverlayController.toggledWindow(Self.front, in: selected)
+        #expect(both == [Self.back, Self.front])
+        #expect(OverlayController.toggledWindow(Self.back, in: both) == [Self.front])
+    }
+
+    @Test func windowHoverOutlineUsesContinuousRoundedCorners() {
+        let rect = CGRect(x: 20, y: 30, width: 200, height: 140)
+        let path = OverlayView.roundedWindowPath([rect])
+        #expect(path.boundingBox == rect)
+        #expect(!path.contains(CGPoint(x: rect.minX, y: rect.minY)))
+        #expect(path.contains(CGPoint(x: rect.midX, y: rect.minY)))
+    }
+
     /// A press keeps the window under it while it stays within the drag threshold (under 4 pixels either way), and lets
     /// it go for good once it is a drag, even when the drag comes back to where it began.
     @Test func aPressIsAClickUntilItIsDragged() throws {
