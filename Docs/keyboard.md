@@ -37,6 +37,7 @@ After Space, or in a purpose that starts on windows:
 | Shift-click | Adds a window to the selection, or takes it away (screenshots, Annotate Area, Capture Text). |
 | Return | Captures the selected windows, or the one under the pointer. |
 | Tab, Shift-Tab, `]`, `[` | Highlight the next or previous window. |
+| Space | Goes back to dragging an area. |
 | Scroll | Picks a part of the window under the pointer, taken as an area (Capture Area and Annotate Area, with Accessibility on). |
 
 ### The window chooser (W)
@@ -248,9 +249,24 @@ A pin takes the keys when clicked; a new pin never does.
 | Space | Quick Look. |
 | Double-click, Command-O | Open in the editor (a recording in its window). |
 | Command-C | Copies the selected captures. |
+| Command-S | Saves the selected captures. |
 | Command-P | Prints. |
 | Command-Delete | Moves to the Trash (several ask first). |
 | Command-F | Goes to the search field; Return there selects the first capture found, Escape clears it. |
+
+## Studio
+
+A recording opened in its window. The arrows, I, O, Delete, and Escape work while the timeline has the keyboard
+(click it).
+
+| Key | What it does |
+| --- | --- |
+| Space | Plays or pauses. |
+| Left Arrow, Right Arrow | Move the playhead; with Shift, a longer step. |
+| Option-Left Arrow, Option-Right Arrow | Choose the previous or next edit. |
+| I, O | Mark the start or end of a range. |
+| Delete | Removes the range or the edit chosen. |
+| Escape | Clears what is chosen on the timeline; while exporting, cancels the export. |
 
 ## Draw on Screen
 
