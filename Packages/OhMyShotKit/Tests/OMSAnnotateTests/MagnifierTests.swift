@@ -338,6 +338,12 @@ struct MagnifierTests {
         let outward = AnnotationTool.magnifier.mark(from: CGPoint(x: 188, y: 24), to: CGPoint(x: 210, y: 24), constrained: false, settings: settings, room: room)
         guard case .magnifier(let held) = outward?.shape else { Issue.record("No magnifier"); return }
         #expect(held.center == CGPoint(x: 188, y: 24) && held.radius == Magnifier.smallestRadius)
+        // Dragged in from an edge, a lens follows once the pointer leaves what it showed where it started, and takes the
+        // larger size that fits where it now stands, still overlapping its spot until it clears that.
+        let inward = AnnotationTool.magnifier.mark(from: CGPoint(x: 12, y: 24), to: CGPoint(x: 25, y: 24), constrained: false, settings: settings, room: room)
+        guard case .magnifier(let grown) = inward?.shape else { Issue.record("No magnifier"); return }
+        #expect(grown.center == CGPoint(x: 25, y: 24) && grown.radius == 15.5)
+        #expect(!grown.isDetached)
         // Too short a selection for the smallest lens: it stays over the spot clicked, at its smallest.
         let short = CGRect(x: 8.5, y: 8.5, width: 283, height: 1)
         guard case .magnifier(let clicked) = AnnotationTool.magnifier.mark(
