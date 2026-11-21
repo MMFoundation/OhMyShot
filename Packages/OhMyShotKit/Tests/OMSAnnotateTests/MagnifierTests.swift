@@ -323,6 +323,17 @@ struct MagnifierTests {
             from: start, to: CGPoint(x: 300, y: 60), constrained: false, settings: settings, room: room
         )?.shape else { Issue.record("No magnifier"); return }
         #expect(past.center == CGPoint(x: 191.5, y: 39.5) && past.radius == Magnifier.smallestRadius)
+        // A Shift drag past it keeps its angle, stopping where its line leaves the room.
+        let taller = CGRect(x: 8.5, y: 8.5, width: 183, height: 83)
+        guard case .magnifier(let snapped) = AnnotationTool.magnifier.mark(
+            from: CGPoint(x: 70, y: 30), to: CGPoint(x: 170, y: 130), constrained: true, settings: settings, room: taller
+        )?.shape else { Issue.record("No magnifier"); return }
+        #expect(snapped.center == CGPoint(x: 131.5, y: 91.5))
+        // A click by the canvas's edge, outside the room, puts the lens over the spot clicked all the same.
+        let edge = CGPoint(x: 1, y: 24)
+        guard case .magnifier(let byTheEdge) = AnnotationTool.magnifier.mark(from: edge, to: edge, constrained: false, settings: settings, room: room)?.shape
+        else { Issue.record("No magnifier"); return }
+        #expect(byTheEdge.center == edge && byTheEdge.source == edge)
         // Too short a selection for the smallest lens: it stays over the spot clicked, at its smallest.
         let short = CGRect(x: 8.5, y: 8.5, width: 283, height: 1)
         guard case .magnifier(let clicked) = AnnotationTool.magnifier.mark(
