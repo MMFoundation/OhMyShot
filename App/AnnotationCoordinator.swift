@@ -34,7 +34,10 @@ final class AnnotationCoordinator {
 
     init(history: HistoryStore) {
         self.history = history
-        // What an earlier run left of projects' pictures: every project opened from now on has a newer folder.
+        // What an earlier run left of projects' pictures: every project opened from now on has a newer folder. Not while
+        // another copy still runs (a relaunch that went ahead while it waited on an editor's sheet): its open editors'
+        // pictures are there, and what it leaves goes at the next launch.
+        guard !Relauncher.otherInstancesAreRunning else { return }
         let start = Date.now
         Task.detached(priority: .background) { ProjectPicture.removeLeftovers(before: start) }
     }
