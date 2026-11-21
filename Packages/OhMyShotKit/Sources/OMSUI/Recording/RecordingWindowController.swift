@@ -407,10 +407,18 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    func openInDefaultApp() {
+    /// Opens the recording in the app the Save menu names, QuickTime Player, or Preview for a GIF: asked for by name, as
+    /// OhMyShot may be the app that opens movies and pictures, and would only take it in again.
+    func openInViewer() {
         Task {
             guard let url = await keepEdits() else { return }
-            NSWorkspace.shared.open(url)
+            let identifier = model.isGIF ? "com.apple.Preview" : "com.apple.QuickTimePlayerX"
+            guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) else { return NSSound.beep() }
+            do {
+                _ = try await NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            } catch {
+                fail(error)
+            }
         }
     }
 
@@ -679,7 +687,7 @@ struct RecordingWindowView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button { model.controller?.saveAs() } label: { Text("Save As…", bundle: .module) }
-                Button { model.controller?.openInDefaultApp() } label: {
+                Button { model.controller?.openInViewer() } label: {
                     model.isGIF ? Text("Open in Preview", bundle: .module) : Text("Open in QuickTime Player", bundle: .module)
                 }
                 if !model.isGIF {

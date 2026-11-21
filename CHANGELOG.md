@@ -11,7 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
-- Movies open in the recording window: an MP4 or MOV opened with OhMyShot from Finder's Open With, dropped on its Dock icon, or chosen in Open Image › Annotate… is copied into Capture History as a recording, to trim, make quieter or smaller, or make into a GIF. The file itself is left where it is.
+- Movies open in the recording window: an MP4 or MOV opened with OhMyShot from Finder's Open With, dropped on its Dock icon, or chosen in Open Image › Annotate… is copied into Capture History as a recording, to trim, make quieter or smaller, or make into a GIF. The file itself is left where it is, and a MOV stays a QuickTime movie when it is edited.
 
 ### Fixed
 
