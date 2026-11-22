@@ -111,6 +111,64 @@ struct CapturedFrameTests {
         #expect(frame().cropped(to: CGRect(x: 10, y: 10, width: 50, height: 50)) == nil)
     }
 
+    @Test func liveCaptureRestoresOnlyTransientWindowPixels() throws {
+        let display = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let live = solid(1, 0, 0, frame: display, scale: 2, id: 1)
+        let transient = solid(0, 0, 1, frame: display, scale: 2, id: 1)
+        let snapshot = TransientCaptureSnapshot(frame: transient, regions: [CGRect(x: 20, y: 20, width: 30, height: 30)])
+        let restored = try #require(live.restoringTransientContent(from: [snapshot]))
+        #expect(pixel(restored.image, x: 50, y: 130) == [0, 0, 255, 255])
+        #expect(pixel(restored.image, x: 10, y: 10) == [255, 0, 0, 255])
+    }
+
+    @Test func emptyTransientSnapshotsLeaveTheLiveCaptureAlone() throws {
+        let live = solid(1, 0, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2, id: 1)
+        let restored = try #require(live.restoringTransientContent(from: []))
+        #expect(pixel(restored.image, x: 10, y: 10) == [255, 0, 0, 255])
+    }
+
+    @Test func transientPixelsRemainUnderTransparentCursorPixels() throws {
+        let display = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let live = solid(1, 0, 0, frame: display, scale: 2, id: 1)
+        let transient = solid(0, 0, 1, frame: display, scale: 2, id: 1)
+        let snapshot = TransientCaptureSnapshot(frame: transient, regions: [CGRect(x: 20, y: 20, width: 30, height: 30)])
+        let cursorContext = CGContext(
+            data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        )!
+        cursorContext.clear(CGRect(x: 0, y: 0, width: 4, height: 4))
+        cursorContext.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        cursorContext.fill(CGRect(x: 0, y: 3, width: 1, height: 1))
+        let cursor = cursorContext.makeImage()!
+        let restored = try #require(live.restoringTransientContent(
+            from: [snapshot], cursor: (cursor, CGRect(x: 30, y: 30, width: 2, height: 2))
+        ))
+        #expect(pixel(restored.image, x: 60, y: 136) == [0, 255, 0, 255])
+        #expect(pixel(restored.image, x: 61, y: 136) == [0, 0, 255, 255])
+        #expect(pixel(restored.image, x: 70, y: 136) == [0, 0, 255, 255])
+        #expect(pixel(restored.image, x: 10, y: 10) == [255, 0, 0, 255])
+
+        let hdrLive = CapturedFrame(image: live.image, hdrImage: live.image, displayID: live.displayID, frame: display)
+        #expect(hdrLive.restoringTransientContent(from: [snapshot]) == nil)
+    }
+
+    @Test func croppedMixedScaleDisplaySnapshotsRestoreAcrossANegativeOriginArea() throws {
+        let area = CGRect(x: -50, y: 20, width: 100, height: 50)
+        let live = solid(1, 0, 0, frame: area, scale: 2, id: 1)
+        let left = solid(0, 0, 1, frame: CGRect(x: -100, y: 0, width: 100, height: 100), scale: 1, id: 2)
+        let right = solid(0, 1, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2, id: 3)
+        let snapshots = [
+            TransientCaptureSnapshot(frame: left, regions: [CGRect(x: -45, y: 30, width: 20, height: 20)]),
+            TransientCaptureSnapshot(frame: right, regions: [CGRect(x: 10, y: 30, width: 20, height: 20)]),
+        ]
+
+        let restored = try #require(live.restoringTransientContent(from: snapshots))
+        #expect(pixel(restored.image, x: 30, y: 70) == [0, 0, 255, 255])
+        #expect(pixel(restored.image, x: 130, y: 70) == [0, 255, 0, 255])
+        #expect(pixel(restored.image, x: 80, y: 70) == [255, 0, 0, 255])
+    }
+
     // MARK: Stitching
 
     /// A display's capture in one color: `frame` in global points at `scale` pixels per point.

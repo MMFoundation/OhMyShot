@@ -13,6 +13,8 @@ final class OverlayPanel: NSPanel {
     static let selectionLevel = NSWindow.Level.screenSaver
     static let annotationLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
 
+    var suppressesInputUntilTransientComparison = false
+
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
@@ -36,4 +38,25 @@ final class OverlayPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard suppressesInputUntilTransientComparison else { return super.performKeyEquivalent(with: event) }
+        return event.type != .keyDown || event.keyCode != 53
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        guard suppressesInputUntilTransientComparison else {
+            super.sendEvent(event)
+            return
+        }
+        guard event.type == .keyDown,
+              Self.dispatches(event.type, keyCode: event.keyCode, whileComparisonPending: true) else { return }
+        super.sendEvent(event)
+    }
+
+    static func dispatches(
+        _ type: NSEvent.EventType, keyCode: UInt16, whileComparisonPending: Bool
+    ) -> Bool {
+        !whileComparisonPending || (type == .keyDown && keyCode == 53)
+    }
 }
