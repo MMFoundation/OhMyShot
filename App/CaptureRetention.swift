@@ -7,7 +7,7 @@ import OSLog
 /// How long captures stay in the history. Settings' Keep Captures takes the old ones away; with history off a capture
 /// lives as long as something holds it (`heldCaptureIDs`: a card, an editor or a recording's window, an upload, the
 /// clipboard, a shortcut) and goes once nothing does. The desktop pictures' pieces kept for window screenshots go with the last
-/// capture, or pin, that used them.
+/// capture that used them.
 final class CaptureRetention {
     private let settings: SettingsStore
     private let history: HistoryStore
@@ -19,8 +19,6 @@ final class CaptureRetention {
     private let recordingWindows: () -> Set<UUID>
     /// The captures being uploaded.
     private let uploads: () -> Set<UUID>
-    /// The backgrounds pins keep for what they hand over once their captures are gone, whose pictures stay with them.
-    private let pinBackgrounds: () -> [Data]
     /// Captures were removed from the history: Capture History shows it.
     private let historyChanged: ([UUID]) -> Void
     private var pictureSweep: Task<Void, Never>?
@@ -34,8 +32,7 @@ final class CaptureRetention {
 
     init(
         settings: SettingsStore, history: HistoryStore, cards: @escaping (HistoryRetention) -> Set<UUID>, editors: @escaping () -> Set<UUID>,
-        recordingWindows: @escaping () -> Set<UUID>, uploads: @escaping () -> Set<UUID>, pinBackgrounds: @escaping () -> [Data],
-        historyChanged: @escaping ([UUID]) -> Void
+        recordingWindows: @escaping () -> Set<UUID>, uploads: @escaping () -> Set<UUID>, historyChanged: @escaping ([UUID]) -> Void
     ) {
         self.settings = settings
         self.history = history
@@ -43,7 +40,6 @@ final class CaptureRetention {
         self.editors = editors
         self.recordingWindows = recordingWindows
         self.uploads = uploads
-        self.pinBackgrounds = pinBackgrounds
         self.historyChanged = historyChanged
     }
 
@@ -107,9 +103,8 @@ final class CaptureRetention {
     }
 
     /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's
-    /// marks in the history (the Trash keeps a capture's picture, not its marks), no pin a window was pinned to with
-    /// Capture Area and Pin, no saved background, not the last picture chosen for one. Never while an editor is open,
-    /// as its Undo may bring a background back.
+    /// marks in the history (the Trash keeps a capture's picture, not its marks), no saved background, not the
+    /// last picture chosen for one. Never while an editor is open, as its Undo may bring a background back.
     /// Captures going one after another are swept once.
     func sweepWallpaperPictures() {
         pictureSweep?.cancel()
@@ -118,7 +113,7 @@ final class CaptureRetention {
             guard let self, !Task.isCancelled, editors().isEmpty else { return }
             let marks = await history.loadItems().map { history.annotationsURL(for: $0) }
             var used = BackdropPresets.shared.pictureNames
-            used.formUnion(await Self.wallpaperPictures(namedIn: marks, pinned: pinBackgrounds()))
+            used.formUnion(await Self.wallpaperPictures(namedIn: marks))
             guard !Task.isCancelled, editors().isEmpty else { return }
             // A piece just made may not be in a capture's marks yet.
             let removed = PictureStore.shared.removeUnused(prefix: CaptureBackground.wallpaperPrefix, used: used, olderThan: 10 * 60)
@@ -128,17 +123,14 @@ final class CaptureRetention {
         }
     }
 
-    /// The desktop pictures' pieces named in the marks files at `urls` and in the backgrounds pins keep.
-    @concurrent private nonisolated static func wallpaperPictures(namedIn urls: [URL], pinned: [Data]) async -> Set<String> {
+    /// The desktop pictures' pieces named in the marks files at `urls`.
+    @concurrent private nonisolated static func wallpaperPictures(namedIn urls: [URL]) async -> Set<String> {
         guard let name = try? Regex(CaptureBackground.wallpaperPrefix + "[0-9a-f]{16}\\.jpg") else { return [] }
         var names = Set<String>()
-        let collect = { (data: Data) in
+        for url in urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
             let text = String(decoding: data, as: UTF8.self)
             for match in text.matches(of: name) { names.insert(String(text[match.range])) }
-        }
-        pinned.forEach(collect)
-        for url in urls {
-            if let data = try? Data(contentsOf: url) { collect(data) }
         }
         return names
     }

@@ -566,6 +566,32 @@ struct PictureExportTests {
         #expect(!FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
     }
 
+    @Test func aCopyHandedOverAgainStaysAsLongAsOneJustMade() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let file = folder.appending(path: "Shot.png")
+        try writePNG(try picture(10, 10), to: file)
+        let output = ScreenshotOutput(format: .jpeg)
+        let pin = UUID()
+        let draw = { () throws -> CGImage in try self.picture(10, 10) }
+        let copies = [
+            try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache),
+            try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache, picture: draw),
+        ]
+        let daysAgo = Date.now.addingTimeInterval(-ExportedFiles.lifetime - 60)
+        for copy in copies {
+            try FileManager.default.setAttributes([.modificationDate: daysAgo], ofItemAtPath: copy.path(percentEncoded: false))
+        }
+        // Made days ago and dragged again now: the sweep that follows the drag leaves them for the app they go to.
+        #expect(try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache) == copies[0])
+        #expect(try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache, picture: draw) == copies[1])
+        ExportedFiles.removeOld(in: cache)
+        for copy in copies {
+            #expect(FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
+        }
+    }
+
     @Test func theFoldersOldCopiesLeaveEmptyGoToo() throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }

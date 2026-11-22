@@ -38,7 +38,7 @@ struct PinArchiveTests {
         archive.keepPicture(image, id: pins[0].id)
         archive.save(manifest)
 
-        let (loaded, pictures) = try #require(archive.loadNow())
+        let (loaded, pictures, _) = try #require(archive.loadNow())
         #expect(loaded == manifest)
         let kept = try #require(pictures[pins[0].id])
         #expect(kept.width == 6 && kept.height == 4)
@@ -51,20 +51,20 @@ struct PinArchiveTests {
         #expect(color.hex == (try #require(PinColor(p3))).hex)
     }
 
-    @Test func aPinComesBackPinnedWhenItWasWithItsCapturesBackground() throws {
+    @Test func aPinComesBackPinnedWhenItWasWithItsCaptureOnItsBackground() throws {
         let archive = archive()
         defer { try? FileManager.default.removeItem(at: archive.folder) }
         let image = try picture()
         // To the fraction of a second, which an ISO 8601 date drops: Capture Area and Pin writes its capture's file just before.
         let pinnedAt = Date(timeIntervalSinceReferenceDate: 785_000_000.375)
-        let background = Data(#"{"fill":{"gradient":{"_0":"sky"}}}"#.utf8)
-        let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .capture(UUID()), pinnedAt: pinnedAt, background: background)
-        archive.keepPicture(image, id: pin.id)
+        let onBackground = Data("its capture on its background, as the history kept it".utf8)
+        let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .capture(UUID()), pinnedAt: pinnedAt, onBackground: onBackground)
+        archive.keepPicture(image, onBackground: onBackground, id: pin.id)
         archive.save(PinArchive.Manifest(hidden: false, pins: [try record(pin)]), waits: true)
 
-        let (manifest, pictures) = try #require(archive.loadNow())
-        let back = try #require(manifest.pins.first?.pin(picture: pictures[pin.id]))
-        #expect(back.pinnedAt == pinnedAt && back.background == background)
+        let (manifest, pictures, kept) = try #require(archive.loadNow())
+        let back = try #require(manifest.pins.first?.pin(picture: pictures[pin.id], onBackground: kept[pin.id]))
+        #expect(back.pinnedAt == pinnedAt && back.onBackground == onBackground)
         // Its capture, marked up after it was pinned and before the app quit, holds a picture other than the pin's.
         #expect(back.shows(fileChangedAt: pinnedAt.addingTimeInterval(-0.25)))
         #expect(!back.shows(fileChangedAt: pinnedAt.addingTimeInterval(0.25)))
@@ -86,11 +86,10 @@ struct PinArchiveTests {
         written["pins"] = pins
         try JSONSerialization.data(withJSONObject: written).write(to: list)
 
-        let (manifest, pictures) = try #require(archive.loadNow())
+        let (manifest, pictures, _) = try #require(archive.loadNow())
         let back = try #require(manifest.pins.first?.pin(picture: pictures[pin.id]))
         // Taken as changed whenever its capture was last written, so it hands over the picture it shows.
         #expect(!back.shows(fileChangedAt: Date(timeIntervalSince1970: 0)))
-        #expect(back.background == nil)
     }
 
     @Test func aPinWhosePictureIsMissingIsLeftOutAndALeftoverPictureRemoved() throws {
@@ -101,10 +100,10 @@ struct PinArchiveTests {
         let lost = PinController.Pin(id: UUID(), content: .image(image, scale: 1), origin: .clipboard)
         let closed = UUID()
         archive.keepPicture(image, id: shown.id)
-        archive.keepPicture(image, id: closed)
+        archive.keepPicture(image, onBackground: Data("closed".utf8), id: closed)
         archive.save(PinArchive.Manifest(hidden: false, pins: [try record(shown), try record(lost)]))
 
-        let (loaded, pictures) = try #require(archive.loadNow())
+        let (loaded, pictures, _) = try #require(archive.loadNow())
         #expect(loaded.pins.map(\.id) == [shown.id])
         #expect(Set(pictures.keys) == [shown.id])
         let files = try FileManager.default.contentsOfDirectory(atPath: archive.folder.path(percentEncoded: false))
@@ -117,9 +116,9 @@ struct PinArchiveTests {
         let image = try picture()
         let first = PinController.Pin(id: UUID(), content: .image(image, scale: 1), origin: .clipboard)
         let second = PinController.Pin(id: UUID(), content: .text("kept"), origin: .clipboard)
-        archive.keepPicture(image, id: first.id)
+        archive.keepPicture(image, onBackground: Data("kept".utf8), id: first.id)
         archive.save(PinArchive.Manifest(hidden: false, pins: [try record(first), try record(second)]))
-        // Closing one forgets its picture, and the list follows.
+        // Closing one forgets its picture, and its capture on its background, and the list follows.
         archive.forget(first.id)
         archive.save(PinArchive.Manifest(hidden: false, pins: [try record(second)]), waits: true)
         let files = try FileManager.default.contentsOfDirectory(atPath: archive.folder.path(percentEncoded: false))
@@ -150,10 +149,13 @@ struct PinArchiveTests {
         defer { try? FileManager.default.removeItem(at: archive.folder) }
         let image = try picture()
         let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .clipboard)
+        let onBackground = Data("its capture on its background".utf8)
         // No keepPicture: as if its write had failed when the pin opened.
-        archive.save(PinArchive.Manifest(hidden: false, pins: [try record(pin)]), pictures: [pin.id: image], waits: true)
-        let (manifest, pictures) = try #require(archive.loadNow())
-        #expect(manifest.pins.map(\.id) == [pin.id] && pictures[pin.id]?.width == image.width)
+        archive.save(
+            PinArchive.Manifest(hidden: false, pins: [try record(pin)]), pictures: [pin.id: image], onBackground: [pin.id: onBackground], waits: true
+        )
+        let (manifest, pictures, kept) = try #require(archive.loadNow())
+        #expect(manifest.pins.map(\.id) == [pin.id] && pictures[pin.id]?.width == image.width && kept[pin.id] == onBackground)
     }
 
     @Test func aColorWithAProfileOfItsOwnComesBackAsItLooked() throws {
@@ -192,7 +194,7 @@ struct PinArchiveTests {
         try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: list)
         #expect(archive.loadNow() == nil)
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: list)
-        let (manifest, pictures) = try #require(archive.loadNow())
+        let (manifest, pictures, _) = try #require(archive.loadNow())
         #expect(manifest.pins.map(\.id) == [pin.id] && pictures[pin.id] != nil)
     }
 }

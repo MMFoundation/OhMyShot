@@ -50,7 +50,7 @@ public enum ExportedFiles {
         for _ in 0..<3 {
             let revision = try revision(of: source)
             let destination = directory.appending(path: revision, directoryHint: .isDirectory).appending(path: fileName)
-            if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) { return destination }
+            if reused(destination) { return destination }
             let encoded = try PictureExport.encode(fileAt: source, pixelsPerPoint: pixelsPerPoint, output: output)
             afterReading()
             guard try self.revision(of: source) == revision else { continue }
@@ -136,8 +136,10 @@ public enum ExportedFiles {
         let directory = folder
             .appending(path: "\(output.cacheKey)-pin", directoryHint: .isDirectory)
             .appending(path: id.uuidString, directoryHint: .isDirectory)
-        let kept = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))
-        if let kept = kept?.first(where: { ($0 as NSString).pathExtension == output.format.fileExtension }) { return directory.appending(path: kept) }
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)))?
+            .first { ($0 as NSString).pathExtension == output.format.fileExtension }
+            .map { directory.appending(path: $0) }
+        if let kept, reused(kept) { return kept }
         let encoded = try PictureExport.encode(try picture(), pixelsPerPoint: pixelsPerPoint, output: output)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appending(path: "\(name).\(encoded.fileExtension)")
@@ -206,6 +208,16 @@ public enum ExportedFiles {
         for old in newestFirst.dropFirst(count) {
             try? FileManager.default.removeItem(at: old)
         }
+    }
+
+    /// Hands a copy made before over again while it is there, made as new to `removeOld` once half its `lifetime` is gone:
+    /// a drag or an upload begun now has days before the sweep may take it, and a copy dragged again and again is left
+    /// as it was in between. False when it is gone, and must be made again.
+    private static func reused(_ copy: URL) -> Bool {
+        let path = copy.path(percentEncoded: false)
+        guard let written = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return false }
+        guard Date.now.timeIntervalSince(written) > lifetime / 2 else { return true }
+        return (try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: path)) != nil
     }
 
     /// Which version of a file this is: its file number, which a file written over atomically (as the history writes)
