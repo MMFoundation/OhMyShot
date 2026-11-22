@@ -705,4 +705,52 @@ struct QuickAccessRetentionTests {
             #expect(cards.item(capture.id)?.savedURL == nil)
         }
     }
+
+    /// A copy that an edit put out of date while the capture had no card stays out of date, and a copy saved as a card
+    /// comes for it again (a recording's first Studio movie, saved after it was made) is the one the card shows and owns.
+    @Test func aCopySavedAsTheCardComesWinsOverAnOutOfDateOne() async throws {
+        try await fixtureWithHistory(configure: { $0.closed = { _ in } }) { cards, history, make in
+            var capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent()
+            let old = folder.appending(path: "old.png"), fresh = folder.appending(path: "fresh.png")
+            capture.savedURL = old
+            capture.ownSavedURL = old
+            cards.insertIntoStack(capture)
+            cards.dismiss(capture.id)
+            _ = cards.takeRecentlyClosed()
+            #expect(cards.pictureChanged(try #require(history.item(id: capture.id)), savedCopyIsStale: true) { nil } == nil)
+            capture.savedURL = fresh
+            capture.ownSavedURL = fresh
+            cards.insertIntoStack(capture)
+            let card = try #require(cards.item(capture.id))
+            #expect(card.savedURL == fresh)
+            #expect(card.ownSavedURL == fresh)
+        }
+    }
+
+    /// The card's own file, saved over from the editor or Capture History under its name in another letter case, is the
+    /// same file on a disk that ignores case: it is theirs now, and the card's Trash leaves it.
+    @Test func aSaveOverTheCardsFileInAnotherLetterCaseEndsItsClaim() async throws {
+        var trashed: QuickAccessItem?
+        try await fixture(configure: { actions in
+            actions.closed = { _ in }
+            actions.moveToTrash = { trashed = $0 }
+        }) { cards, make in
+            let capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent()
+            guard try folder.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames == false else { return }
+            let owned = folder.appending(path: "Card.png"), replaced = folder.appending(path: "card.png")
+            try Data([1]).write(to: owned)
+            cards.insertIntoStack(capture)
+            cards.markSaved(capture.id, at: owned, byCard: true)
+            cards.markSaved(capture.id, at: replaced)
+            let card = try #require(cards.item(capture.id))
+            #expect(card.savedURL == replaced)
+            #expect(card.ownSavedURL == nil)
+            cards.perform(.moveToTrash, on: card, keyed: false)
+            cards.finishTrashingNow()
+            #expect(trashed?.id == capture.id)
+            #expect(trashed?.ownSavedURL == nil)
+        }
+    }
 }

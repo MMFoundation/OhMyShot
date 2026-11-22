@@ -256,25 +256,10 @@ public final class QuickAccessController {
         }
     }
 
-    private func invalidateSavedCopy(for id: UUID) {
-        var copies = savedCopiesByID[id] ?? SavedCopies(
-            savedURL: visibleOrRecentlyClosedItem(id)?.savedURL,
-            ownSavedURL: visibleOrRecentlyClosedItem(id)?.ownSavedURL
-        )
-        copies.savedURL = nil
-        setSavedCopies(copies, for: id)
-        if let index = items.firstIndex(where: { $0.id == id }) {
-            items[index].savedURL = nil
-            stack?.markUnsaved(id)
-        }
-        if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
-            recentlyClosed[index].item.savedURL = nil
-        }
-    }
-
+    /// Whether two copies are one file: the same address, or the same file now however its folders are written, and in
+    /// either letter case on a disk that ignores case.
     private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
-        guard lhs.isFileURL, rhs.isFileURL else { return lhs == rhs }
-        return lhs.standardizedFileURL.resolvingSymlinksInPath() == rhs.standardizedFileURL.resolvingSymlinksInPath()
+        lhs == rhs || AtomicFileCopy.isSameFile(lhs, rhs)
     }
 
     private func visibleOrRecentlyClosedItem(_ id: UUID) -> QuickAccessItem? {
@@ -299,7 +284,7 @@ public final class QuickAccessController {
         if let card = visibleOrRecentlyClosedItem(entry.id) {
             add(card)
         } else {
-            add(QuickAccessItem(current, fileURL: url, thumbnail: Self.hiddenThumbnail, displayID: displayID, savedURL: savedCopiesByID[entry.id]?.savedURL))
+            add(QuickAccessItem(current, fileURL: url, thumbnail: Self.hiddenThumbnail, displayID: displayID))
             pictureChanged(current, savedCopyIsStale: false) {
                 await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels)
             }
@@ -400,7 +385,11 @@ public final class QuickAccessController {
     @discardableResult
     public func pictureChanged(_ entry: HistoryItem, savedCopyIsStale: Bool, thumbnail: @escaping () async -> CGImage?) -> Task<Void, Never>? {
         pruneSavedCopiesIfNeeded()
-        if savedCopyIsStale { invalidateSavedCopy(for: entry.id) }
+        // A capture without a card forgets its saved copy too, so a card restored later offers Save again.
+        if savedCopyIsStale, var copies = savedCopiesByID[entry.id] {
+            copies.savedURL = nil
+            setSavedCopies(copies, for: entry.id)
+        }
         guard let card = visibleOrRecentlyClosedItem(entry.id) else { return nil }
         update(QuickAccessItem(entry, fileURL: card.fileURL, thumbnail: Self.hiddenThumbnail, displayID: card.displayID), keepsSaved: !savedCopyIsStale)
         thumbnailUpdates[entry.id]?.cancel()
