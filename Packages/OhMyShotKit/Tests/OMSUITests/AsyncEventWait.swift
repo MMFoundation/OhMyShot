@@ -1,4 +1,27 @@
 import Foundation
+import OMSCore
+
+actor AsyncSaveOutcomeGate {
+    private var continuation: CheckedContinuation<SaveOutcome, Never>?
+    private var pendingOutcome: SaveOutcome?
+
+    func wait() async -> SaveOutcome {
+        if let pendingOutcome {
+            self.pendingOutcome = nil
+            return pendingOutcome
+        }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func complete(_ outcome: SaveOutcome) {
+        if let continuation {
+            self.continuation = nil
+            continuation.resume(returning: outcome)
+        } else {
+            pendingOutcome = outcome
+        }
+    }
+}
 
 actor AsyncEventReader<Element: Sendable> {
     private var events: [Element] = []

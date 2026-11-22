@@ -354,24 +354,31 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             guard await panel.beginSheetModal(for: window) == .OK, let destination = panel.url else { return }
             if let result = await saveCopyAs(from: url, to: destination) {
                 switch result {
-                case .success:
+                case .saved(_):
                     model.flashSaved()
-                case .failure(let error):
-                    fail(error)
+                case .failed(let failure):
+                    fail(failure)
+                case .cancelled:
+                    break
                 }
             }
         }
     }
 
-    func saveCopyAs(from source: URL, to destination: URL?) async -> Result<URL, Error>? {
-        guard let destination else { return nil }
-        do {
-            try await AtomicFileCopy.copy(from: source, to: destination)
-            onSaved?(destination)
-            return .success(destination)
-        } catch {
-            return .failure(error)
+    func saveCopyAs(from source: URL, to destination: URL?) async -> SaveOutcome? {
+        await saveCopyAs(from: source, to: destination) { source, destination in
+            await AtomicFileCopy.save(source, as: destination)
         }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?, save: (URL, URL) async -> SaveOutcome) async -> SaveOutcome? {
+        guard let destination else { return nil }
+        let project = studio.project
+        let outcome = await save(source, destination)
+        if case .saved(let url) = outcome, studio.project == project {
+            onSaved?(url)
+        }
+        return outcome
     }
 
     // MARK: Background

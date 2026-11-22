@@ -84,6 +84,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     private var closed: (() -> Void)?
     /// The edits being kept now, which a second keep waits for.
     private var keeping: Task<URL?, Never>?
+    private var contentRevision = 0
     /// The audio tracks of the movie being played, which the volume is previewed on.
     private var audioTracks: [AVAssetTrack] = []
 
@@ -302,7 +303,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         let task = Task { () -> URL? in
             do {
                 let url = try await actions.keep(edit)
-                reload(url)
+                contentChanged(to: url)
                 model.canRevert = true
                 return url
             } catch {
@@ -338,6 +339,11 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             }
         }
         loadAudio()
+    }
+
+    func contentChanged(to url: URL) {
+        contentRevision += 1
+        reload(url)
     }
 
     // MARK: Actions
@@ -378,24 +384,32 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             guard response == .OK, let destination = panel.url else { return }
             if let result = await saveCopyAs(from: url, to: destination) {
                 switch result {
-                case .success:
+                case .saved(_):
                     model.flashSaved()
-                case .failure(let error):
-                    fail(error)
+                case .failed(let failure):
+                    fail(failure)
+                case .cancelled:
+                    break
                 }
             }
         }
     }
 
-    func saveCopyAs(from source: URL, to destination: URL?) async -> Result<URL, Error>? {
-        guard let destination else { return nil }
-        do {
-            try await AtomicFileCopy.copy(from: source, to: destination)
-            onSaved?(destination)
-            return .success(destination)
-        } catch {
-            return .failure(error)
+    func saveCopyAs(from source: URL, to destination: URL?) async -> SaveOutcome? {
+        await saveCopyAs(from: source, to: destination) { source, destination in
+            await AtomicFileCopy.save(source, as: destination)
         }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?, save: (URL, URL) async -> SaveOutcome) async -> SaveOutcome? {
+        guard let destination else { return nil }
+        let revision = contentRevision
+        let edit = self.edit
+        let outcome = await save(source, destination)
+        if case .saved(let url) = outcome, revision == contentRevision, edit == self.edit {
+            onSaved?(url)
+        }
+        return outcome
     }
 
     func makeGIF() {
@@ -420,7 +434,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             defer { model.busy = nil }
             do {
                 let url = try await actions.revert()
-                reload(url)
+                contentChanged(to: url)
                 model.canRevert = false
             } catch {
                 fail(error)

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -37,19 +38,61 @@ struct RecordingWindowSaveTests {
 
         let destination = folder.appending(path: "saved-as.mp4")
         let copied = await editor.saveCopyAs(from: source, to: destination)
-        guard case .success(let copiedURL)? = copied else {
+        guard case .saved(let copiedURL)? = copied else {
             #expect(Bool(false), "Save As should complete")
             return
         }
         #expect(copiedURL == destination)
         #expect(reported == [saved, destination])
 
+        let alias = folder.appending(path: "alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: folder)
+        let sameFile = await editor.saveCopyAs(from: source, to: alias.appending(path: source.lastPathComponent))
+        #expect(sameFile?.url == nil && sameFile?.failure != nil)
+        #expect(try Data(contentsOf: source) == Data([1, 2, 3]))
+        #expect(reported == [saved, destination])
+
         let missing = folder.appending(path: "missing.mp4")
         let failed = await editor.saveCopyAs(from: missing, to: folder.appending(path: "failed.mp4"))
-        guard case .failure? = failed else {
-            #expect(Bool(false), "A failed copy should return an error")
+        guard case .failed? = failed else {
+            #expect(Bool(false), "A failed copy should return a failure")
             return
         }
         #expect(reported == [saved, destination])
+    }
+
+    @Test func saveAsResultAfterContentRevisionChangeDoesNotMarkTheOldExportCurrent() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "RecordingWindowSaveRevisionTests-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = folder.appending(path: "source.mp4")
+        try Data([1, 2, 3]).write(to: source)
+        let destination = folder.appending(path: "saved-as.mp4")
+        let editor = window(file: source) { _ in nil }
+        defer { editor.window?.close() }
+        var reported: [URL] = []
+        editor.onSaved = { reported.append($0) }
+
+        let (startedEvents, announceStarted) = AsyncStream<Void>.makeStream()
+        let startedReader = AsyncEventReader(startedEvents)
+        let gate = AsyncSaveOutcomeGate()
+        let saveTask = Task {
+            await editor.saveCopyAs(from: source, to: destination) { _, _ in
+                announceStarted.yield(())
+                return await gate.wait()
+            }
+        }
+        guard await waitForEvent(from: startedReader) != nil else {
+            await gate.complete(.cancelled)
+            _ = await saveTask.value
+            #expect(Bool(false), "Save As did not reach the controlled copy")
+            return
+        }
+
+        editor.contentChanged(to: source)
+        await gate.complete(.saved(destination))
+        #expect(await saveTask.value == .saved(destination))
+        #expect(reported.isEmpty)
+        announceStarted.finish()
     }
 }

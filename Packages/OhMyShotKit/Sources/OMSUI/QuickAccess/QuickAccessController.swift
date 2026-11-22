@@ -346,11 +346,17 @@ public final class QuickAccessController {
         pruneSavedCopiesIfNeeded()
         var item = item
         if let copies = savedCopiesByID[item.id] {
-            item.savedURL = copies.savedURL
-            item.ownSavedURL = copies.ownSavedURL
-        } else {
-            rememberSavedCopies(for: item)
+            let cachedSavedIsExternal = copies.savedURL.map { savedURL in
+                copies.ownSavedURL.map { !Self.sameFileURL(savedURL, $0) } ?? true
+            } ?? false
+            if cachedSavedIsExternal || item.savedURL == nil { item.savedURL = copies.savedURL }
+            item.ownSavedURL = item.ownSavedURL ?? copies.ownSavedURL
+            if cachedSavedIsExternal, let savedURL = copies.savedURL, let ownURL = item.ownSavedURL,
+               Self.sameFileURL(savedURL, ownURL) {
+                item.ownSavedURL = nil
+            }
         }
+        rememberSavedCopies(for: item)
         items.removeAll { $0.id == item.id }
         recentlyClosed.removeAll { $0.item.id == item.id }
         items.append(item)

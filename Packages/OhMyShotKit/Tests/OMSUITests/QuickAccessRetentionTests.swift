@@ -404,6 +404,44 @@ struct QuickAccessRetentionTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func externalSaveBeforeCardInsertionPreservesOwnedExport(replacesSameFile: Bool) async throws {
+        var trashedOwnURL: URL?
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { _ in }
+            actions.moveToTrash = { trashedOwnURL = $0.ownSavedURL }
+        }) { cards, _, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent()
+            let owned = folder.appending(path: "automatic-export.mp4")
+            let external: URL
+            if replacesSameFile {
+                let alias = folder.appending(path: "folder-alias")
+                try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: folder)
+                external = alias.appending(path: owned.lastPathComponent)
+            } else {
+                external = folder.appending(path: "studio-export.mp4")
+            }
+            try Data([2]).write(to: owned)
+            if !replacesSameFile { try Data([3]).write(to: external) }
+
+            cards.markSaved(capture.id, at: external)
+            var automatic = capture
+            automatic.savedURL = owned
+            automatic.ownSavedURL = owned
+            cards.add(automatic)
+
+            let card = try #require(cards.item(capture.id))
+            #expect(card.savedURL == external)
+            #expect(card.ownSavedURL == (replacesSameFile ? nil : owned))
+            cards.perform(.moveToTrash, on: card, keyed: false)
+            cards.finishTrashingNow()
+            #expect(trashedOwnURL == (replacesSameFile ? nil : owned))
+            #expect(FileManager.default.fileExists(atPath: external.path))
+        }
+    }
+
     @Test func initialCardExportSurvivesRecentlyClosedEviction() async throws {
         try await fixtureWithHistory(configure: { $0.closed = { _ in } }) { cards, history, make in
             defer { cards.dismissAll() }
