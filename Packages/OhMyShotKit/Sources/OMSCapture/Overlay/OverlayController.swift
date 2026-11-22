@@ -435,7 +435,7 @@ public final class OverlayController {
                 showPanels(probe: visible, acceptingInput: false)
             }
         } else if capturesTransients {
-            showPanels(probe: visible, acceptingInput: false)
+            showPanels(probe: visible, acceptingInput: false, suppressingInputUntilComparison: true)
             Task { [weak self] in
                 await self?.captureTransientFrames(
                     transientWindows, displays: ordered, pointerDisplay: pointerDisplay,
@@ -471,15 +471,18 @@ public final class OverlayController {
 
 
 
-    /// Puts the session's panels on screen. Until the overlay takes input they let the pointer through
-    /// to what is under them, which keeps its hover state and its menus.
-    private func showPanels(probe: LatencyProbe, acceptingInput: Bool) {
+    /// Puts the session's panels on screen, suppressing input until transient comparison when requested.
+    private func showPanels(
+        probe: LatencyProbe, acceptingInput: Bool, suppressingInputUntilComparison: Bool = false
+    ) {
         // The panels are reused: the reset layers are committed before any panel is ordered in, so none
         // shows a frame of its previous session.
         CATransaction.flush()
         for entry in entries.values {
-            entry.panel.suppressesInputUntilTransientComparison = false
-            entry.panel.ignoresMouseEvents = !acceptingInput
+            entry.panel.configureInput(
+                acceptingInput: acceptingInput,
+                suppressingInputUntilComparison: suppressingInputUntilComparison
+            )
             entry.panel.orderFrontRegardless()
         }
         probe.end()
@@ -496,8 +499,7 @@ public final class OverlayController {
         // pointer is now.
         let pointer = NSEvent.mouseLocation
         for entry in entries.values {
-            entry.panel.suppressesInputUntilTransientComparison = suppressingInput
-            entry.panel.ignoresMouseEvents = false
+            entry.panel.configureInput(acceptingInput: true, suppressingInputUntilComparison: suppressingInput)
             entry.view.movePointer(to: pointer)
         }
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
@@ -777,6 +779,25 @@ public final class OverlayController {
         mode == .area && purpose == .screenshot && !holdsStill && !allInOne && windowCount > 0
     }
 
+    static func shouldObserveTransientDisappearance(
+        _ candidates: [TransientWindow], onScreenOwners: [OnScreenWindowOwner]
+    ) -> Bool {
+        candidates.contains { candidate in
+            !candidate.keepsWhenPresent && onScreenOwners.contains {
+                $0.id == candidate.id && $0.ownerPID == candidate.ownerPID
+            }
+        }
+    }
+
+    #if DEBUG
+    static func captureFrame(
+        injected: CapturedFrame?, using capture: () async throws -> CapturedFrame
+    ) async throws -> CapturedFrame {
+        if let injected { return injected }
+        return try await capture()
+    }
+    #endif
+
     static func scopedOwnWindowID(mode: Mode, purpose: Purpose, requested: CGWindowID?) -> CGWindowID? {
         mode == .area && purpose == .screenshot ? requested : nil
     }
@@ -811,12 +832,23 @@ public final class OverlayController {
             let regions = candidates.filter { $0.frame.intersects(display.frame) }.map(\.frame)
             guard !regions.isEmpty else { continue }
             do {
-                let frame = try await capturer.captureDisplay(
+                let frame: CapturedFrame
+                #if DEBUG
+                frame = try await Self.captureFrame(injected: injectedFrames?[display.id]) {
+                    try await capturer.captureDisplay(
+                        display, dynamicRange: ScreenCapturer.dynamicRange(wantsHDR: captureTransientWantsHDR, on: display),
+                        includingOwnWindowID: ownWindowID
+                    )
+                }
+                #else
+                frame = try await capturer.captureDisplay(
                     display, dynamicRange: ScreenCapturer.dynamicRange(wantsHDR: captureTransientWantsHDR, on: display),
                     includingOwnWindowID: ownWindowID
                 )
+                #endif
                 guard isActive, session == self.session else { return }
                 capturedFrames.append(frame)
+                firstFrameArrived = true
             } catch {
                 guard isActive, session == self.session else { return }
                 Log.capture.error("Transient frame for display \(display.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
@@ -826,7 +858,12 @@ public final class OverlayController {
         takeInput(pointerDisplay: pointerDisplay, suppressingInput: true)
         await nextAppKitEventLoopTurn()
         guard isActive, session == self.session else { return }
-        let visibleOwners = WindowCatalog.onScreenWindowOwners()
+        var visibleOwners = WindowCatalog.onScreenWindowOwners()
+        if Self.shouldObserveTransientDisappearance(candidates, onScreenOwners: visibleOwners) {
+            try? await Task.sleep(for: .milliseconds(100))
+            guard isActive, session == self.session else { return }
+            visibleOwners = WindowCatalog.onScreenWindowOwners()
+        }
         let retainedWindows = WindowCatalog.transientWindowsToRestore(candidates, onScreenOwners: visibleOwners)
         let snapshots = capturedFrames.compactMap { frame -> TransientCaptureSnapshot? in
             let regions = retainedWindows.filter { $0.frame.intersects(frame.frame) }.map(\.frame)
@@ -836,7 +873,9 @@ public final class OverlayController {
         guard isActive, session == self.session else { return }
         transientCaptureSnapshots = snapshots
         for entry in entries.values { entry.view.showTransientContent(from: snapshots) }
-        for entry in entries.values { entry.panel.suppressesInputUntilTransientComparison = false }
+        for entry in entries.values {
+            entry.panel.configureInput(acceptingInput: true, suppressingInputUntilComparison: false)
+        }
         Task { [weak self] in
             await self?.loadFrames(for: displays, session: session, probe: probe) {}
         }
@@ -861,10 +900,8 @@ public final class OverlayController {
                 let frame: CapturedFrame
                 let capturing = index == 0 ? LatencyProbe("overlay.capture") : nil
                 #if DEBUG
-                if let injected = injectedFrames?[display.id] {
-                    frame = injected
-                } else {
-                    frame = try await capturer.captureDisplay(display, showsCursor: showsCursor, includingOwnWindowID: includingOwnWindowID)
+                frame = try await Self.captureFrame(injected: injectedFrames?[display.id]) {
+                    try await capturer.captureDisplay(display, showsCursor: showsCursor, includingOwnWindowID: includingOwnWindowID)
                 }
                 #else
                 frame = try await capturer.captureDisplay(display, showsCursor: showsCursor, includingOwnWindowID: includingOwnWindowID)
@@ -904,6 +941,10 @@ public final class OverlayController {
         setting && holdsStill && !allInOne && !recaptured && purpose.takesPicture
     }
 
+    static func watchdogShouldDismiss(firstFrameArrived: Bool, windowPickerIsOpen: Bool) -> Bool {
+        !firstFrameArrived && !windowPickerIsOpen
+    }
+
     /// Finds the blocks of text in a display's frozen frame, off the main actor and at low priority, when this
     /// session snaps selections to text. Nothing snaps until the blocks are in; a session that has ended, or
     /// that a new one replaced, drops them.
@@ -934,7 +975,9 @@ public final class OverlayController {
     /// The first frame normally lands within about 50 ms. If it has not after half a second, macOS is
     /// most likely asking the user to confirm Screen Recording, and the overlay would hide that prompt.
     private func watchdog(session: Int) {
-        guard isActive, session == self.session, !firstFrameArrived, windowPicker == nil else { return }
+        guard isActive, session == self.session,
+              Self.watchdogShouldDismiss(firstFrameArrived: firstFrameArrived, windowPickerIsOpen: windowPicker != nil)
+        else { return }
         Log.capture.notice("Overlay dismissed: no frame after 500 ms")
         end(.cancelled)
     }
@@ -1109,7 +1152,7 @@ public final class OverlayController {
         injectedFrames = nil
         #endif
         for entry in entries.values {
-            entry.panel.suppressesInputUntilTransientComparison = false
+            entry.panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: false)
             entry.panel.orderOut(nil)
             entry.view.clear()
         }

@@ -151,6 +151,17 @@ public final class ScreenCapturer {
         requestedID == actualID && ownerProcessID == currentProcessID
     }
 
+    nonisolated static func scopedOwnWindows(
+        _ windows: [SCWindow]?, requestedID: CGWindowID, currentProcessID: pid_t
+    ) -> [SCWindow] {
+        (windows ?? []).filter {
+            isScopedOwnWindow(
+                requestedID: requestedID, actualID: $0.windowID,
+                ownerProcessID: $0.owningApplication?.processID, currentProcessID: currentProcessID
+            )
+        }
+    }
+
     /// Captures several windows on their own and composites them in back-to-front order onto a transparent canvas
     /// covering their bounding box, preserving each window's rounded corners and shadow.
     public func captureWindows(
@@ -365,12 +376,10 @@ public final class ScreenCapturer {
         let excluded = includingOwnWindows ? [] : try await content.ownApplication().map { [$0] } ?? []
         let included = includingOwnWindows ? [] : includedWindowIDs?() ?? []
         let explicit: [SCWindow] = if !includingOwnWindows, let includingOwnWindowID {
-            try await content.windows(withIDs: [includingOwnWindowID]).filter {
-                Self.isScopedOwnWindow(
-                    requestedID: includingOwnWindowID, actualID: $0.windowID,
-                    ownerProcessID: $0.owningApplication?.processID, currentProcessID: getpid()
-                )
-            }
+            Self.scopedOwnWindows(
+                try? await content.windows(withIDs: [includingOwnWindowID]),
+                requestedID: includingOwnWindowID, currentProcessID: getpid()
+            )
         } else {
             []
         }

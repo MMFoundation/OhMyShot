@@ -28,6 +28,10 @@ struct ScreenCapturerTests {
         #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: nil, actualID: 17, ownerProcessID: 42, currentProcessID: 42))
     }
 
+    @Test func failedExplicitLauncherLookupFallsBackToNoOwnWindowException() {
+        #expect(ScreenCapturer.scopedOwnWindows(nil, requestedID: 17, currentProcessID: 42).isEmpty)
+    }
+
     @Test func regionOnADisplayLeftOfAndAboveTheOrigin() {
         let builtIn = Self.display(CGRect(x: -2056, y: 111, width: 2056, height: 1329))
         let rect = CGRect(x: -2000, y: 200, width: 300, height: 100)

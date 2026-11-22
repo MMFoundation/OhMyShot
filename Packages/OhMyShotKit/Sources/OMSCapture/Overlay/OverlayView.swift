@@ -309,6 +309,7 @@ final class OverlayView: NSView {
 
     func showTransientContent(from snapshots: [TransientCaptureSnapshot]) {
         clearTransientContent()
+        transientContent.isHidden = mode != .area
         for snapshot in snapshots {
             for region in snapshot.regions {
                 guard let patch = snapshot.frame.cropped(to: region.intersection(display.frame)) else { continue }
@@ -331,6 +332,7 @@ final class OverlayView: NSView {
               let selectionIndex = layers.firstIndex(where: { $0 === outline }) else { return false }
         return transientIndex < dimmingIndex && transientIndex < selectionIndex
     }
+    var debugTransientContentIsHidden: Bool { transientContent.isHidden }
 
     /// Turns this display's overlay into Measure where it stands (All-In-One's M): the frame it holds stays, and holds
     /// still even if the screen showed live, since the ruler reads that frame; the bar goes, as Measure has none, and the
@@ -349,7 +351,7 @@ final class OverlayView: NSView {
 
     /// Switches between dragging a region and clicking a window, keeping the pointer where it is.
     func switchMode(to mode: Mode, windows: [WindowTarget]) {
-        if mode != .area { clearTransientContent() }
+        transientContent.isHidden = mode != .area
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil

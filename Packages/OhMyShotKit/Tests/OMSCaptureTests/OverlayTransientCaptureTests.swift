@@ -27,6 +27,52 @@ struct OverlayTransientCaptureTests {
         ))
     }
 
+    @Test func frontmostPanelStillVisibleAfterFirstTurnGetsABoundedSecondCheck() {
+        let panel = TransientWindow(
+            id: 50, ownerPID: 7, frame: CGRect(x: 10, y: 20, width: 30, height: 40), keepsWhenPresent: false
+        )
+        let visible = [OnScreenWindowOwner(id: 50, ownerPID: 7)]
+        #expect(OverlayController.shouldObserveTransientDisappearance([panel], onScreenOwners: visible))
+        #expect(!OverlayController.shouldObserveTransientDisappearance([panel], onScreenOwners: []))
+        #expect(WindowCatalog.transientWindowsToRestore([panel], onScreenOwners: []).map(\.id) == [50])
+    }
+
+    @Test func watchdogDoesNotDismissAfterTheFirstTransientFrameArrives() {
+        #expect(OverlayController.watchdogShouldDismiss(firstFrameArrived: false, windowPickerIsOpen: false))
+        #expect(!OverlayController.watchdogShouldDismiss(firstFrameArrived: true, windowPickerIsOpen: false))
+        #expect(!OverlayController.watchdogShouldDismiss(firstFrameArrived: false, windowPickerIsOpen: true))
+    }
+
+    #if DEBUG
+    @Test func injectedTransientFrameSkipsScreenCaptureAndCaptureErrorsStillPropagate() async throws {
+        let display = CGRect(x: 0, y: 0, width: 8, height: 8)
+        let context = try #require(CGContext(
+            data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ))
+        let injected = CapturedFrame(image: try #require(context.makeImage()), hdrImage: nil, displayID: 9, frame: display)
+        var captureCalled = false
+        let selected = try await OverlayController.captureFrame(injected: injected) {
+            captureCalled = true
+            return injected
+        }
+        #expect(!captureCalled)
+        #expect(selected.displayID == injected.displayID)
+
+        enum ExpectedFailure: Error { case capture }
+        do {
+            _ = try await OverlayController.captureFrame(injected: nil) {
+                captureCalled = true
+                throw ExpectedFailure.capture
+            }
+            #expect(Bool(false))
+        } catch is ExpectedFailure {
+            #expect(captureCalled)
+        }
+    }
+    #endif
+
     @Test func ownWindowExceptionIsLimitedToAreaScreenshots() {
         let requested: CGWindowID = 42
         #expect(OverlayController.scopedOwnWindowID(mode: .area, purpose: .screenshot, requested: requested) == requested)
@@ -42,9 +88,10 @@ struct OverlayTransientCaptureTests {
         #expect(OverlayPanel.dispatches(.leftMouseDown, keyCode: 0, whileComparisonPending: false))
     }
 
-    @Test func pendingTransientComparisonSafelyConsumesSyntheticMouseEvent() throws {
+    @Test func pendingTransientComparisonInterceptsSyntheticMouseAndResetsForReuse() throws {
         let panel = OverlayPanel(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
-        panel.suppressesInputUntilTransientComparison = true
+        panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: true)
+        #expect(!panel.ignoresMouseEvents)
         let mouseEvent = try #require(NSEvent.mouseEvent(
             with: .leftMouseDown, location: CGPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
             windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
@@ -53,6 +100,9 @@ struct OverlayTransientCaptureTests {
         panel.sendEvent(mouseEvent)
 
         #expect(panel.suppressesInputUntilTransientComparison)
+        panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: false)
+        #expect(!panel.suppressesInputUntilTransientComparison)
+        #expect(panel.ignoresMouseEvents)
     }
 
     @Test func liveTransientPreviewIsBelowDimmingAndSelectionAndClearedOnResetAndCancel() throws {
@@ -79,8 +129,16 @@ struct OverlayTransientCaptureTests {
         #expect(view.debugTransientPatchCount == 0)
         view.showTransientContent(from: [snapshot])
         #expect(view.debugTransientPatchCount == 1)
+        #expect(!view.debugTransientContentIsHidden)
         #expect(view.debugTransientPatchFrames == [CGRect(x: 20, y: 20, width: 30, height: 40)])
         #expect(view.debugTransientContentIsBelowDimmingAndSelection)
+
+        view.switchMode(to: .window, windows: [])
+        #expect(view.debugTransientPatchCount == 1)
+        #expect(view.debugTransientContentIsHidden)
+        view.switchMode(to: .area, windows: [])
+        #expect(view.debugTransientPatchCount == 1)
+        #expect(!view.debugTransientContentIsHidden)
 
         view.reset(pointer: .zero, mode: .area, windows: [], showsToolbar: false)
         #expect(view.debugTransientPatchCount == 0)

@@ -15,6 +15,11 @@ final class OverlayPanel: NSPanel {
 
     var suppressesInputUntilTransientComparison = false
 
+    func configureInput(acceptingInput: Bool, suppressingInputUntilComparison: Bool) {
+        suppressesInputUntilTransientComparison = suppressingInputUntilComparison
+        ignoresMouseEvents = !acceptingInput && !suppressingInputUntilComparison
+    }
+
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false

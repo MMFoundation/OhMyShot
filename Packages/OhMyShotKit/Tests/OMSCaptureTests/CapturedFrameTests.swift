@@ -153,6 +153,97 @@ struct CapturedFrameTests {
         #expect(hdrLive.restoringTransientContent(from: [snapshot]) == nil)
     }
 
+    @Test func fractionalMixedScaleEmptyCropDoesNotDiscardOtherDisplayRegions() throws {
+        let area = CGRect(x: -0.5, y: 0, width: 10.5, height: 10)
+        let live = solid(1, 0, 0, frame: area, scale: 2, id: 1)
+        let left = solid(0, 0, 1, frame: CGRect(x: -100, y: 0, width: 100, height: 10), scale: 1, id: 2)
+        let right = solid(0, 1, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 10), scale: 2, id: 3)
+        let snapshots = [
+            TransientCaptureSnapshot(frame: left, regions: [left.frame]),
+            TransientCaptureSnapshot(frame: right, regions: [right.frame]),
+        ]
+
+        let restored = try #require(live.restoringTransientContent(from: snapshots))
+        #expect(pixel(restored.image, x: 0, y: 10) == [0, 0, 255, 255])
+        #expect(pixel(restored.image, x: 1, y: 10) == [0, 255, 0, 255])
+    }
+
+    @Test func fractionalClipDoesNotRescalePatternedTransientPixels() throws {
+        let targetFrame = CGRect(x: -110, y: 0, width: 100.5, height: 10)
+        let live = solid(1, 0, 0, frame: targetFrame, scale: 2, id: 1)
+        let sourceFrame = CGRect(x: -100, y: 0, width: 100, height: 10)
+        let sourceContext = CGContext(
+            data: nil, width: 100, height: 10, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        )!
+        for x in 0..<100 {
+            sourceContext.setFillColor(x.isMultiple(of: 2) ? CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1) : CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+            sourceContext.fill(CGRect(x: x, y: 0, width: 1, height: 10))
+        }
+        let sourceImage = sourceContext.makeImage()!
+        let croppedSource = try #require(sourceImage.cropping(to: CGRect(x: 0, y: 0, width: 91, height: 10)))
+        let source = CapturedFrame(image: sourceImage, hdrImage: nil, displayID: 2, frame: sourceFrame)
+        let restored = try #require(live.restoringTransientContent(
+            from: [TransientCaptureSnapshot(frame: source, regions: [sourceFrame])]
+        ))
+
+        func composite(destinationWidth: CGFloat) -> CGImage {
+            let context = CGContext(
+                data: nil, width: live.image.width, height: live.image.height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            )!
+            let bitmap = CGRect(x: 0, y: 0, width: live.image.width, height: live.image.height)
+            context.draw(live.image, in: bitmap)
+            context.saveGState()
+            context.clip(to: CGRect(x: 20, y: 0, width: 181, height: 20))
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .high
+            context.draw(croppedSource, in: CGRect(x: 20, y: 0, width: destinationWidth, height: 20))
+            context.restoreGState()
+            return context.makeImage()!
+        }
+
+        let expected = composite(destinationWidth: 182)
+        let rescaled = composite(destinationWidth: 181)
+        var distinguishesRescaling = false
+        for x in 20..<201 {
+            let expectedPixel = pixel(expected, x: x, y: 10)
+            #expect(pixel(restored.image, x: x, y: 10) == expectedPixel)
+            distinguishesRescaling = distinguishesRescaling || expectedPixel != pixel(rescaled, x: x, y: 10)
+        }
+        #expect(distinguishesRescaling)
+    }
+
+    @Test func transientRegionsComposeIntoSyntheticHDRBuffers() throws {
+        let display = CGRect(x: 0, y: 0, width: 8, height: 8)
+        let sdr = solid(0, 0, 0, frame: display, scale: 1, id: 1)
+        let space = CGColorSpace(name: CGColorSpace.extendedSRGB)!
+        let info = CGBitmapInfo.byteOrder16Little
+            .union(.floatComponents)
+            .union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
+
+        func hdrImage(_ components: [CGFloat]) throws -> CGImage {
+            let context = try #require(CGContext(
+                data: nil, width: 8, height: 8, bitsPerComponent: 16, bytesPerRow: 0, space: space,
+                bitmapInfo: info.rawValue
+            ))
+            context.setFillColor(try #require(CGColor(colorSpace: space, components: components)))
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+            return try #require(context.makeImage())
+        }
+
+        let live = CapturedFrame(image: sdr.image, hdrImage: try hdrImage([0.25, 0.25, 0.25, 1]), displayID: 1, frame: display)
+        let transient = CapturedFrame(image: sdr.image, hdrImage: try hdrImage([0, 1.5, 0, 1]), displayID: 1, frame: display)
+        let restored = try #require(live.restoringTransientContent(
+            from: [TransientCaptureSnapshot(frame: transient, regions: [CGRect(x: 2, y: 2, width: 3, height: 3)])]
+        ))
+
+        #expect(restored.hdrImage?.bitsPerComponent == 16)
+        #expect(restored.hdrImage?.colorSpace?.name == CGColorSpace.extendedSRGB)
+    }
+
     @Test func croppedMixedScaleDisplaySnapshotsRestoreAcrossANegativeOriginArea() throws {
         let area = CGRect(x: -50, y: 20, width: 100, height: 50)
         let live = solid(1, 0, 0, frame: area, scale: 2, id: 1)

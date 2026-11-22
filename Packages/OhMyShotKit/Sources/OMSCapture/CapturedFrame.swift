@@ -143,14 +143,14 @@ public struct CapturedFrame: Sendable {
             for region in snapshot.regions {
                 let area = frame.intersection(snapshot.frame.frame).intersection(region)
                 guard !area.isNull, area.width > 0, area.height > 0 else { continue }
-                let minX = ((area.minX - snapshot.frame.frame.minX) * sourceScale).rounded()
-                let maxX = ((area.maxX - snapshot.frame.frame.minX) * sourceScale).rounded()
-                let minY = ((snapshot.frame.frame.maxY - area.maxY) * sourceScale).rounded()
-                let maxY = ((snapshot.frame.frame.maxY - area.minY) * sourceScale).rounded()
+                let minX = ((area.minX - snapshot.frame.frame.minX) * sourceScale).rounded(.down)
+                let maxX = ((area.maxX - snapshot.frame.frame.minX) * sourceScale).rounded(.up)
+                let minY = ((snapshot.frame.frame.maxY - area.maxY) * sourceScale).rounded(.down)
+                let maxY = ((snapshot.frame.frame.maxY - area.minY) * sourceScale).rounded(.up)
                 let sourceRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
                     .intersection(CGRect(x: 0, y: 0, width: sourceImage.width, height: sourceImage.height))
-                guard !sourceRect.isNull, sourceRect.width > 0, sourceRect.height > 0,
-                      let source = sourceImage.cropping(to: sourceRect) else { return nil }
+                guard !sourceRect.isNull, sourceRect.width > 0, sourceRect.height > 0 else { continue }
+                guard let source = sourceImage.cropping(to: sourceRect) else { return nil }
                 let sourceFrame = CGRect(
                     x: snapshot.frame.frame.minX + sourceRect.minX / sourceScale,
                     y: snapshot.frame.frame.maxY - sourceRect.maxY / sourceScale,
@@ -162,12 +162,21 @@ public struct CapturedFrame: Sendable {
                     y: (sourceFrame.minY - frame.minY) * scale,
                     width: sourceFrame.width * scale,
                     height: sourceFrame.height * scale
+                )
+                let clip = CGRect(
+                    x: (area.minX - frame.minX) * scale,
+                    y: (area.minY - frame.minY) * scale,
+                    width: area.width * scale,
+                    height: area.height * scale
                 ).intersection(bitmap)
-                guard !destination.isNull, destination.width > 0, destination.height > 0 else { continue }
+                guard !clip.isNull, clip.width > 0, clip.height > 0 else { continue }
+                context.saveGState()
+                context.clip(to: bitmap)
+                context.clip(to: clip)
                 context.interpolationQuality = abs(sourceScale - scale) < 0.001 ? .none : .high
                 context.setBlendMode(.copy)
                 context.draw(source, in: destination)
-                context.setBlendMode(.normal)
+                context.restoreGState()
                 changed = true
             }
         }
