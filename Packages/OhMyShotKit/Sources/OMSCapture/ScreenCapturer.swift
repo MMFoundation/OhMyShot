@@ -55,9 +55,11 @@ public final class ScreenCapturer {
         _ display: DisplayInfo,
         dynamicRange: DynamicRange = .sdr,
         showsCursor: Bool = false,
-        includingOwnWindows: Bool = false
+        includingOwnWindows: Bool = false,
+        including windows: Set<CGWindowID> = []
     ) async throws -> CapturedFrame {
-        try await capture(display: display, region: nil, dynamicRange: dynamicRange, showsCursor: showsCursor, includingOwnWindows: includingOwnWindows)
+        try await capture(display: display, region: nil, dynamicRange: dynamicRange, showsCursor: showsCursor,
+                          includingOwnWindows: includingOwnWindows, including: windows)
     }
 
     /// Captures part of one display. `rect` is in AppKit's global space and must lie on `display`.
@@ -330,11 +332,12 @@ public final class ScreenCapturer {
         region: CGRect?,
         dynamicRange: DynamicRange,
         showsCursor: Bool,
-        includingOwnWindows: Bool
+        includingOwnWindows: Bool,
+        including windows: Set<CGWindowID> = []
     ) async throws -> CapturedFrame {
         let scDisplay = try await content.display(id: display.id)
         let excluded = includingOwnWindows ? [] : try await content.ownApplication().map { [$0] } ?? []
-        let included = includingOwnWindows ? [] : includedWindowIDs?() ?? []
+        let included = includingOwnWindows ? [] : (includedWindowIDs?() ?? []).union(windows)
         let excepted = included.isEmpty ? [] : try await content.windows(withIDs: included)
         let filter = SCContentFilter(display: scDisplay, excludingApplications: excluded, exceptingWindows: excepted)
 

@@ -13,8 +13,15 @@ import UniformTypeIdentifiers
 
 /// What the global shortcuts and the URL API's commands run.
 extension CompositionRoot {
-    func handle(_ shortcut: CaptureShortcut) {
-        statusItem?.dismissLauncher()
+    func handle(_ shortcut: CaptureShortcut, fromHotkey: Bool = false) {
+        let capturesOpenPanels: Bool
+        switch shortcut {
+        case .captureArea, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload, .pinArea:
+            capturesOpenPanels = fromHotkey
+        default:
+            capturesOpenPanels = false
+        }
+        if !capturesOpenPanels { statusItem?.dismissLauncher() }
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
         if shortcut == .captureArea, beginOnboardingCaptureIfReady() { return }
@@ -56,26 +63,27 @@ extension CompositionRoot {
             showOnboarding()
             return
         }
+        let panels = capturesOpenPanels ? TransientCapturePanels.visible(launcher: statusItem?.launcherWindowID) : nil
         switch shortcut {
         case .captureArea:
-            captures.captureArea()
+            captures.captureArea(panels: panels)
         case .allInOne:
             captures.allInOne()
         case .annotateArea:
             captures.annotateArea()
         case .pinArea:
-            captures.pinArea()
+            captures.pinArea(panels: panels)
         case .captureAreaAndCopy:
-            captures.captureArea(followUp: CaptureFollowUp(action: .copy))
+            captures.captureArea(panels: panels, followUp: CaptureFollowUp(action: .copy))
         case .captureAreaAndSave:
-            captures.captureArea(followUp: CaptureFollowUp(action: .save))
+            captures.captureArea(panels: panels, followUp: CaptureFollowUp(action: .save))
         case .captureAreaAndAnnotate:
-            captures.captureArea(followUp: CaptureFollowUp(action: .annotate))
+            captures.captureArea(panels: panels, followUp: CaptureFollowUp(action: .annotate))
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureAreaAndUpload:
             guard let followUp = followUp(for: .upload, asksForName: true) else { return }
-            captures.captureArea(followUp: followUp)
+            captures.captureArea(panels: panels, followUp: followUp)
         case .captureFullscreenAndUpload:
             guard let followUp = followUp(for: .upload, asksForName: true) else { return }
             captures.captureFullscreen(followUp: followUp)

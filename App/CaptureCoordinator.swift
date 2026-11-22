@@ -83,8 +83,9 @@ final class CaptureCoordinator {
     ///   - area: chosen already, in global points (the URL API's `all-in-one` with an area): it shows chosen, and
     ///     Return takes it.
     ///   - followUp: the URL API's action, and whoever waits for the capture.
-    func captureArea(copiesToClipboard: Bool = true, freezes: Bool? = nil, choosing area: CGRect? = nil, followUp: CaptureFollowUp = .none) {
-        begin(mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes, area: area, followUp: followUp)
+    func captureArea(copiesToClipboard: Bool = true, freezes: Bool? = nil, choosing area: CGRect? = nil,
+                     panels: TransientCapturePanels? = nil, followUp: CaptureFollowUp = .none) {
+        begin(mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes, area: area, panels: panels, followUp: followUp)
     }
 
     /// The URL API's `capture-area` with an area: captured at once, as it is on screen, without the overlay. It is
@@ -308,8 +309,10 @@ final class CaptureCoordinator {
     /// at its own size. It is kept in the history like any capture, without a Quick Access card or the
     /// clipboard: the pin is where it went.
     /// - Parameter freezes: whether the screen holds still while choosing; nil follows the setting.
-    func pinArea(freezes: Bool? = nil, followUp: CaptureFollowUp = .none) {
-        begin(mode: .area, freezes: freezes, followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, kept: followUp.kept, done: followUp.done))
+    func pinArea(freezes: Bool? = nil, panels: TransientCapturePanels? = nil, followUp: CaptureFollowUp = .none) {
+        begin(mode: .area, freezes: freezes, panels: panels, followUp: CaptureFollowUp(
+            action: .pin, asksForName: followUp.asksForName, kept: followUp.kept, done: followUp.done
+        ))
     }
 
     // MARK: Self-Timer
@@ -486,7 +489,8 @@ final class CaptureCoordinator {
     // MARK: Private
 
     private func begin(
-        mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil, area: CGRect? = nil, followUp: CaptureFollowUp = .none
+        mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil, area: CGRect? = nil,
+        panels: TransientCapturePanels? = nil, followUp: CaptureFollowUp = .none
     ) {
         guard !overlay.isActive else { return followUp.finish(nil) }
         // A new capture replaces a Self-Timer still counting down, rather than leaving it under the overlay.
@@ -495,7 +499,7 @@ final class CaptureCoordinator {
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         configureCaptureOverlay()
-        overlay.begin(mode: mode, choosing: area) { [weak self] outcome in
+        overlay.begin(mode: mode, options: .init(panels: panels), choosing: area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             if let area = outcome.takenArea { lastArea = area }
             switch outcome {

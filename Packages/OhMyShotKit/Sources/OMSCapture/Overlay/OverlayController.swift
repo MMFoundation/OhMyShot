@@ -125,10 +125,15 @@ public final class OverlayController {
         /// frozen as is only what choosing is done on, and carries no pointer.
         public var recapturesLive: Bool
 
-        public init(allInOne: AllInOneOptions? = nil, startsScrollingAtOnce: Bool = false, recapturesLive: Bool = false) {
+        /// An open menu or search panel at the area hotkey. Keep its pixels before any display takes focus.
+        var panels: TransientCapturePanels?
+
+        public init(allInOne: AllInOneOptions? = nil, startsScrollingAtOnce: Bool = false, recapturesLive: Bool = false,
+                    panels: TransientCapturePanels? = nil) {
             self.allInOne = allInOne
             self.startsScrollingAtOnce = startsScrollingAtOnce
             self.recapturesLive = recapturesLive
+            self.panels = panels
         }
     }
 
@@ -218,7 +223,7 @@ public final class OverlayController {
     /// Whether this session shows the screen as it was when it began; in-place annotation, picking a
     /// color, and measuring always do: they read the frozen frame's pixels.
     private var holdsStill: Bool {
-        purpose.holdsStill(freezesScreen: freezesScreen)
+        options.panels != nil || purpose.holdsStill(freezesScreen: freezesScreen)
     }
 
     private struct Entry {
@@ -232,7 +237,7 @@ public final class OverlayController {
     private var completion: ((Outcome) -> Void)?
     private var previousApp: NSRunningApplication?
     private var session = 0
-    private var firstFrameArrived = false
+    private var captureReady = false
     private var frameLeases: [ActiveResources.Lease] = []
     private var windowLease: ActiveResources.Lease?
     private var windows: [WindowTarget] = []
@@ -331,7 +336,7 @@ public final class OverlayController {
         let frozen = LatencyProbe("overlay.frozen")
         isActive = true
         session += 1
-        firstFrameArrived = false
+        captureReady = false
         self.purpose = purpose
         // Said once here, so nothing after asks the purpose again: All-In-One's modes are a screenshot's.
         self.options = options
@@ -407,14 +412,18 @@ public final class OverlayController {
             // The capture request goes out on the next turn, ahead of the panels' first flush; the panels
             // follow on the turn after, letting the pointer through, and the overlay takes the keyboard
             // and the pointer once the pointer's display is captured.
+            let preservesPanels = options.panels != nil
             Task { [weak self] in
                 await self?.loadFrames(for: ordered, session: session, probe: frozen) { [weak self] in
+                    if preservesPanels { self?.showPanels(probe: visible, acceptingInput: true) }
                     self?.takeInput(pointerDisplay: pointerDisplay)
                 }
             }
-            Task { [weak self] in
-                guard let self, isActive, session == self.session else { return }
-                showPanels(probe: visible, acceptingInput: false)
+            if !preservesPanels {
+                Task { [weak self] in
+                    guard let self, isActive, session == self.session else { return }
+                    showPanels(probe: visible, acceptingInput: false)
+                }
             }
         } else {
             showPanels(probe: visible, acceptingInput: true)
@@ -743,9 +752,12 @@ public final class OverlayController {
         }.sorted().joined(separator: "; ")
     }
 
-    /// Captures each display in turn, the pointer's first; `onFirstFrame` runs once that one is shown.
-    private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe, onFirstFrame: () -> Void) async {
+    /// A menu or search panel may be on a different display from the pointer. In that case each display
+    /// needs its frame before any selector is shown or takes focus.
+    private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe, onReady: () -> Void) async {
         let showsCursor = Self.framesShowPointer(showsPointer, purpose: purpose, holdsStill: holdsStill, allInOne: isAllInOne, recaptured: options.recapturesLive)
+        let included = options.panels?.ownWindowIDs ?? []
+        let readyIndex = options.panels == nil ? 0 : displays.count - 1
         for (index, display) in displays.enumerated() {
             do {
                 let frame: CapturedFrame
@@ -754,19 +766,19 @@ public final class OverlayController {
                 if let injected = injectedFrames?[display.id] {
                     frame = injected
                 } else {
-                    frame = try await capturer.captureDisplay(display, showsCursor: showsCursor)
+                    frame = try await capturer.captureDisplay(display, showsCursor: showsCursor, including: included)
                 }
                 #else
-                frame = try await capturer.captureDisplay(display, showsCursor: showsCursor)
+                frame = try await capturer.captureDisplay(display, showsCursor: showsCursor, including: included)
                 #endif
                 capturing?.end()
                 guard isActive, session == self.session, windowPicker == nil else { return }
                 entries[display.id]?.view.show(frame, frozen: holdsStill)
                 frameLeases.append(ActiveResources.shared.acquire(.frameBuffer))
-                if index == 0 {
-                    firstFrameArrived = true
+                if index == readyIndex {
+                    captureReady = true
                     probe.end()
-                    onFirstFrame()
+                    onReady()
                 }
                 // After the frame is shown and the overlay has the input, and not waited for: the next display's
                 // frame does not wait for this one's text.
@@ -777,7 +789,7 @@ public final class OverlayController {
                 }
             } catch {
                 Log.capture.error("Overlay frame for display \(display.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                if index == 0, isActive, session == self.session, windowPicker == nil { end(.cancelled) }
+                if index <= readyIndex, isActive, session == self.session, windowPicker == nil { end(.cancelled) }
                 return
             }
         }
@@ -821,8 +833,8 @@ public final class OverlayController {
     /// The first frame normally lands within about 50 ms. If it has not after half a second, macOS is
     /// most likely asking the user to confirm Screen Recording, and the overlay would hide that prompt.
     private func watchdog(session: Int) {
-        guard isActive, session == self.session, !firstFrameArrived, windowPicker == nil else { return }
-        Log.capture.notice("Overlay dismissed: no frame after 500 ms")
+        guard isActive, session == self.session, !captureReady, windowPicker == nil else { return }
+        Log.capture.notice("Overlay dismissed: screen capture not ready after 500 ms")
         end(.cancelled)
     }
 

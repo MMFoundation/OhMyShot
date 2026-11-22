@@ -237,7 +237,7 @@ final class CompositionRoot {
 
         hotkeys.installDefaultShortcutsIfNeeded()
         hotkeys.activate { [weak self] shortcut in
-            self?.handle(shortcut)
+            self?.handle(shortcut, fromHotkey: true)
         }
 
         let settings = settings

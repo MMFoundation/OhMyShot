@@ -363,7 +363,13 @@ public final class StatusItemController {
         applyUpdateBadge(to: item)
     }
 
-    /// Close synchronously before a capture freezes the screen, including captures started by a hotkey.
+    /// The open launcher's window for a screenshot started from the keyboard.
+    public var launcherWindowID: CGWindowID? {
+        guard launcher.isShown, let window = launcher.contentViewController?.view.window, window.windowNumber > 0 else { return nil }
+        return CGWindowID(window.windowNumber)
+    }
+
+    /// Close synchronously when running a command chosen in the launcher.
     public func dismissLauncher() {
         launcher.close()
     }
