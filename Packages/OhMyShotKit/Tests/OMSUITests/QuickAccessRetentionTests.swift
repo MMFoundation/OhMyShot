@@ -500,6 +500,83 @@ struct QuickAccessRetentionTests {
         try await staleExportScenario(tracking: tracking, rewritesCurrentDestination: false)
     }
 
+    @Test func staleSamePathOverwriteSaveAndCloseExportsLatestHistoryBytes() async throws {
+        let latestContents = Data([5, 6, 7])
+        let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        let closedReader = AsyncEventReader(closedEvents)
+        var saves = 0
+        var saveSource: URL?
+        var sourceContents: Data?
+        var finalExport: URL?
+        var closedItem: QuickAccessItem?
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { item in
+                closedItem = item
+                announceClosed.yield(item.id)
+            }
+            actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
+            actions.save = { item, _ in
+                saves += 1
+                saveSource = item.fileURL
+                sourceContents = try? Data(contentsOf: item.fileURL)
+                let destination = item.fileURL.deletingLastPathComponent().appending(path: "save-and-close-latest.png")
+                finalExport = destination
+                return await AtomicFileCopy.save(item.fileURL, as: destination)
+            }
+        }) { cards, history, make in
+            defer {
+                cards.dismissAll()
+                announceClosed.finish()
+            }
+            let capture = try make()
+            cards.add(capture)
+            let olderContents = try Data(contentsOf: capture.fileURL)
+            let olderSource = capture.fileURL.deletingLastPathComponent().appending(path: "older-export-snapshot.png")
+            try FileManager.default.copyItem(at: capture.fileURL, to: olderSource)
+
+            let original = try #require(history.item(id: capture.id))
+            let latest = try history.replacePicture(of: original, with: latestContents, pixelWidth: 1, pixelHeight: 1)
+            if let update = cards.pictureChanged(latest, savedCopyIsStale: true, thumbnail: { make.thumbnail }) {
+                await update.value
+            }
+            #expect(cards.item(capture.id)?.savedURL == nil)
+
+            let folder = capture.fileURL.deletingLastPathComponent()
+            let currentDestination = folder.appending(path: "current-export.png")
+            let currentExport = await AtomicFileCopy.save(capture.fileURL, as: currentDestination)
+            #expect(currentExport.url == currentDestination)
+            #expect(try Data(contentsOf: currentDestination) == latestContents)
+            cards.markSaved(capture.id, at: currentDestination)
+            #expect(cards.item(capture.id)?.savedURL == currentDestination)
+
+            let alias = folder.appending(path: "export-alias")
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: folder)
+            let staleDestination = alias.appending(path: currentDestination.lastPathComponent)
+            let staleExport = await AtomicFileCopy.save(olderSource, as: staleDestination)
+            #expect(staleExport.url == staleDestination)
+            #expect(try Data(contentsOf: staleDestination) == olderContents)
+            cards.markSaved(capture.id, at: staleDestination, isCurrent: false)
+            #expect(cards.item(capture.id)?.savedURL == nil)
+            #expect(try Data(contentsOf: capture.fileURL) == latestContents)
+
+            cards.closeDueCards(at: .greatestFiniteMagnitude)
+            let closedID = await waitForEvent(from: closedReader)
+            #expect(closedID == capture.id)
+            #expect(cards.item(capture.id) == nil)
+            #expect(saves == 1)
+            #expect(saveSource == capture.fileURL)
+            #expect(sourceContents == latestContents)
+
+            let finalExport = try #require(finalExport)
+            #expect(try Data(contentsOf: finalExport) == latestContents)
+            let closed = try #require(closedItem)
+            #expect(closed.savedURL == finalExport)
+            #expect(closed.ownSavedURL == finalExport)
+            let persisted = try #require(history.item(id: capture.id))
+            #expect(try Data(contentsOf: history.fileURL(for: persisted)) == latestContents)
+        }
+    }
+
     @Test func historyExportWithoutCardSeedsSavedStateOnRestore() async throws {
         var saves = 0
         let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
