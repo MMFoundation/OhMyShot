@@ -22,11 +22,12 @@ struct CapturedFrameTests {
     }
 
     /// The bytes of one pixel, counted from the top-left corner, read in the image's own color space.
-    private func pixel(_ image: CGImage, x: Int, y: Int) -> [UInt8] {
+    private func pixel(_ image: CGImage, x: Int, y: Int, space: CGColorSpace? = nil) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: 4)
         bytes.withUnsafeMutableBytes { buffer in
             let context = CGContext(
-                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: image.colorSpace!,
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: space ?? image.colorSpace!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )!
             context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
@@ -242,6 +243,9 @@ struct CapturedFrameTests {
 
         #expect(restored.hdrImage?.bitsPerComponent == 16)
         #expect(restored.hdrImage?.colorSpace?.name == CGColorSpace.extendedSRGB)
+        let restoredHDR = try #require(restored.hdrImage)
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+        #expect(pixel(restoredHDR, x: 3, y: 3, space: sRGB)[1] > pixel(restoredHDR, x: 0, y: 0, space: sRGB)[1])
     }
 
     @Test func croppedMixedScaleDisplaySnapshotsRestoreAcrossANegativeOriginArea() throws {
