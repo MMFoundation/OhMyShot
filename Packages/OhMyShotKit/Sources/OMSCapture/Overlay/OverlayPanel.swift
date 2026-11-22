@@ -14,10 +14,23 @@ final class OverlayPanel: NSPanel {
     static let annotationLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
 
     var suppressesInputUntilTransientComparison = false
+    private var deferredMouseEvents: [NSEvent] = []
+
+    #if DEBUG
+    var debugDeferredMouseEventCount: Int { deferredMouseEvents.count }
+    #endif
 
     func configureInput(acceptingInput: Bool, suppressingInputUntilComparison: Bool) {
+        let wasSuppressingInput = suppressesInputUntilTransientComparison
         suppressesInputUntilTransientComparison = suppressingInputUntilComparison
         ignoresMouseEvents = !acceptingInput && !suppressingInputUntilComparison
+        if wasSuppressingInput && acceptingInput && !suppressingInputUntilComparison {
+            let events = deferredMouseEvents
+            deferredMouseEvents.removeAll()
+            events.forEach(sendEvent)
+        } else if !suppressingInputUntilComparison {
+            deferredMouseEvents.removeAll()
+        }
     }
 
     init(frame: CGRect) {
@@ -54,9 +67,22 @@ final class OverlayPanel: NSPanel {
             super.sendEvent(event)
             return
         }
-        guard event.type == .keyDown,
-              Self.dispatches(event.type, keyCode: event.keyCode, whileComparisonPending: true) else { return }
+        guard event.type == .keyDown else {
+            if Self.isMouseEvent(event.type) { deferredMouseEvents.append(event) }
+            return
+        }
+        guard Self.dispatches(event.type, keyCode: event.keyCode, whileComparisonPending: true) else { return }
         super.sendEvent(event)
+    }
+
+    static func isMouseEvent(_ type: NSEvent.EventType) -> Bool {
+        switch type {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp,
+             .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel:
+            true
+        default:
+            false
+        }
     }
 
     static func dispatches(

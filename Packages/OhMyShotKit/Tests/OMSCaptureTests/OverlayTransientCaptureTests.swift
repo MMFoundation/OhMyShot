@@ -90,6 +90,10 @@ struct OverlayTransientCaptureTests {
 
     @Test func pendingTransientComparisonInterceptsSyntheticMouseAndResetsForReuse() throws {
         let panel = OverlayPanel(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+        panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: false)
+        #expect(panel.ignoresMouseEvents)
+        #expect(!panel.suppressesInputUntilTransientComparison)
+
         panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: true)
         #expect(!panel.ignoresMouseEvents)
         let mouseEvent = try #require(NSEvent.mouseEvent(
@@ -100,9 +104,18 @@ struct OverlayTransientCaptureTests {
         panel.sendEvent(mouseEvent)
 
         #expect(panel.suppressesInputUntilTransientComparison)
+        #expect(panel.debugDeferredMouseEventCount == 1)
+        panel.configureInput(acceptingInput: true, suppressingInputUntilComparison: false)
+        #expect(!panel.suppressesInputUntilTransientComparison)
+        #expect(panel.debugDeferredMouseEventCount == 0)
+
+        panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: true)
+        panel.sendEvent(mouseEvent)
+        #expect(panel.debugDeferredMouseEventCount == 1)
         panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: false)
         #expect(!panel.suppressesInputUntilTransientComparison)
         #expect(panel.ignoresMouseEvents)
+        #expect(panel.debugDeferredMouseEventCount == 0)
     }
 
     @Test func liveTransientPreviewIsBelowDimmingAndSelectionAndClearedOnResetAndCancel() throws {
