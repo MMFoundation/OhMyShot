@@ -175,8 +175,9 @@ extension CompositionRoot {
                 try history.moveToTrash(entry)
                 uploads.cancel(captureID: item.id)
                 // As in CleanShot, the capture goes as a whole: the copy this card saved goes to the Trash
-                // with it. Both can be put back from the Trash.
-                if let saved = item.savedURL {
+                // with it. Both can be put back from the Trash. A copy saved from the editor or Capture History
+                // stays where it was saved.
+                if let saved = item.ownSavedURL {
                     do {
                         try FileManager.default.trashItem(at: saved, resultingItemURL: nil)
                     } catch let error as CocoaError where error.code == .fileNoSuchFile {
@@ -249,9 +250,9 @@ extension CompositionRoot {
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
                     if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: item.fileURL)) {
-                        // A copy is saved after all: the capture's card no longer says one couldn't be. It is not the
-                        // card's own copy, which the card's Move to Trash takes with the capture.
-                        self.quickAccess.clearFailure(for: entry.id)
+                        // The capture's card shows it saved, and no longer says a copy couldn't be: closing by itself
+                        // saves no other. It is not the card's own copy, which the card's Move to Trash takes.
+                        self.quickAccess.markSaved(entry.id, at: url)
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }

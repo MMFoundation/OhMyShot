@@ -337,6 +337,31 @@ struct QuickAccessCompletionTests {
         #expect(try card(in: controller).failure == nil)
     }
 
+    /// A capture saved from Capture History (or the editor) while its card is up is not saved again when the card closes by
+    /// itself with Save and Close: the card goes with the copy saved there, and none of its own.
+    @Test func saveAndCloseSavesNoSecondCopyOfACaptureSavedElsewhere() async throws {
+        var actions = actions(succeeds: true)
+        var saves = 0
+        actions.save = { _, _ in
+            saves += 1
+            return .saved(URL(filePath: "/tmp/saved.png"))
+        }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
+        var closed: [QuickAccessItem] = []
+        actions.closed = { closed.append($0) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item(), export = URL(filePath: "/tmp/history-export.png")
+        controller.add(capture)
+        controller.markSaved(capture.id, at: export)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(saves == 0)
+        #expect(closed.map(\.id) == [capture.id])
+        #expect(closed.first?.savedURL == export)
+        #expect(closed.first?.ownSavedURL == nil)
+    }
+
     /// Moved to the Trash and brought back, a card whose copy could not be saved still says so and is still held.
     @Test func aCardThatFailedToSaveIsStillHeldAfterUndoingTheTrash() async throws {
         var actions = actions(succeeds: false)

@@ -1076,6 +1076,7 @@ final class RecordingCoordinator {
         var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
         let saved = after.saves ? files.saveRecording(fileAt: url) : nil
         item.savedURL = saved?.url
+        item.ownSavedURL = saved?.url
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
         if let failure = saved?.failure { saveFailed?(failure, entry.id) }

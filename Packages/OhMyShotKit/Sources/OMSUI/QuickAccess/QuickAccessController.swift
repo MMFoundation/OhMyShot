@@ -302,12 +302,14 @@ public final class QuickAccessController {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else {
             if let closed = recentlyClosed.firstIndex(where: { $0.item.id == item.id }) {
                 item.savedURL = keepsSaved ? item.savedURL ?? recentlyClosed[closed].item.savedURL : nil
+                item.ownSavedURL = keepsSaved ? item.ownSavedURL ?? recentlyClosed[closed].item.ownSavedURL : nil
                 recentlyClosed[closed].item = item
             }
             return
         }
         if keepsSaved {
             item.savedURL = item.savedURL ?? items[index].savedURL
+            item.ownSavedURL = item.ownSavedURL ?? items[index].ownSavedURL
         } else {
             item.savedURL = nil
             stack?.markUnsaved(item.id)
@@ -361,7 +363,7 @@ public final class QuickAccessController {
     }
 
     /// Capture `id`'s card no longer has a failure to show: a copy was saved, or made to hand over, after all.
-    public func clearFailure(for id: UUID) {
+    func clearFailure(for id: UUID) {
         guard failures.removeValue(forKey: id) != nil else { return }
         stack?.setFailure(nil, for: id)
         hold(.failure, for: id, if: false)
@@ -373,14 +375,18 @@ public final class QuickAccessController {
         if failures[id]?.step == .converting { clearFailure(for: id) }
     }
 
-    /// Marks a capture saved elsewhere (from the editor) as saved on its card.
-    public func markSaved(_ id: UUID, at url: URL) {
+    /// Marks a capture saved on its card: a copy of it is at `url`, so the card is not saved again when it closes by itself.
+    /// `byCard`: the card saved it itself, and its Move to Trash takes it with the capture. A copy saved elsewhere (from the
+    /// editor or Capture History) is not the card's to take: its Trash leaves it, and takes only a copy of its own, if any.
+    public func markSaved(_ id: UUID, at url: URL, byCard: Bool = false) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].savedURL = url
+            if byCard { items[index].ownSavedURL = url }
             stack?.markSaved(id, at: url)
             clearFailure(for: id)
         } else if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
             recentlyClosed[index].item.savedURL = url
+            if byCard { recentlyClosed[index].item.ownSavedURL = url }
         }
     }
 
@@ -689,7 +695,7 @@ public final class QuickAccessController {
             case .quiet: await actions.save(item, false)
             }
             switch outcome {
-            case .saved(let url): markSaved(item.id, at: url)
+            case .saved(let url): markSaved(item.id, at: url, byCard: true)
             case .failed(let failure): showFailure(failure, for: item.id)
             case .cancelled: break
             }

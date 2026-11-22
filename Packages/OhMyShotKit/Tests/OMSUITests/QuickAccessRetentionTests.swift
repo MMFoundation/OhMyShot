@@ -109,7 +109,7 @@ struct QuickAccessRetentionTests {
         var revealed: URL?, trashedCopy: URL?
         try await fixture(configure: { actions in
             actions.reveal = { revealed = $0.savedURL ?? $0.fileURL }
-            actions.moveToTrash = { trashedCopy = $0.savedURL }
+            actions.moveToTrash = { trashedCopy = $0.ownSavedURL }
         }) { cards, make in
             let old = try make(), newer = try make()
             let folder = old.fileURL.deletingLastPathComponent(), export = folder.appending(path: "edited.png")
@@ -117,7 +117,7 @@ struct QuickAccessRetentionTests {
             cards.insertIntoStack(old)
             cards.markSaved(old.id, at: folder.appending(path: "previous.png"))
             cards.insertIntoStack(newer)
-            cards.markSaved(old.id, at: export)
+            cards.markSaved(old.id, at: export, byCard: true)
             cards.insertIntoStack(try #require(cards.takeRecentlyClosed()))
             let restored = try #require(cards.item(old.id))
             cards.perform(.reveal, on: restored, keyed: false)
@@ -125,6 +125,37 @@ struct QuickAccessRetentionTests {
             cards.finishTrashingNow()
             #expect(revealed == export)
             #expect(trashedCopy == export)
+        }
+    }
+
+    /// A copy saved from Capture History (or the editor) is the person's: the card shows it saved and its Save shows it in
+    /// Finder, but its Move to Trash takes only a copy the card saved itself, if it saved one, never that export.
+    @Test(arguments: [false, true])
+    func trashLeavesACopySavedFromHistory(cardSavedFirst: Bool) async throws {
+        var revealed: URL?, trashed: QuickAccessItem?
+        try await fixture(configure: { actions in
+            actions.save = { item, _ in .saved(item.fileURL.deletingLastPathComponent().appending(path: "card.png")) }
+            actions.reveal = { revealed = $0.savedURL ?? $0.fileURL }
+            actions.moveToTrash = { trashed = $0 }
+            actions.closed = { _ in }
+        }) { cards, make in
+            let capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent(), export = folder.appending(path: "history.png")
+            cards.insertIntoStack(capture)
+            if cardSavedFirst {
+                cards.perform(.save, on: capture, keyed: false)
+                for _ in 0..<20 { await Task.yield() }
+                #expect(cards.item(capture.id) == nil)
+                cards.insertIntoStack(try #require(cards.takeRecentlyClosed()))
+            }
+            cards.markSaved(capture.id, at: export)
+            let card = try #require(cards.item(capture.id))
+            cards.perform(.reveal, on: card, keyed: false)
+            cards.perform(.moveToTrash, on: card, keyed: false)
+            cards.finishTrashingNow()
+            #expect(revealed == export)
+            #expect(trashed?.id == capture.id)
+            #expect(trashed?.ownSavedURL == (cardSavedFirst ? folder.appending(path: "card.png") : nil))
         }
     }
 

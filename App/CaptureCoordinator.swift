@@ -738,6 +738,7 @@ final class CaptureCoordinator {
                     fileAt: item.fileURL, entry: entry, scale: Double(scale), picture: picture, asks: followUp.asksForName
                 )
                 item.savedURL = saved.url
+                item.ownSavedURL = saved.url
                 saveFailure = saved.failure
             }
             probe.end()
