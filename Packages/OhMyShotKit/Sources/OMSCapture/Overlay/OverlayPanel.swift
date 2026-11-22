@@ -20,7 +20,10 @@ final class OverlayPanel: NSPanel {
     var debugDeferredMouseEventCount: Int { deferredMouseEvents.count }
     #endif
 
-    func configureInput(acceptingInput: Bool, suppressingInputUntilComparison: Bool) {
+    func configureInput(
+        acceptingInput: Bool, suppressingInputUntilComparison: Bool,
+        enqueueEvent: ((NSEvent, Bool) -> Void)? = nil
+    ) {
         let wasSuppressingInput = suppressesInputUntilTransientComparison
         suppressesInputUntilTransientComparison = suppressingInputUntilComparison
         ignoresMouseEvents = !acceptingInput && !suppressingInputUntilComparison
@@ -28,7 +31,11 @@ final class OverlayPanel: NSPanel {
             let events = deferredMouseEvents
             deferredMouseEvents.removeAll()
             Self.postInAppKitOrder(events) { event, atStart in
-                NSApplication.shared.postEvent(event, atStart: atStart)
+                if let enqueueEvent {
+                    enqueueEvent(event, atStart)
+                } else {
+                    NSApplication.shared.postEvent(event, atStart: atStart)
+                }
             }
         } else if !suppressingInputUntilComparison {
             deferredMouseEvents.removeAll()

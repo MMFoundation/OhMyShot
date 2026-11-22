@@ -435,7 +435,7 @@ public final class OverlayController {
                 showPanels(probe: visible, acceptingInput: false)
             }
         } else if capturesTransients {
-            showPanels(probe: visible, acceptingInput: false)
+            showPanels(probe: visible, acceptingInput: false, suppressingInputUntilComparison: true)
             Task { [weak self] in
                 await self?.captureTransientFrames(
                     transientWindows, displays: ordered, pointerDisplay: pointerDisplay,
