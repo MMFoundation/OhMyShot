@@ -78,7 +78,7 @@ extension SettingsTab {
                     String(localized: "Screenshot background", bundle: .module),
                     String(localized: "Transparent background", bundle: .module),
                     String(localized: "Desktop wallpaper", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_WINDOWS", defaultValue: "window screenshot, drop shadow, padding", bundle: .module)),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_WINDOWS", defaultValue: "window screenshot, drop shadow, padding, no background", bundle: .module)),
             ]
         case .screenshots:
             [

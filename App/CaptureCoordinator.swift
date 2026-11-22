@@ -540,7 +540,7 @@ final class CaptureCoordinator {
             }
             let frame = captured
             probe.end()
-            let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift))
+            let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift), pixelsPerPoint: captureScale)
             // The display's scale: the capture is larger than the window's frame by its shadow.
             await deliver(
                 frame, appName: target.ownerName, windowTitle: target.title, copiesToClipboard: copiesToClipboard, background: background,
@@ -597,13 +597,13 @@ final class CaptureCoordinator {
     /// Corners and Shadow is not put on a window, which keeps its own corners and shadow. The desktop picture is taken
     /// around the window as the display shows it now and kept with the pictures backgrounds use, so the capture can be
     /// marked up and kept the same later.
-    private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool) async -> CaptureBackground {
+    private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool, pixelsPerPoint: CGFloat? = nil) async -> CaptureBackground {
         let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, shiftHeld: shiftHeld)
         switch resolved {
         case .none: return .none
         case .preset: return .automatic
         case .wallpaper:
-            guard let backdrop = await wallpaperBackdrop(around: frame) else {
+            guard let backdrop = await wallpaperBackdrop(around: frame, pixelsPerPoint: pixelsPerPoint) else {
                 Log.capture.notice("Window screenshot without the desktop picture: it could not be taken")
                 return .none
             }
@@ -627,14 +627,16 @@ final class CaptureCoordinator {
     #endif
 
     /// The desktop picture around a window capture as a background: as much of it as the finished picture covers.
-    private func wallpaperBackdrop(around frame: CapturedFrame) async -> Backdrop? {
+    private func wallpaperBackdrop(around frame: CapturedFrame, pixelsPerPoint: CGFloat? = nil) async -> Backdrop? {
         let layout = displays.layout
         guard let display = layout.display(id: frame.displayID) ?? layout.display(at: CGPoint(x: frame.frame.midX, y: frame.frame.midY)),
               let wallpaper = try? await capturer.captureWallpapers(of: [display])[display.id] else { return nil }
         let padding = CaptureBackground.wallpaperPadding
-        let picture = WallpaperCrop.pictureFrame(of: frame.image, window: frame.frame, pixelsPerPoint: display.pixelsPerPoint)
+        let imageScale = pixelsPerPoint ?? display.pixelsPerPoint
+        let picture = WallpaperCrop.pictureFrame(of: frame.image, window: frame.frame, pixelsPerPoint: imageScale)
         guard let region = WallpaperCrop.region(
-            around: picture, picturePixels: CGSize(width: frame.image.width, height: frame.image.height), padding: padding, on: display
+            around: picture, picturePixels: CGSize(width: frame.image.width, height: frame.image.height),
+            pixelsPerPoint: imageScale, padding: padding, on: display
         ), let crop = wallpaper.cropping(to: region) else { return nil }
         // A background is soft: a JPEG of it, no larger than a background is ever read, keeps the pictures folder
         // small. The same picture is kept once.

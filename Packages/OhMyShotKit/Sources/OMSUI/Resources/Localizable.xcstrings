@@ -25764,37 +25764,37 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "window screenshot, drop shadow, padding"
+            "value" : "window screenshot, drop shadow, padding, no background"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "captura de ventana, sombra, margen"
+            "value" : "captura de ventana, sombra, margen, sin fondo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "capture de fenêtre, ombre portée, marge"
+            "value" : "capture de fenêtre, ombre portée, marge, aucun arrière-plan"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ウインドウのキャプチャ, 影, 余白"
+            "value" : "ウインドウのキャプチャ, 影, 余白, 背景なし"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "窗口截图, 阴影, 边距"
+            "value" : "窗口截图, 阴影, 边距, 无背景"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "視窗擷取, 陰影, 邊距"
+            "value" : "視窗擷取, 陰影, 邊距, 無背景"
           }
         }
       }

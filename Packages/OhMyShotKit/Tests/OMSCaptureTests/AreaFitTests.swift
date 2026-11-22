@@ -221,4 +221,20 @@ struct AreaFitTests {
         _ = view.debugAct("cmd-z")
         #expect(view.area == moved)
     }
+
+    /// Locking a ratio that already matches the fitted area still clears fit undo so ⌘Z/B cannot restore a pre-fit
+    /// rectangle with a different aspect ratio.
+    @Test func lockingTheFittedAreasCurrentRatioClearsFitUndo() throws {
+        let fittedCard = CGRect(x: 150, y: 230, width: 150, height: 100) // 3:2 inside 300 × 150 (2:1)
+        let (overlay, view) = setup(frame: try Self.frame(card: fittedCard))
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        #expect(view.area == fittedCard)
+        _ = view.debugAct("ratio=3:2")
+        #expect(view.area == fittedCard)
+        _ = view.debugAct("cmd-z")
+        #expect(view.area == fittedCard)
+        _ = view.debugAct("b")
+        #expect(view.area == fittedCard)
+    }
 }

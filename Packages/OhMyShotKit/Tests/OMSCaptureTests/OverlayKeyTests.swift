@@ -543,4 +543,27 @@ struct OverlayKeyTests {
         let high = OverlayView.keysFrame(size: size, pointer: nil, in: bounds, avoiding: CGRect(x: 0, y: 500, width: 10, height: 80))
         #expect(high.maxY == 594)
     }
+
+    @Test func returnDoesNotSubmitRetainedAllInOneWindowsWhileDraggingAnArea() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        let passedOn = PassedOn()
+        view.delegate = recorder
+        view.nextResponder = passedOn
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        let first = WindowTarget(id: 10, frame: CGRect(x: 80, y: 80, width: 200, height: 150), ownerName: "Notes", title: nil)
+        let second = WindowTarget(id: 20, frame: CGRect(x: 320, y: 120, width: 220, height: 160), ownerName: "Safari", title: nil)
+        view.setSelectedWindows([first, second])
+
+        var selection = SelectionModel(bounds: Self.display.frame, pixelsPerPoint: Self.display.pixelsPerPoint)
+        selection.begin(at: CGPoint(x: 100, y: 100))
+        selection.drag(to: CGPoint(x: 260, y: 220))
+        view.show(selection: selection, showsReading: true, isDragging: true)
+        view.keyDown(with: try key(36, "\r"))
+        #expect(recorder.heard.isEmpty && passedOn.keys == [36])
+
+        view.show(selection: SelectionModel(bounds: Self.display.frame, pixelsPerPoint: Self.display.pixelsPerPoint), showsReading: false, isDragging: false)
+        view.keyDown(with: try key(36, "\r"))
+        #expect(recorder.heard == ["windows [10, 20]"])
+    }
 }

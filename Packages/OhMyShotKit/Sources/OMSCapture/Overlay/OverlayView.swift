@@ -848,7 +848,7 @@ final class OverlayView: NSView {
             }
             delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
         case 36, 76: // Return, and Enter on the keypad
-            if mode == .area, isAllInOne, purpose == .screenshot, !selectedWindows.isEmpty {
+            if mode == .area, isAllInOne, purpose == .screenshot, !isDraggingSelection, !selectedWindows.isEmpty {
                 delegate?.overlayView(self, didSelectWindows: selectedWindows, modifiers: event.modifierFlags.subtracting(.shift))
                 return
             }
