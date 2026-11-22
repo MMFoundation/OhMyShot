@@ -11,18 +11,49 @@ import OMSUI
 import OSLog
 import UniformTypeIdentifiers
 
-/// Pictures and projects opened in the editor: from files, the Share extension, and the clipboard.
+/// Pictures and projects opened in the editor, and movies in the recording window: from files, the Share extension, and
+/// the clipboard.
 extension CompositionRoot {
-    /// Opens files in the editor: projects as they are; pictures are added to the history first, so
-    /// their marks are kept and stay editable like a capture's.
+    /// Opens files: projects in the editor as they are; pictures in the editor and movies in the recording window, added
+    /// to the history first, so a picture's marks are kept and stay editable like a capture's and a movie's edits are kept
+    /// like a recording's. Files that are none of these are passed over, and said so by the pointer.
     func open(_ urls: [URL]) {
+        var passedOver: [URL] = []
         for url in urls where url.isFileURL {
             if url.pathExtension.lowercased() == AnnotationProject.fileExtension {
                 annotations.openProject(at: url)
+            } else if HistoryStore.isMovie(url) {
+                Task { await editMovie(at: url) }
             } else if ImageLoader.canLoad(url) {
                 Task { await annotateImage(at: url) }
+            } else {
+                Log.capture.notice("Passed over \(url.lastPathComponent, privacy: .private): not a picture, a movie, or a project")
+                passedOver.append(url)
             }
         }
+        if !passedOver.isEmpty { tellCannotOpen(passedOver) }
+    }
+
+    /// Opens a movie in the recording window, a copy of it added to the history first as a recording, as the URL API's
+    /// `add-quick-access-overlay` adds one: the file itself stays as it is.
+    private func editMovie(at url: URL) async {
+        do {
+            let entry = try await history.add(copyOf: url)
+            historyWindow?.reload()
+            recordings.open(entry)
+        } catch {
+            Log.capture.error("Could not add \(url.lastPathComponent, privacy: .private) to the history to edit it: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            tellCannotOpen([url])
+        }
+    }
+
+    /// Beeps and says by the pointer, and aloud, that files could not be opened.
+    private func tellCannotOpen(_ urls: [URL]) {
+        NSSound.beep()
+        let message = urls.count == 1
+            ? String(localized: "OhMyShot can’t open “\(urls[0].lastPathComponent)”.")
+            : String(localized: "OhMyShot can’t open \(urls.count) of these files.")
+        openingNotice.show(message, near: NSEvent.mouseLocation)
     }
 
     /// The Share extension's hand-over: the pictures in its batch go to the editor, or onto the screen as pins.
@@ -35,7 +66,7 @@ extension CompositionRoot {
         do {
             pictures = try inbox.pictures(inBatch: handoff.batch)
         } catch {
-            Log.automation.error("Share hand-over refused: \(String(describing: error), privacy: .public)")
+            Log.automation.error("Share hand-over refused: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return NSSound.beep()
         }
         // A pin is shown at the size a picture with no resolution of its own had on screen; the editor takes it at one pixel
@@ -45,7 +76,7 @@ extension CompositionRoot {
             var opened = 0
             for url in pictures {
                 guard let picture = await Self.loadImage(url, fallbackScale: handoff.action == .pin ? pinScale : 1) else {
-                    Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) shared to \(handoff.action.rawValue, privacy: .public) it")
+                    Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) shared to \(handoff.action.rawValue, privacy: .public) it")
                     continue
                 }
                 switch handoff.action {
@@ -60,13 +91,13 @@ extension CompositionRoot {
         }
     }
 
-    /// Chooses pictures or projects to open in the editor.
+    /// Chooses pictures or projects to open in the editor, or movies to open in the recording window.
     func chooseFilesToAnnotate() {
         let chooser = NSOpenPanel()
-        chooser.allowedContentTypes = [.image, AnnotationProject.contentType]
+        chooser.allowedContentTypes = [.image, AnnotationProject.contentType, .mpeg4Movie, .quickTimeMovie]
         chooser.allowsMultipleSelection = true
-        chooser.message = String(localized: "Choose a picture to mark up, or a project to go on with.")
-        chooser.prompt = String(localized: "Annotate")
+        chooser.message = String(localized: "Choose a picture to mark up, a project to go on with, or a movie to edit.")
+        chooser.prompt = String(localized: "Open")
         NSApp.activate()
         chooser.begin { [weak self] response in
             guard response == .OK else { return }
@@ -77,9 +108,8 @@ extension CompositionRoot {
 
     private func annotateImage(at url: URL) async {
         guard let loaded = await Self.loadImage(url) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to annotate it")
-            NSSound.beep()
-            return
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to annotate it")
+            return tellCannotOpen([url])
         }
         await annotate(loaded, name: url.deletingPathExtension().lastPathComponent)
     }
@@ -110,7 +140,7 @@ extension CompositionRoot {
             readTextSoon()
             annotations.annotate(entry, scale: scale)
         } catch {
-            Log.capture.error("Adding \(fileName, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Adding \(fileName, privacy: .private) to the history failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
         }
     }

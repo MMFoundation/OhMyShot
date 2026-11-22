@@ -76,6 +76,17 @@ struct PictureExportTests {
         }
     }
 
+    /// A capture whose file is gone says so, so a copy that can't be made says the file is missing, not only that it failed.
+    @Test func aMissingFileSaysItIsMissing() {
+        let gone = FileManager.default.temporaryDirectory.appending(path: "PictureExportTests-\(UUID().uuidString).png")
+        do {
+            _ = try PictureExport.encode(fileAt: gone, pixelsPerPoint: nil, output: ScreenshotOutput(format: .jpeg))
+            Issue.record("A file that is not there was encoded")
+        } catch {
+            #expect(ExportFailure.saving(error, into: nil).cause == .sourceMissing)
+        }
+    }
+
     @Test func aLowerQualityMakesASmallerFile() throws {
         // Noise, which a lossy format has to work at.
         var generator = SystemRandomNumberGenerator()
@@ -377,6 +388,34 @@ struct PictureExportTests {
 
     /// How long a drag waits for the converted copy when Settings change the file (Docs/perf.md › Main-thread work after
     /// a capture): a drag converts on the main actor, between two frames. Opt-in: OMS_EXPORT_SPEED=1.
+    @Test func aCopyThatCannotBeMadeIsNeverHandedOverAsTheCaptureItself() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "Shot.png")
+        try writePNG(try picture(10, 10), to: file)
+        let output = ScreenshotOutput(format: .jpeg)
+        // The caches cannot be written: a file stands where their folder would be.
+        let blocked = folder.appending(path: "Blocked")
+        try Data([1]).write(to: blocked)
+        let failure = try #require(throws: ExportFailure.self) {
+            try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: output, in: blocked).get()
+        }
+        #expect(failure.step == .converting)
+        #expect(!failure.summary.isEmpty)
+        // Several at once: none goes when one cannot be made, though the others could.
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let gone = folder.appending(path: "Gone.png")
+        let several = await ExportedFiles.handOver([(file, 1), (gone, 1)], output: output, in: cache)
+        #expect(throws: ExportFailure.self) { try several.get() }
+        // An upload's bytes that are no picture.
+        let upload = await ExportedFiles.handOver(pictureData: Data("no picture".utf8), named: "Shot", pixelsPerPoint: 1, output: output, in: cache)
+        #expect(throws: ExportFailure.self) { try upload.get() }
+        // Nothing asked of it, the capture goes as it is.
+        #expect(try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: ScreenshotOutput(), in: blocked).get() == file)
+        let converted = try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: output, in: cache).get()
+        #expect(converted.pathExtension == "jpg")
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["OMS_EXPORT_SPEED"] != nil))
     func convertingAFullScreenCaptureForADrag() throws {
         let folder = try makeFolder()
@@ -409,6 +448,53 @@ struct PictureExportTests {
         try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(5)], ofItemAtPath: file.path(percentEncoded: false))
         let second = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
         #expect(try decode(Data(contentsOf: second)).image.width == 90)
+    }
+
+    /// A copy begun before the capture changed, which ends after the copy of the capture as it is now was made, is never
+    /// handed over: not by the conversion that made it, and not by a later drag.
+    @Test func aConversionOfThePictureAsItWasThatEndsLateIsNeverHandedOver() throws {
+        final class Outcome: @unchecked Sendable { var value: Result<URL, any Error>? }
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let file = folder.appending(path: "Shot.png")
+        let red = try ImageExporter.encoded(picture(8, 8, color: [255, 0, 0, 255]), as: .png)
+        let blue = try ImageExporter.encoded(picture(8, 8, color: [0, 0, 255, 255]), as: .png)
+        try red.write(to: file, options: .atomic)
+        let output = ScreenshotOutput(format: .jpeg)
+        let read = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        let late = Outcome()
+        // The copy made ahead of a drag as the card appeared has read the picture before the redaction...
+        DispatchQueue.global().async {
+            var held = false
+            late.value = Result {
+                try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, name: nil, in: cache) {
+                    guard !held else { return }
+                    held = true
+                    read.signal()
+                    resume.wait()
+                }
+            }
+            done.signal()
+        }
+        // The worker is let go however the test ends, a wait that timed out included; and the wait is bounded, so a
+        // conversion that fails before reading fails the test rather than hanging it.
+        var resumed = false
+        defer { if !resumed { resume.signal() } }
+        try #require(read.wait(timeout: .now() + 30) == .success)
+        // ...which is kept, and dragged out, while that copy is still being made.
+        try blue.write(to: file, options: .atomic)
+        let current = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
+        #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
+        resume.signal()
+        resumed = true
+        try #require(done.wait(timeout: .now() + 30) == .success)
+        let lateFile = try #require(try late.value?.get())
+        #expect(try raw(decode(Data(contentsOf: lateFile)).image, 0, 0)[2] > 200)
+        #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
+        let again = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
+        #expect(again == current)
+        #expect(try raw(decode(Data(contentsOf: again)).image, 0, 0)[2] > 200)
     }
 
     @Test func aCaptureLeftAsItIsAndARecordingAreHandedOverUnconverted() throws {

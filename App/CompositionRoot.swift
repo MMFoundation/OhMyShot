@@ -26,6 +26,8 @@ final class CompositionRoot {
     lazy var overlay = OverlayController(topology: displays, capturer: capturer)
     /// Saves, copies, and hands over captures in the format Settings choose.
     lazy var files = ScreenshotFiles(settings: settings, history: history)
+    /// Says by the pointer why a copy could not be saved, where no card can say it.
+    let failureNotice = CopiedHUD()
     lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, files: files)
     lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions(), history: history)
     /// Uploads to the user's own storage; idle unless one is in flight.
@@ -36,7 +38,12 @@ final class CompositionRoot {
             Task { await self.restore(entry) }
         }
         uploads.ended = { [weak self] id, outcome in self?.uploadEnded(id, outcome) }
-        uploads.showsCard = { [weak self] id in self?.showsQuickAccess(forCaptureWith: id) ?? true }
+        // An upload of no capture in the history (a project's, from its editor) has no card to come back to: a failure is
+        // told by the pointer.
+        uploads.showsCard = { [weak self] id in
+            guard let self else { return true }
+            return history.item(id: id) != nil && showsQuickAccess(forCaptureWith: id)
+        }
         return uploads
     }()
     lazy var textCapture: TextCaptureCoordinator = {
@@ -100,6 +107,8 @@ final class CompositionRoot {
         return reader
     }()
     lazy var pins = PinController(settings: settings, actions: makePinActions())
+    /// Says by the pointer that a file opened with the app couldn't be.
+    lazy var openingNotice = CopiedHUD()
     /// Draw on Screen: its canvases are in captures and recordings, as pins are.
     lazy var sketch: ScreenSketchController = {
         let sketch = ScreenSketchController()
@@ -121,7 +130,7 @@ final class CompositionRoot {
         return packs
     }()
     lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
-    lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
+    lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker, captures: captures)
     lazy var recordings = RecordingCoordinator(
         settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions, files: files
     )
@@ -168,14 +177,19 @@ final class CompositionRoot {
             historyWindow?.reload()
         }
     )
+    /// Copy Text on a Quick Access card or in Capture History: the picture read on this Mac, with Settings' line breaks.
+    lazy var textCopier = TextCopier { [weak self] url in
+        guard let self else { return nil }
+        return try? await textCapture.text(ofPictureAt: url, joinLines: !settings.textRecognitionKeepsLineBreaks)
+    }
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
         permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,
-        pins: pins, displays: displays,
+        pins: pins, displays: displays, holds: retention.shortcutHolds,
         showOnboarding: { [weak self] in self?.showOnboarding() },
-        run: { [weak self] command, done in
+        run: { [weak self] command, kept, done in
             guard let self else { done?(nil); return }
-            perform(command, done: done)
+            perform(command, kept: kept, done: done)
         },
         openInEditor: { [weak self] loaded, name in await self?.annotate(loaded, name: name) }
     )
@@ -308,6 +322,8 @@ final class CompositionRoot {
         }
         captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
+        captures.saveFailed = { [weak self] failure, id in self?.showSaveFailure(failure, onCardOf: id) }
+        recordings.saveFailed = { [weak self] failure, id in self?.showSaveFailure(failure, onCardOf: id) }
         recordings.onStatus = { [weak self] status in
             guard let self else { return }
             switch status {
@@ -346,7 +362,7 @@ final class CompositionRoot {
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
         }
-        overlay.onWillMeasure = { [weak self] in self?.measurer.configureOverlay() }
+        captures.allInOneWillMeasure = { [weak self] copiesToClipboard in self?.measurer.configureOverlay(copiesToClipboard: copiesToClipboard) }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
             self?.pins.pin(color: pinned)
@@ -372,38 +388,58 @@ final class CompositionRoot {
             return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers).union(sketch.canvasWindowIDs)
         }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
+        // The pins open when the app last quit, once captures can take them in.
+        pins.restore()
+        observations.append(Task { [weak self] in
+            for await _ in Observations({ settings.pinsComeBack }) {
+                self?.pins.keepingChanged()
+            }
+        })
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
         // A card is not closed by itself under the editor that has its capture open.
         annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }
+        // The editor's window has no card to say why a copy could not be saved: the reading by the pointer does.
         annotations.saveCopy = { [weak self] entry, file in
-            guard let self, let saved = await files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
+            guard let self, let saved = savedOrSaidWhy(await files.saveScreenshot(fileAt: file, entry: entry, asks: true)) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)
             return saved
         }
         annotations.saveAs = { [weak self] file, entry, scale in
-            guard let self, let saved = await files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale) else { return nil }
+            guard let self, let saved = savedOrSaidWhy(await files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale)) else { return nil }
             if let entry { quickAccess.markSaved(entry.id, at: saved) }
             return saved
         }
         annotations.saveFile = { [weak self] file, scale in
-            await self?.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
+            guard let self else { return nil }
+            return savedOrSaidWhy(await files.saveScreenshot(fileAt: file, scale: scale, asks: true))
         }
         annotations.fileToHandOver = { [weak self] file, scale in
-            self?.files.fileToHandOver(file, scale: scale) ?? file
+            guard let self else { return nil }
+            return handedOverOrSaidWhy(files.fileToHandOver(file, scale: scale))
         }
         annotations.copyPicture = { [weak self] image, png, name, scale in
             await self?.files.copy(.init(image), png: png, name: name, scale: scale) ?? false
         }
+        // As a card pins, uploads, and lists its destinations.
+        annotations.pinPicture = { [weak self] image, scale, entry in
+            _ = self?.pins.pin(image, scale: scale, origin: entry.map { .capture($0.id) } ?? .clipboard)
+        }
+        annotations.uploadMenu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
+        annotations.uploadFile = { [weak self] id, file, destination, scale in
+            self?.upload(captureID: id, fileURL: file, to: destination, scale: scale)
+        }
+        annotations.isUploading = { [weak self] id in self?.uploads.isUploading(id) ?? false }
 
-        displays.onChange = { [weak self] _ in
+        displays.onChange = { [weak self] layout in
             guard let self else { return }
             shareableContent.refresh()
-            overlay.cancel()
+            captures.displaysChanged(to: layout)
             captures.cancelSelfTimer()
             overlay.prepare()
             quickAccess.displaysChanged()
+            pins.displaysChanged()
             if settings.hidesDesktopIcons { desktopIcons.refresh() }
         }
 
@@ -430,6 +466,7 @@ final class CompositionRoot {
         quickAccess.dismissFirstCaptureHint()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
         quickAccess.finishTrashingNow()
+        pins.finishKeeping()
         textReader.stop()
     }
 
@@ -689,6 +726,7 @@ final class CompositionRoot {
             openHistory: { [weak self] in self?.showHistory() },
             showOnboarding: { [weak self] in self?.replayOnboarding() },
             expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 },
             destinations: uploads.destinations,
             uploadRecords: uploads.records,
             recordActions: SettingsDependencies.UploadRecordActions(

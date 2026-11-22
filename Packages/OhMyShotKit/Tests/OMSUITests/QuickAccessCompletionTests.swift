@@ -19,8 +19,8 @@ struct QuickAccessCompletionTests {
 
     private func actions(succeeds: Bool) -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
-            copy: { _ in succeeds }, save: { _, _ in succeeds ? URL(filePath: "/tmp/saved.png") : nil },
-            saveAs: { _ in succeeds ? URL(filePath: "/tmp/saved-as.png") : nil },
+            copy: { _ in succeeds }, save: { _, _ in succeeds ? .saved(URL(filePath: "/tmp/saved.png")) : .cancelled },
+            saveAs: { _ in succeeds ? .saved(URL(filePath: "/tmp/saved-as.png")) : .cancelled },
             open: { _ in }, annotate: { _ in }, reveal: { _ in }, recognizeText: { _ in },
             pin: { _ in succeeds }, moveToTrash: { _ in }, closed: { _ in }
         )
@@ -104,6 +104,35 @@ struct QuickAccessCompletionTests {
         #expect(controller.isEmpty)
     }
 
+    /// Copy with Option (⌥⌘C, or Copy clicked with Option) says "Copied" as Copy does, and the card stays, to be
+    /// copied again.
+    @Test(arguments: [false, true])
+    func copyWithOptionConfirmsAndKeepsTheCard(keyed: Bool) async throws {
+        var actions = actions(succeeds: true)
+        var copies = 0, closed = 0
+        actions.copy = { _ in
+            copies += 1
+            return true
+        }
+        actions.closed = { _ in closed += 1 }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        card.setHovering(!keyed)
+        controller.perform(.copyAndKeep, on: capture, keyed: keyed)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(copies == 1)
+        #expect(card.copyButton.title == String(localized: "Copied", bundle: .module))
+        try await Task.sleep(for: .seconds(1.1))
+        #expect(controller.item(capture.id) != nil)
+        #expect(closed == 0)
+        controller.perform(.copyAndKeep, on: capture, keyed: keyed)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(copies == 2)
+    }
+
     @Test func failedCopyDoesNotConfirmAndCanBeRetried() async throws {
         var actions = actions(succeeds: false)
         var succeeds = false
@@ -150,7 +179,7 @@ struct QuickAccessCompletionTests {
         let successful = try item(), failed = try item()
         actions.save = { item, asks in
             #expect(!asks)
-            return item.id == successful.id ? URL(filePath: "/tmp/saved.png") : nil
+            return item.id == successful.id ? .saved(URL(filePath: "/tmp/saved.png")) : .failed(Self.diskFull)
         }
         let controller = QuickAccessController(actions: actions)
         controller.add(successful)
@@ -159,6 +188,184 @@ struct QuickAccessCompletionTests {
         for _ in 0..<20 { await Task.yield() }
         #expect(controller.itemIDs == [failed.id])
         controller.dismissAll()
+    }
+
+    private static let diskFull = ExportFailure(cause: .diskFull, summary: "Couldn’t save: the disk is full", detail: "The disk is full.")
+
+    private func card(in controller: QuickAccessController) throws -> CaptureCardView {
+        try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+    }
+
+    @Test(arguments: [CardCommand.save, .saveAs])
+    func failedSaveSaysWhyAndHoldsTheCardUntilASaveWorks(command: CardCommand) async throws {
+        var actions = actions(succeeds: false)
+        var outcome = SaveOutcome.failed(Self.diskFull)
+        actions.save = { _, _ in outcome }
+        actions.saveAs = { _ in outcome }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(command, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        let card = try card(in: controller)
+        #expect(card.failure == Self.diskFull)
+        #expect(card.accessibilityValue() as? String == Self.diskFull.summary)
+        #expect(card.saveButton.toolTip == Self.diskFull.detail)
+        // Long past its time, the card is still held.
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+
+        outcome = .saved(URL(filePath: "/tmp/saved.png"))
+        controller.perform(command, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(controller.isEmpty)
+    }
+
+    @Test func aCancelledSaveIsNoFailure() async throws {
+        var actions = actions(succeeds: false)
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(.save, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(try card(in: controller).failure == nil)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.isEmpty)
+    }
+
+    private static let cannotPrepare = ExportFailure(
+        step: .converting, cause: .diskFull, summary: "Couldn’t prepare the picture: the disk is full", detail: "The disk is full."
+    )
+
+    @Test func aCopyToHandOverThatCannotBeMadeLeavesNothingAndSaysWhy() throws {
+        var actions = actions(succeeds: true)
+        var handOver = Result<URL, ExportFailure>.failure(Self.cannotPrepare)
+        actions.fileToHandOver = { _ in handOver }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try card(in: controller)
+        let fileToHandOver = try #require(card.fileToHandOver)
+        // Not the capture's own file in its place: nothing at all.
+        #expect(fileToHandOver() == nil)
+        #expect(card.failure == Self.cannotPrepare)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+        // Made after all: the card no longer says it, and closes in its time.
+        let converted = URL(filePath: "/tmp/converted.jpg")
+        handOver = .success(converted)
+        #expect(fileToHandOver() == converted)
+        #expect(card.failure == nil)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.isEmpty)
+    }
+
+    @Test func aCopyHandedOverLeavesAFailedSaveSaid() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.showFailure(Self.diskFull, for: capture.id)
+        let card = try card(in: controller)
+        #expect(card.fileToHandOver?() == capture.fileURL)
+        #expect(card.failure == Self.diskFull)
+    }
+
+    /// A copy to hand over that can't be made while the card says a copy couldn't be saved is said by the pointer, and the
+    /// save's failure stays on the card and holds it, through a later hand-over that works (which saves nothing).
+    @Test func aFailedHandOverNeverTakesTheCardFromAFailedSave() throws {
+        var actions = actions(succeeds: true)
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        #expect(!controller.showFailure(Self.cannotPrepare, for: capture.id))
+        let card = try card(in: controller)
+        #expect(card.failure == Self.diskFull)
+        #expect(card.fileToHandOver?() == capture.fileURL)
+        controller.clearHandOverFailure(for: capture.id)
+        #expect(card.failure == Self.diskFull)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+    }
+
+    /// A drag, Share…, or Send by Email whose copy can't be made while the card says a save failed says why by the pointer,
+    /// rather than nothing at all.
+    @Test func aFailedHandOverUnderAFailedSaveIsSaidByThePointer() throws {
+        var actions = actions(succeeds: true)
+        actions.fileToHandOver = { _ in .failure(Self.cannotPrepare) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        var said: [String] = []
+        controller.showHandOverFailure = { said.append($0) }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        let card = try card(in: controller)
+        #expect(card.fileToHandOver?() == nil)
+        #expect(said == [Self.cannotPrepare.summary])
+        #expect(card.failure == Self.diskFull)
+    }
+
+    /// An upload whose copy is made after all clears the card's earlier failure to make one.
+    @Test func aCopyMadeForAnUploadClearsAFailureToMakeOne() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.cannotPrepare, for: capture.id))
+        controller.clearHandOverFailure(for: capture.id)
+        #expect(try card(in: controller).failure == nil)
+    }
+
+    @Test func aFailureIsShownOnlyOnACardOnScreen() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        #expect(!controller.showFailure(Self.diskFull, for: capture.id))
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        controller.markSaved(capture.id, at: URL(filePath: "/tmp/saved.png"))
+        #expect(try card(in: controller).failure == nil)
+    }
+
+    /// Moved to the Trash and brought back, a card whose copy could not be saved still says so and is still held.
+    @Test func aCardThatFailedToSaveIsStillHeldAfterUndoingTheTrash() async throws {
+        var actions = actions(succeeds: false)
+        actions.save = { _, _ in .failed(Self.diskFull) }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.perform(.save, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        #expect(controller.undoTrash(capture.id))
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+        #expect(try card(in: controller).failure == Self.diskFull)
+    }
+
+    /// A card that failed to save and then went to the Trash leaves nothing of its failure behind.
+    @Test func aCardSentToTheTrashTakesItsFailureWithIt() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        controller.finishTrashingNow()
+        #expect(controller.isEmpty)
+        #expect(controller.failure(for: capture.id) == nil)
     }
 
     @Test func trashFailureLeavesTheCardAvailableForRetry() throws {
@@ -215,5 +422,35 @@ struct QuickAccessCompletionTests {
         hasLink = true
         controller.perform(.copyLink, on: capture, keyed: false)
         #expect(controller.isEmpty)
+    }
+
+    /// Copy clicked sends Copy to the card's controller, and with Option held, Copy that keeps the card.
+    @Test func copyClickedWithOptionKeepsTheCard() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        controller.add(try item())
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        var sent: [CardCommand] = []
+        card.onCommand = { sent.append($0) }
+        let button = card.copyButton
+        #expect(button.sendAction(button.action, to: button.target))
+        #expect(sent == [.copy])
+        #expect(CaptureCardView.copyCommand(with: .option) == .copyAndKeep)
+        #expect(CaptureCardView.copyCommand(with: [.option, .shift]) == .copyAndKeep)
+        #expect(CaptureCardView.copyCommand(with: .command) == .copy)
+    }
+
+    /// ⌥⌘C leaves the keyboard on the card, to be copied again or used further; ⌘C gives it back to the app in front.
+    @Test(arguments: [(CardCommand.copyAndKeep, true), (.copy, false)])
+    func copyWithOptionKeepsTheKeyboard(command: CardCommand, keepsKeyboard: Bool) throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        controller.focusLatest()
+        #expect(card.isSelected)
+        controller.perform(command, on: capture, keyed: true)
+        #expect(card.isSelected == keepsKeyboard)
     }
 }

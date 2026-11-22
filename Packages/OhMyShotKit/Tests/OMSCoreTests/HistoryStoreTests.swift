@@ -79,6 +79,42 @@ struct HistoryStoreTests {
         #expect(store.items().map(\.id) == [item.id])
     }
 
+    /// A capture whose record cannot be written does not stay in the folder, where nothing would show it and no retention
+    /// would remove it: one written or copied in is removed, and one moved in goes back where it was.
+    @Test func aCaptureWhoseRecordCannotBeWrittenLeavesNothingBehind() async throws {
+        let manager = FileManager.default
+        let directory = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        let outside = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        try manager.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer {
+            try? manager.removeItem(at: directory)
+            try? manager.removeItem(at: outside)
+        }
+        let store = HistoryStore(directory: directory) { _, _ in throw CocoaError(.fileWriteOutOfSpace) }
+        #expect(throws: CocoaError.self) {
+            try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        }
+        let picture = outside.appending(path: "Picture.png")
+        let context = try #require(CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let png = try ImageExporter.encoded(#require(context.makeImage()), as: .png)
+        try png.write(to: picture)
+        await #expect(throws: CocoaError.self) { try await store.add(copyOf: picture) }
+        #expect(try Data(contentsOf: picture) == png)
+        let recording = outside.appending(path: "Recording.mov")
+        try Data([2]).write(to: recording)
+        #expect(throws: CocoaError.self) {
+            try store.add(movingFileAt: recording, kind: .recording, pixelWidth: 1, pixelHeight: 1, appName: nil, duration: 1)
+        }
+        #expect(try Data(contentsOf: recording) == Data([2]))
+        // Opened again, the history holds no capture and no file.
+        let reopened = HistoryStore(directory: directory)
+        #expect(reopened.items().isEmpty)
+        #expect(try manager.contentsOfDirectory(atPath: directory.path(percentEncoded: false)).isEmpty)
+    }
+
     @Test func copyingAndMovingSkipANameAlreadyClaimedByAnotherCapture() async throws {
         let store = makeStore(), manager = FileManager.default
         try manager.createDirectory(at: store.directory, withIntermediateDirectories: true)
@@ -294,6 +330,23 @@ struct HistoryStoreTests {
         #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([1]))
         #expect(!store.hasOriginal(item))
         #expect(!FileManager.default.fileExists(atPath: store.annotationsURL(for: item).path(percentEncoded: false)))
+    }
+
+    /// The original comes back with the date it was taken; the file is dated now, so a converted copy of the marked
+    /// picture, or a pin of it, reads as older than the capture.
+    @Test func restoringTheOriginalDatesTheFileNow() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 20, appName: nil)
+        let file = store.fileURL(for: item).path(percentEncoded: false)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: file)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 10, pixelHeight: 20, annotations: Data([9]))
+        let markedAt = try #require(FileManager.default.attributesOfItem(atPath: file)[.modificationDate] as? Date)
+
+        try store.restoreOriginal(of: marked)
+
+        let restoredAt = try #require(FileManager.default.attributesOfItem(atPath: file)[.modificationDate] as? Date)
+        #expect(restoredAt >= markedAt)
     }
 
     @Test func anEditedRecordingKeepsTheRecordingAsItWasMade() throws {

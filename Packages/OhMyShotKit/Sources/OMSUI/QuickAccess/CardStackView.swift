@@ -14,8 +14,9 @@ final class CardStackView: NSView {
     /// What a card's buttons, menu, or VoiceOver asked of its capture. The keys arrive apart (`onKey`): the card that
     /// has the keyboard is the owner's to know, and a command from a key gives the keyboard back where a click does not.
     var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
-    /// The file to hand to another app for a capture, dragged out or shared.
-    var fileToHandOver: ((QuickAccessItem) -> URL)?
+    /// The file to hand to another app for a capture, dragged out or shared; nil when the copy Settings ask for could not
+    /// be made, and then nothing goes.
+    var fileToHandOver: ((QuickAccessItem) -> URL?)?
     /// The codes in a screenshot, looked for as its card is made, for its menu.
     var findCodes: ((QuickAccessItem) async -> [FoundCode])?
     /// What the menu offers for uploading, read each time a menu opens (see `UploadMenu`).
@@ -24,6 +25,8 @@ final class CardStackView: NSView {
     var canDeleteFromStorage: ((QuickAccessItem) -> Bool)?
     /// The upload a capture has now, for a card made after it began (restored from Recently Closed).
     var currentUpload: ((QuickAccessItem) -> CardUpload?)?
+    /// Why a copy of a capture could not be saved, for a card made after it failed.
+    var currentFailure: ((QuickAccessItem) -> ExportFailure?)?
     /// What can be done to a capture's picture now, read when a menu opens.
     var pictureOffer: (QuickAccessItem) -> PictureChangeOffer = { _ in .unsupported }
     /// How many cards the stack has.
@@ -123,6 +126,10 @@ final class CardStackView: NSView {
         cards[id]?.showCopied()
     }
 
+    func showTextCopy(_ copy: TextCopy, on id: UUID) {
+        cards[id]?.showTextCopy(copy)
+    }
+
     func previewHover(_ id: UUID) {
         cards[id]?.setHovering(true)
     }
@@ -155,6 +162,11 @@ final class CardStackView: NSView {
 
     func setUpload(_ upload: CardUpload?, for id: UUID) {
         cards[id]?.upload = upload
+    }
+
+    /// Has a card say why a copy of its capture could not be saved, or stop saying it.
+    func setFailure(_ failure: ExportFailure?, for id: UUID) {
+        cards[id]?.failure = failure
     }
 
     func setCountdown(_ state: (remaining: TimeInterval, interval: TimeInterval)?, for id: UUID) {
@@ -249,11 +261,16 @@ final class CardStackView: NSView {
         card.onHold = { [weak self, weak card] hold, on in card.map { self?.onHold?($0.item.id, hold, on) } }
         card.onFocus = { [weak self, weak card] in card.map { self?.onFocus?($0.item.id) } }
         card.onPointerHover = { [weak self, weak card] hovering in card.map { self?.onPointerHover?($0.item.id, hovering) } }
-        card.fileToHandOver = { [weak self, weak card] in card.map { self?.fileToHandOver?($0.item) ?? $0.item.fileURL } }
+        card.fileToHandOver = { [weak self, weak card] in
+            guard let card else { return nil }
+            guard let fileToHandOver = self?.fileToHandOver else { return card.item.fileURL }
+            return fileToHandOver(card.item)
+        }
         card.uploadMenu = { [weak self] in self?.uploadMenu() ?? .hidden }
         card.hasLink = { [weak self, weak card] in card.flatMap { self?.hasLink?($0.item) } ?? false }
         card.canDeleteFromStorage = { [weak self, weak card] in card.flatMap { self?.canDeleteFromStorage?($0.item) } ?? false }
         card.upload = currentUpload?(item)
+        card.failure = currentFailure?(item)
         if item.kind == .screenshot, let findCodes { card.lookForCodes { await findCodes(item) } }
         addSubview(card)
         cards[item.id] = card

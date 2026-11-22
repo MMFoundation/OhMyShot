@@ -103,6 +103,9 @@ struct HistoryView: View {
                                 .id(item.id)
                         }
                     }
+                    // A card dragged out takes every selected capture when it is one of them, as in Finder, else
+                    // itself alone; nothing when one of their copies can't be made.
+                    .dragContainer(for: HandedOverFile.self) { (dragged: UUID) in model.filesToHandOver(from: dragged) }
                     .padding(.horizontal, Self.inset)
                     .padding(.vertical, 20)
                     // Measured inside the scroll view, so a visible scroller is not counted as room.
@@ -140,7 +143,8 @@ struct HistoryView: View {
         }
     }
 
-    /// The grid's plain keys: arrows select, Return restores, and Space opens Quick Look, as in Finder.
+    /// The grid's plain keys: arrows select, Return restores, and Space opens Quick Look, as in Finder; the period adds
+    /// the selection to Favorites, or takes it out, as in Photos.
     private func handle(_ press: KeyPress) -> Bool {
         guard press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return false }
         switch press.key {
@@ -156,6 +160,10 @@ struct HistoryView: View {
         case .space:
             guard let item = model.focusedItem else { return false }
             model.quickLook(item)
+        case KeyEquivalent("."):
+            let selected = model.selectedItems
+            guard !selected.isEmpty else { return false }
+            model.toggleFavorite(selected)
         default:
             return false
         }
@@ -181,6 +189,7 @@ struct HistoryView: View {
                 Text("All", bundle: .module).tag(HistoryModel.Filter.all)
                 Text("Screenshots", bundle: .module).tag(HistoryModel.Filter.screenshots)
                 Text("Recordings", bundle: .module).tag(HistoryModel.Filter.recordings)
+                Text("Favorites", bundle: .module).tag(HistoryModel.Filter.favorites)
             } label: {
                 Text("Show", bundle: .module)
             }
@@ -200,7 +209,7 @@ struct HistoryView: View {
             } label: {
                 Text(retentionLabel)
             }
-            .help(Text("How long captures stay in the history", bundle: .module))
+            .help(Text("How long captures stay in the history. Favorites stay until you take them out, unless History is off.", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
             // Every capture shown: under the Show filter or a search, only those.
@@ -221,7 +230,9 @@ struct HistoryView: View {
     }
 
     private var retention: Binding<HistoryRetention> {
-        retentionSelection(settings: model.settings, expiredCount: model.expiredCount, request: $model.retentionRequest)
+        retentionSelection(
+            settings: model.settings, expiredCount: model.expiredCount, expiredFavoriteCount: model.expiredFavoriteCount, request: $model.retentionRequest
+        )
     }
 
     private var retentionLabel: String {
@@ -257,12 +268,18 @@ struct HistoryView: View {
     private var foundElsewhere: some View {
         placeholder(
             symbol: "magnifyingglass",
-            title: model.filter == .recordings
-                ? Text("No Recordings Found", bundle: .module)
-                : Text("No Screenshots Found", bundle: .module),
+            title: foundElsewhereTitle,
             message: String(localized: "Found in \(model.foundElsewhere) captures under All.", bundle: .module)
         ) {
             Button { model.filter = .all } label: { Text("Show All", bundle: .module) }
+        }
+    }
+
+    private var foundElsewhereTitle: Text {
+        switch model.filter {
+        case .recordings: Text("No Recordings Found", bundle: .module)
+        case .favorites: Text("No Favorites Found", bundle: .module)
+        case .all, .screenshots: Text("No Screenshots Found", bundle: .module)
         }
     }
 
@@ -277,11 +294,22 @@ struct HistoryView: View {
     }
 
     private var filteredEmptyState: some View {
-        placeholder(
-            symbol: model.filter == .recordings ? "video" : "photo",
-            title: model.filter == .recordings ? Text("No Recordings", bundle: .module) : Text("No Screenshots", bundle: .module),
-            message: String(localized: "Choose All to see every capture in the history.", bundle: .module)
-        )
+        switch model.filter {
+        case .favorites:
+            placeholder(
+                symbol: "star",
+                title: Text("No Favorites", bundle: .module),
+                message: model.canFavorite
+                    ? String(localized: "Favorites stay until you take them out, however long Keep captures is. Add one from a capture’s menu, or select it and press the period key.", bundle: .module)
+                    : HistoryModel.favoritesNeedHistory
+            )
+        case .all, .screenshots, .recordings:
+            placeholder(
+                symbol: model.filter == .recordings ? "video" : "photo",
+                title: model.filter == .recordings ? Text("No Recordings", bundle: .module) : Text("No Screenshots", bundle: .module),
+                message: String(localized: "Choose All to see every capture in the history.", bundle: .module)
+            )
+        }
     }
 
     private func placeholder(symbol: String, title: Text, message: String) -> some View {

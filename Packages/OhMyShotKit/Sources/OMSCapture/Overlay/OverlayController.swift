@@ -205,6 +205,9 @@ public final class OverlayController {
     /// The ruler's measurement to copy, where the crosshair is (global space), and whether the overlay is
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
+    /// The display's frozen frame and what the ruler measured on it, to keep as a capture (F). The overlay has
+    /// closed by then.
+    public var onCaptureMeasurement: ((CapturedFrame, RulerMeasurement) -> Void)?
     private let cursorVisibility = OverlayCursorVisibility()
 
     public private(set) var isActive = false
@@ -253,6 +256,8 @@ public final class OverlayController {
     private var windowsExcluded: pid_t? { purpose == .scroll ? getpid() : nil }
     /// An area chosen for annotation before its display's frame arrived.
     private var pendingAnnotation: (display: CGDirectDisplayID, area: CGRect)?
+    /// The display in-place annotation was handed, once it was: a frame set up there with its bar is not annotation.
+    private var annotatedDisplay: CGDirectDisplayID?
     /// The frame with its bar hosted over a display (`host`), while its view holds it.
     private weak var setup: NSView?
     /// The selection being dragged out: one for every display, since a drag may carry it onto another.
@@ -577,6 +582,22 @@ public final class OverlayController {
         isActive && entries.values.contains { $0.view.isAnnotating }
     }
 
+    /// The display in-place annotation is showing on, while it is; nil while a frame is set up with its bar (All-In-One,
+    /// recording, scrolling, a typed size), which is not marked on.
+    public var annotationDisplay: DisplayInfo? {
+        guard isActive, let annotatedDisplay else { return nil }
+        return entries[annotatedDisplay]?.view.display
+    }
+
+    /// Whether in-place annotation on `display` can go on once the displays are `layout`: only while that display is there
+    /// as it was (where it was, as large, at the same scale), as the marks are drawn on its frozen frame. Displays
+    /// plugged in, taken away, or moved around it leave it be, and so does its name changing, as macOS numbers it once
+    /// a second display of its model is plugged in.
+    public static func keepsAnnotating(on display: DisplayInfo, in layout: DisplayLayout) -> Bool {
+        guard let now = layout.display(id: display.id) else { return false }
+        return now.frame == display.frame && now.pixelSize == display.pixelSize && now.backingScale == display.backingScale
+    }
+
     /// The recording bar's view while a choice is framed, for scripted checks.
     var recordingSetup: RecordingSetupView? { hostedSetup() }
 
@@ -885,6 +906,7 @@ public final class OverlayController {
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
         setup.onAreaAdjusted = { [weak self] _ in self?.allInOneCaptureWindows = [] }
         setup.codeFinder = codes
+        setup.edgeTolerance = measureTolerance
         setup.onChoose = { [weak self, weak setup] choice, area, wholeDisplay in
             guard let self else { return }
             if wholeDisplay {
@@ -937,6 +959,7 @@ public final class OverlayController {
             return
         }
         keepOnly(entry)
+        annotatedDisplay = displayID
         onAnnotate(AnnotationRequest(
             host: entry.view, display: entry.view.display, area: area, frame: frame,
             showEdgeLoupe: { [weak view = entry.view] point in view?.showEdgeLoupe(at: point) },
@@ -955,6 +978,7 @@ public final class OverlayController {
         allInOneCaptureWindows = []
         chosenAhead = nil
         pendingAnnotation = nil
+        annotatedDisplay = nil
         drag = nil
         pointer = nil
         nudged = false
@@ -1365,6 +1389,14 @@ extension OverlayController: OverlayViewDelegate {
         if ending { end(.cancelled) }
     }
 
+    func overlayView(_ view: OverlayView, didCaptureMeasurement measurement: RulerMeasurement, of frame: CapturedFrame) {
+        // The overlay goes first, so the screen comes back at once; the capture is kept after. Ending the session lets
+        // its handlers go, so this one is held first.
+        let capture = onCaptureMeasurement
+        end(.cancelled)
+        capture?(frame, measurement)
+    }
+
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) {
         measureUnit = unit
         for entry in entries.values {
@@ -1654,6 +1686,17 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.switchMode(to: mode, windows: windows)
         }
         updateHover(at: pointer ?? NSEvent.mouseLocation)
+    }
+
+    func overlayViewDidToggleKeys(_ view: OverlayView) {
+        guard !overlayViewDidPutKeysAway(view) else { return }
+        let mouse = NSEvent.mouseLocation
+        let target = entries.values.first { $0.view.display.frame.contains(mouse) }?.view ?? view
+        target.showKeys(view.keyHelp)
+    }
+
+    func overlayViewDidPutKeysAway(_ view: OverlayView) -> Bool {
+        entries.values.map { $0.view.putKeysAway() }.contains(true)
     }
 
     func overlayViewDidCancel(_ view: OverlayView) {
