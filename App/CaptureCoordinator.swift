@@ -32,8 +32,9 @@ final class CaptureCoordinator {
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
     /// Opens a capture History couldn't take in the editor all the same: the picture as it was taken, its marks and
-    /// background, its pixels per point, the name it was to have, and what adds it to History again and returns its record.
-    var openNotKeptInEditor: ((CGImage, AnnotationDocument?, CGFloat, String, @escaping () throws -> HistoryItem) -> Void)?
+    /// background, its pixels per point, the name it was to have, History's record of it as it was taken when History took
+    /// that much, and what adds it to History again and returns its record.
+    var openNotKeptInEditor: ((CGImage, AnnotationDocument?, CGFloat, String, HistoryItem?, @escaping () throws -> HistoryItem) -> Void)?
     /// Saving after a capture failed: why, and the capture, to say it on its card when it has one; called once a card is up.
     var saveFailed: ((ExportFailure, UUID?) -> Void)?
     /// A color taken with C over the magnifier while capturing: where it was, and the keys held then.
@@ -781,11 +782,11 @@ final class CaptureCoordinator {
             }
             NSSound.beep()
             if action == .annotate, let openNotKeptInEditor {
-                // The editor holds it, with its marks, and tries History again as it keeps them: the capture as taken, or
-                // the record History already has of it.
+                // The editor holds it, with its marks, and tries History again as it keeps them: on the record History
+                // already has of it, which the editor holds from now on, or adding the capture as taken first.
                 let marked = document.flatMap { try? JSONDecoder().decode(AnnotationDocument.self, from: $0) } ?? marks
-                openNotKeptInEditor(frame.image, marked, scale, name) { [png, added] in
-                    try added ?? add(png ?? ImageExporter.encoded(frame.image, as: .png))
+                openNotKeptInEditor(frame.image, marked, scale, name, added) { [png] in
+                    try add(png ?? ImageExporter.encoded(frame.image, as: .png))
                 }
                 notice.show(String(localized: "The capture couldn’t be added to History. It’s open in the editor."), near: NSEvent.mouseLocation)
             } else {

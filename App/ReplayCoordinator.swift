@@ -127,8 +127,8 @@ final class ReplayCoordinator {
     /// How saving one display's clip went.
     private enum Saved {
         case saved
-        /// History couldn't take the clip, so it went to the export folder instead.
-        case savedToFolder
+        /// History couldn't take the clip, so it went to the export folder instead: the folder it went to.
+        case savedToFolder(URL)
         /// Nothing changed there in the last 15 seconds: the display's name, when it is still connected.
         case nothingChanged(String?)
         case failed
@@ -171,12 +171,15 @@ final class ReplayCoordinator {
         } else if saved > 1 {
             sentences.append(String(localized: "Saved the last 15 seconds of \(saved) displays."))
         }
-        let toFolder = outcomes.filter { if case .savedToFolder = $0 { true } else { false } }.count
-        if toFolder > 0 {
-            let folder = FileManager.default.displayName(atPath: settings.exportDirectory.path(percentEncoded: false))
-            sentences.append(toFolder == 1
-                ? String(localized: "The last 15 seconds were saved to \(folder) but couldn’t be added to History.")
-                : String(localized: "The last 15 seconds of \(toFolder) displays were saved to \(folder) but couldn’t be added to History."))
+        // Each clip's own folder, which the export folder changed in Settings meanwhile doesn't move.
+        let folders = outcomes.compactMap { if case .savedToFolder(let folder) = $0 { folder } else { nil } }
+        var named: Set<URL> = []
+        for folder in folders where named.insert(folder).inserted {
+            let clips = folders.filter { $0 == folder }.count
+            let name = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
+            sentences.append(clips == 1
+                ? String(localized: "The last 15 seconds were saved to \(name) but couldn’t be added to History.")
+                : String(localized: "The last 15 seconds of \(clips) displays were saved to \(name) but couldn’t be added to History."))
         }
         for outcome in outcomes {
             guard case .nothingChanged(let name) = outcome else { continue }
@@ -189,7 +192,7 @@ final class ReplayCoordinator {
         if saved < outcomes.count { NSSound.beep() }
         guard !sentences.isEmpty else { return }
         // A clip outside History has no card to show where it went: the reading by the pointer says it, and says it aloud.
-        if toFolder > 0 {
+        if !folders.isEmpty {
             notice.show(Sentences.joined(sentences), near: NSEvent.mouseLocation)
         } else {
             VoiceOver.announce(Sentences.joined(sentences))
@@ -239,7 +242,7 @@ final class ReplayCoordinator {
                 return .saved
             case .folder(let file):
                 Log.recording.error("Saved the replay of a display to the export folder as \(file.lastPathComponent, privacy: .private): History couldn't take it")
-                return .savedToFolder
+                return .savedToFolder(file.deletingLastPathComponent())
             }
         } catch {
             Log.recording.error("Keeping the replay failed, and its clip was not deleted (the history log says where it is): \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")

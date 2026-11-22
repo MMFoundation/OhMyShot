@@ -28,8 +28,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// Puts the rendered picture on the clipboard, with its pixels per point, and returns whether it succeeded. Without a
         /// callback, the PNG goes as it is.
         public var copy: ((_ image: CGImage, _ png: Data, _ scale: CGFloat) async -> Bool)?
-        /// Pins the picture as it looks now over the screen, at its pixels per point. Nil when the editor offers no Pin to Screen.
-        public var pin: ((_ image: CGImage, _ scale: CGFloat) -> Void)?
+        /// Pins the picture as it looks now over the screen, at its pixels per point, and whether it was kept in the capture's
+        /// file: one that wasn't is the pin's own, since the file doesn't show it. Nil when the editor offers no Pin to Screen.
+        public var pin: ((_ image: CGImage, _ scale: CGFloat, _ kept: Bool) -> Void)?
         /// What the editor offers for uploading, asked each time the window comes forward: nothing without a destination.
         public var uploadMenu: () -> UploadMenu = { .hidden }
         /// Uploads the capture's file, its edits kept, to the default destination (nil) or the one chosen. Nil when the
@@ -433,8 +434,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         return Task {
             guard let pin = actions.pin else { return }
             guard let rendered = await render() else { return NSSound.beep() }
-            _ = keep(rendered)
-            pin(rendered.image, rendered.document.scale)
+            let kept = keep(rendered) != nil
+            pin(rendered.image, rendered.document.scale, kept)
         }
     }
 

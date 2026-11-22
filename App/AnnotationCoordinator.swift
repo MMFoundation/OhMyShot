@@ -125,15 +125,18 @@ final class AnnotationCoordinator {
     }
 
     /// Opens a capture History couldn't take in the editor all the same, so what was drawn on it is not lost with it:
-    /// `image` as it was taken, `document` its marks and background, its pixels per point, the name it was to have, and
-    /// `add`, which tries again to add it to History as it was taken and returns its record. The editor holds the only
-    /// copy. Its edits stay unkept until History has the capture, which every keep tries again (Copy, Save, a drag,
-    /// closing, and the Retry of closing's alert), and from then on it is that capture's editor. Until then nothing that
-    /// needs the capture's file goes, and closing or quitting asks first, as for edits that can't be kept.
-    func annotate(notKept image: CGImage, document: AnnotationDocument?, scale: CGFloat, title: String, add: @escaping () throws -> HistoryItem) {
-        // A key of its own until History has the capture, so quitting asks about this editor too; then the capture's id.
-        var id = UUID()
-        var inHistory = false
+    /// `image` as it was taken, `document` its marks and background, its pixels per point, the name it was to have,
+    /// `record`, History's record of it as it was taken when History took that much, and `add`, which tries again to add
+    /// it to History as it was taken and returns its record. The editor holds the only copy of the marks. They stay unkept
+    /// until History has them, which every keep tries again (Copy, Save, a drag, closing, and the Retry of closing's
+    /// alert), adding the capture first when History has no record of it. Until then nothing that needs the capture's file
+    /// goes, and closing or quitting asks first, as for edits that can't be kept.
+    func annotate(notKept image: CGImage, document: AnnotationDocument?, scale: CGFloat, title: String, record: HistoryItem?, add: @escaping () throws -> HistoryItem) {
+        // The capture's id from the start when History has its record, so Keep captures doesn't remove it from under the
+        // editor; without one a key of its own, so quitting asks about this editor too, until History has the capture.
+        var id = record?.id ?? UUID()
+        var inHistory = record != nil
+        if inHistory { onEditing?(id, true) }
         let editor = AnnotationEditorWindowController(
             image: image, scale: scale, document: document, title: title, fileURL: nil,
             actions: Self.editorActions(
@@ -192,7 +195,9 @@ final class AnnotationCoordinator {
                 return PasteboardWriter.write(png: png, image: image)
             }
         }
-        actions.pin = { [weak coordinator] image, pixelsPerPoint in coordinator?.pinPicture?(image, pixelsPerPoint, entry()) }
+        // A picture whose edits couldn't be kept is the pin's own: the capture's file, which its Save and a drag would take,
+        // doesn't show them, a redaction among them.
+        actions.pin = { [weak coordinator] image, pixelsPerPoint, kept in coordinator?.pinPicture?(image, pixelsPerPoint, kept ? entry() : nil) }
         actions.uploadMenu = { [weak coordinator] in coordinator?.uploadMenu?() ?? .hidden }
         actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID(), file, destination, scale()) }
         actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID()) ?? false }
