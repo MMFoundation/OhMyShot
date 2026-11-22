@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import OMSCore
@@ -514,7 +515,7 @@ struct QuickAccessRetentionTests {
                 closedItem = item
                 announceClosed.yield(item.id)
             }
-            actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
+            actions.preferences = { QuickAccessPreferences(closeAfter: 86_400, closeAction: .saveAndClose) }
             actions.save = { item, _ in
                 saves += 1
                 saveSource = item.fileURL
@@ -559,6 +560,11 @@ struct QuickAccessRetentionTests {
             #expect(cards.item(capture.id)?.savedURL == nil)
             #expect(try Data(contentsOf: capture.fileURL) == latestContents)
 
+            let card = try #require(
+                cards.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }
+                    .first(where: { $0.item.id == capture.id })
+            )
+            card.setHovering(false)
             cards.closeDueCards(at: .greatestFiniteMagnitude)
             let closedID = await waitForEvent(from: closedReader)
             #expect(closedID == capture.id)
