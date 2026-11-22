@@ -57,6 +57,62 @@ struct QuickAccessRetentionTests {
         try await run(QuickAccessController(actions: actions, history: history), history, ItemFactory(history: history, thumbnail: thumbnail))
     }
 
+    private func staleExportScenario(tracking: Tracking, rewritesCurrentDestination: Bool) async throws {
+        let newerContents = Data([2])
+        let olderContents = Data([1])
+        let failure = ExportFailure(cause: .diskFull, summary: "A later save failed", detail: "The disk is full.")
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { _ in }
+        }) { cards, history, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent()
+            let newerSource = folder.appending(path: "newer-source.png")
+            let olderSource = folder.appending(path: "older-source.png")
+            let currentDestination = folder.appending(path: "current-export.png")
+            try newerContents.write(to: newerSource)
+            try olderContents.write(to: olderSource)
+            cards.add(capture)
+
+            let newerExport = await AtomicFileCopy.save(newerSource, as: currentDestination)
+            #expect(newerExport.url == currentDestination)
+            cards.markSaved(capture.id, at: currentDestination)
+            if tracking == .visible {
+                #expect(cards.showFailure(failure, for: capture.id))
+            }
+            if tracking != .visible {
+                cards.dismiss(capture.id)
+                if tracking == .untracked { _ = cards.takeRecentlyClosed() }
+            }
+
+            let olderDestination: URL
+            if rewritesCurrentDestination {
+                let alias = folder.appending(path: "folder-alias")
+                try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: folder)
+                olderDestination = alias.appending(path: currentDestination.lastPathComponent)
+            } else {
+                olderDestination = folder.appending(path: "older-export.png")
+            }
+            let olderExport = await AtomicFileCopy.save(olderSource, as: olderDestination)
+            #expect(olderExport.url == olderDestination)
+            cards.markSaved(capture.id, at: olderDestination, isCurrent: false)
+
+            #expect(try Data(contentsOf: olderDestination) == olderContents)
+            if !rewritesCurrentDestination {
+                #expect(try Data(contentsOf: currentDestination) == newerContents)
+            }
+            if tracking == .recentlyClosed {
+                cards.restoreRecentlyClosed()
+            } else if tracking == .untracked {
+                cards.restore(try #require(history.item(id: capture.id)), on: 0)
+            }
+
+            let restored = try #require(cards.item(capture.id))
+            #expect(restored.savedURL == (rewritesCurrentDestination ? nil : currentDestination))
+            if tracking == .visible { #expect(cards.failure(for: capture.id) == failure) }
+        }
+    }
+
     @Test(arguments: [false, true])
     func displacedCardRestoresUntilExplicitlyClosed(byHeight: Bool) async throws {
         try await fixture { cards, make in
@@ -432,6 +488,16 @@ struct QuickAccessRetentionTests {
             #expect(FileManager.default.fileExists(atPath: external.path))
             #expect(FileManager.default.fileExists(atPath: owned.path) == replacesSameFile)
         }
+    }
+
+    @Test(arguments: [Tracking.visible, .recentlyClosed, .untracked])
+    func staleExportOverwritingCurrentSavedCopyInvalidatesIt(tracking: Tracking) async throws {
+        try await staleExportScenario(tracking: tracking, rewritesCurrentDestination: true)
+    }
+
+    @Test(arguments: [Tracking.visible, .recentlyClosed, .untracked])
+    func staleExportAtDistinctPathPreservesCurrentSavedCopy(tracking: Tracking) async throws {
+        try await staleExportScenario(tracking: tracking, rewritesCurrentDestination: false)
     }
 
     @Test func historyExportWithoutCardSeedsSavedStateOnRestore() async throws {

@@ -451,7 +451,7 @@ public final class QuickAccessController {
     /// Marks a capture saved on its card: a copy of it is at `url`, so the card is not saved again when it closes by itself.
     /// `byCard`: the card saved it itself, and its Move to Trash takes it with the capture. A copy saved elsewhere (from the
     /// editor or Capture History) is not the card's to take: its Trash leaves it, and takes only a copy of its own, if any.
-    /// A successful but stale external copy only relinquishes ownership if it replaced that same file.
+    /// A stale external copy never marks the capture saved or clears a failure; it invalidates a matching saved URL and relinquishes matching card ownership.
     public func markSaved(_ id: UUID, at url: URL, byCard: Bool = false, isCurrent: Bool = true) {
         pruneSavedCopiesIfNeeded()
         if let history, history.item(id: id) == nil {
@@ -461,19 +461,29 @@ public final class QuickAccessController {
         let currentItem = visibleOrRecentlyClosedItem(id)
         let currentOwnURL = currentItem?.ownSavedURL ?? savedCopiesByID[id]?.ownSavedURL
         if !isCurrent {
-            guard !byCard, let ownURL = currentOwnURL, Self.sameFileURL(url, ownURL) else { return }
-            let savedURL: URL?
+            guard !byCard else { return }
+            let currentSavedURL: URL?
             if let currentItem {
-                savedURL = currentItem.savedURL
+                currentSavedURL = currentItem.savedURL
             } else {
-                savedURL = savedCopiesByID[id]?.savedURL
+                currentSavedURL = savedCopiesByID[id]?.savedURL
             }
-            setSavedCopies(SavedCopies(savedURL: savedURL, ownSavedURL: nil), for: id)
+            let replacesSavedCopy = currentSavedURL.map { Self.sameFileURL(url, $0) } ?? false
+            let replacesOwnedCopy = currentOwnURL.map { Self.sameFileURL(url, $0) } ?? false
+            guard replacesSavedCopy || replacesOwnedCopy else { return }
+            let copies = SavedCopies(
+                savedURL: replacesSavedCopy ? nil : currentSavedURL,
+                ownSavedURL: replacesOwnedCopy ? nil : currentOwnURL
+            )
+            setSavedCopies(copies, for: id)
             if let index = items.firstIndex(where: { $0.id == id }) {
-                items[index].ownSavedURL = nil
+                items[index].savedURL = copies.savedURL
+                items[index].ownSavedURL = copies.ownSavedURL
+                if replacesSavedCopy { stack?.markUnsaved(id) }
             }
             if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
-                recentlyClosed[index].item.ownSavedURL = nil
+                recentlyClosed[index].item.savedURL = copies.savedURL
+                recentlyClosed[index].item.ownSavedURL = copies.ownSavedURL
             }
             return
         }
