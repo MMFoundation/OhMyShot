@@ -1,3 +1,4 @@
+import CoreFoundation
 import CoreGraphics
 import OMSCore
 import Testing
@@ -22,17 +23,24 @@ struct CapturedFrameTests {
     }
 
     /// The bytes of one pixel, counted from the top-left corner, read in the image's own color space.
-    private func pixel(_ image: CGImage, x: Int, y: Int, space: CGColorSpace? = nil) -> [UInt8] {
+    private func pixel(_ image: CGImage, x: Int, y: Int) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: 4)
         bytes.withUnsafeMutableBytes { buffer in
             let context = CGContext(
-                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-                space: space ?? image.colorSpace!,
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: image.colorSpace!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )!
             context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
         }
         return bytes
+    }
+
+    private func halfFloatComponent(_ image: CGImage, x: Int, y: Int, component: Int) throws -> Float {
+        let data = try #require(image.dataProvider?.data)
+        let bytes = try #require(CFDataGetBytePtr(data))
+        let componentOffset = y * image.bytesPerRow + x * image.bitsPerPixel / 8 + component * image.bitsPerComponent / 8
+        let bits = UInt16(bytes[componentOffset]) | UInt16(bytes[componentOffset + 1]) << 8
+        return Float(Float16(bitPattern: bits))
     }
 
     @Test func aPickedPixelIsReadAsTheDisplayShowedIt() throws {
@@ -244,8 +252,13 @@ struct CapturedFrameTests {
         #expect(restored.hdrImage?.bitsPerComponent == 16)
         #expect(restored.hdrImage?.colorSpace?.name == CGColorSpace.extendedSRGB)
         let restoredHDR = try #require(restored.hdrImage)
-        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
-        #expect(pixel(restoredHDR, x: 3, y: 3, space: sRGB)[1] > pixel(restoredHDR, x: 0, y: 0, space: sRGB)[1])
+        let transientHDR = try #require(transient.hdrImage)
+        let restoredHighlight = try halfFloatComponent(restoredHDR, x: 3, y: 3, component: 1)
+        let transientHighlight = try halfFloatComponent(transientHDR, x: 3, y: 3, component: 1)
+        let background = try halfFloatComponent(restoredHDR, x: 0, y: 0, component: 1)
+        #expect(abs(restoredHighlight - transientHighlight) < 0.01)
+        #expect(restoredHighlight > 1.4)
+        #expect(abs(background - 0.25) < 0.01)
     }
 
     @Test func croppedMixedScaleDisplaySnapshotsRestoreAcrossANegativeOriginArea() throws {
