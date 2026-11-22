@@ -1003,7 +1003,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             guard case .redaction = item.shape else { return nil }
             return (item, markLayers[item.id]?.coverage)
         }
-        redactedBeneath[layer.mark.id] = beneath
+        // An erasure reads nothing any redaction lies over, so nothing is kept for it.
+        redactedBeneath[layer.mark.id] = redaction.method == .erase ? nil : beneath
         layer.coverage = Redactor.coverage(
             for: redaction, id: layer.mark.id, source: source, scale: session.document.scale, covered: session.document.redactedRects,
             canvas: erasureCanvas, beneath: beneath

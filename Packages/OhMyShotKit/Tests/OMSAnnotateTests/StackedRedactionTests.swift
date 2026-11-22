@@ -165,4 +165,16 @@ struct StackedRedactionTests {
         let moved = try #require(session.blurredCapture)
         #expect(redness(Pixels(moved), CGRect(x: 0, y: 0, width: moved.width, height: moved.height)) > 30)
     }
+
+    /// A redaction fitting what it hides exactly, on a capture many times larger than the background's small picture,
+    /// with its edges between that picture's pixels: none of what it hides gets into the pixels along its edge.
+    @Test func aBlurredBackgroundKeepsNothingAlongATightRedactionsEdge() throws {
+        let secret = CGRect(x: 101, y: 87, width: 333, height: 217)
+        let base = try picture(width: 1000, height: 700, secret: secret)
+        let document = document(base, [redaction(secret)])
+        let blurred = try #require(BackdropPainter.blurredCapture(
+            base, canvas: document.canvas, redactions: document.redactionCovers(source: .init(base: base)), scale: 1
+        ))
+        #expect(redness(Pixels(blurred), CGRect(x: 0, y: 0, width: blurred.width, height: blurred.height)) <= 2)
+    }
 }

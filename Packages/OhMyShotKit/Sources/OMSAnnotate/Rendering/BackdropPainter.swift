@@ -201,12 +201,28 @@ nonisolated enum BackdropPainter {
     ) -> CGImage? {
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
         let region = canvas.standardized.integral.intersection(bounds)
-        guard !region.isNull, region.width >= 1, region.height >= 1, let cropped = base.cropping(to: region) else { return nil }
+        guard !region.isNull, region.width >= 1, region.height >= 1, var picture = base.cropping(to: region) else { return nil }
+        let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let over = redactions.filter { $0.item.bounds(scale: scale).intersects(region) }
+        if !over.isEmpty {
+            // The redactions go on at the picture's own size, before it is made small: made small first, each small pixel
+            // along a redaction's edge would keep some of what lies under it. No such picture, no blur, never one made
+            // without them.
+            guard let context = AnnotationRenderer.bitmapContext(for: region.size, space: space) else { return nil }
+            context.translateBy(x: 0, y: region.height)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: -region.minX, y: -region.minY)
+            AnnotationRenderer.drawImage(picture, in: region, context: context)
+            for (item, coverage) in over {
+                AnnotationRenderer.draw(item, in: context, scale: scale, coverage: coverage, ground: .light)
+            }
+            guard let redacted = context.makeImage() else { return nil }
+            picture = redacted
+        }
         let longest: CGFloat = 48
         let factor = min(longest / max(region.width, region.height), 1)
         let width = max(Int((region.width * factor).rounded()), 1)
         let height = max(Int((region.height * factor).rounded()), 1)
-        let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
         var small = Bitmap(width: width, height: height, colorSpace: space)
         let drawn = small.bytes.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(
@@ -217,18 +233,7 @@ nonisolated enum BackdropPainter {
             // Opaque underneath, so a window's clear surroundings do not darken the blur.
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            // The region in the document's pixels, y down, filling the bitmap; the redactions replace what they cover
-            // in a layer of its own, which is then laid on the white.
-            context.translateBy(x: 0, y: CGFloat(height))
-            context.scaleBy(x: CGFloat(width) / region.width, y: -CGFloat(height) / region.height)
-            context.translateBy(x: -region.minX, y: -region.minY)
-            context.clip(to: region)
-            context.beginTransparencyLayer(auxiliaryInfo: nil)
-            AnnotationRenderer.drawImage(cropped, in: region, context: context)
-            for (item, coverage) in redactions where item.bounds(scale: scale).intersects(region) {
-                AnnotationRenderer.draw(item, in: context, scale: scale, coverage: coverage, ground: .light)
-            }
-            context.endTransparencyLayer()
+            context.draw(picture, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         guard drawn else { return nil }
