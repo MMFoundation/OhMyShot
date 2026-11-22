@@ -194,6 +194,8 @@ struct QuickAccessCompletionTests {
         let first = try item(), savedElsewhere = try item(), removed = try item(), trashing = try item()
         let (startedEvents, announceStarted) = AsyncStream<Void>.makeStream()
         let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        let startedReader = AsyncEventReader(startedEvents)
+        let closedReader = AsyncEventReader(closedEvents)
         var resumeFirstSave: CheckedContinuation<SaveOutcome, Never>?
         var savedIDs: [UUID] = []
         var configured = actions(succeeds: true)
@@ -211,6 +213,10 @@ struct QuickAccessCompletionTests {
         let controller = QuickAccessController(actions: configured)
         controller.maximumCards = 4
         defer {
+            if let continuation = resumeFirstSave {
+                resumeFirstSave = nil
+                continuation.resume(returning: .cancelled)
+            }
             controller.undoTrash(trashing.id)
             controller.dismissAll()
             announceStarted.finish()
@@ -218,9 +224,8 @@ struct QuickAccessCompletionTests {
         }
         [first, savedElsewhere, removed, trashing].forEach { controller.add($0) }
         controller.saveAll()
-        var startedIterator = startedEvents.makeAsyncIterator()
-        guard let _ = await startedIterator.next() else {
-            #expect(Bool(false))
+        guard let _ = await waitForEvent(from: startedReader) else {
+            #expect(Bool(false), "Timed out waiting for Save All to start")
             return
         }
 
@@ -228,10 +233,10 @@ struct QuickAccessCompletionTests {
         controller.remove(removed.id)
         controller.perform(.moveToTrash, on: trashing, keyed: false)
         let continuation = try #require(resumeFirstSave)
+        resumeFirstSave = nil
         continuation.resume(returning: .saved(URL(filePath: "/tmp/first-export.png")))
-        var closedIterator = closedEvents.makeAsyncIterator()
-        guard let firstClosed = await closedIterator.next(), let nextClosed = await closedIterator.next() else {
-            #expect(Bool(false))
+        guard let firstClosed = await waitForEvent(from: closedReader), let nextClosed = await waitForEvent(from: closedReader) else {
+            #expect(Bool(false), "Timed out waiting for Save All cards to close")
             return
         }
 

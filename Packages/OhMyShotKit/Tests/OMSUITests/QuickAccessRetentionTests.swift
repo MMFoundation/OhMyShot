@@ -274,6 +274,7 @@ struct QuickAccessRetentionTests {
     func contentEditsInvalidateSavedCopiesForEveryTrackingState(tracking: Tracking) async throws {
         var saved: [UUID] = []
         let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        let closedReader = AsyncEventReader(closedEvents)
         var waitingForClose = false
         try await fixtureWithHistory(configure: { actions in
             actions.closed = { if waitingForClose { announceClosed.yield($0.id) } }
@@ -313,8 +314,7 @@ struct QuickAccessRetentionTests {
 
             waitingForClose = true
             cards.closeDueCards(at: .greatestFiniteMagnitude)
-            var closedIterator = closedEvents.makeAsyncIterator()
-            let closedID = await closedIterator.next()
+            let closedID = await waitForEvent(from: closedReader)
             #expect(closedID == capture.id)
             #expect(saved == [capture.id])
             announceClosed.finish()
@@ -364,6 +364,7 @@ struct QuickAccessRetentionTests {
     @Test func historyExportWithoutCardSeedsSavedStateOnRestore() async throws {
         var saves = 0
         let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        let closedReader = AsyncEventReader(closedEvents)
         try await fixtureWithHistory(configure: { actions in
             actions.closed = { announceClosed.yield($0.id) }
             actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
@@ -381,12 +382,25 @@ struct QuickAccessRetentionTests {
             #expect(cards.item(capture.id)?.savedURL == export)
 
             cards.closeDueCards(at: .greatestFiniteMagnitude)
-            var closedIterator = closedEvents.makeAsyncIterator()
-            let closedID = await closedIterator.next()
+            let closedID = await waitForEvent(from: closedReader)
             #expect(closedID == capture.id)
             #expect(cards.item(capture.id) == nil)
             #expect(saves == 0)
             announceClosed.finish()
+        }
+    }
+
+    @Test func externalSaveBeforeFirstCardInsertionSeedsSavedState() async throws {
+        try await fixtureWithHistory(configure: { $0.closed = { _ in } }) { cards, _, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let external = capture.fileURL.deletingLastPathComponent().appending(path: "studio-export.mp4")
+            cards.markSaved(capture.id, at: external)
+            #expect(cards.item(capture.id) == nil)
+
+            cards.add(capture)
+            #expect(cards.item(capture.id)?.savedURL == external)
+            #expect(cards.item(capture.id)?.ownSavedURL == nil)
         }
     }
 

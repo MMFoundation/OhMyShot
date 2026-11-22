@@ -71,6 +71,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     public var onClose: (() -> Void)?
+    public var onSaved: ((URL) -> Void)?
     /// The recording's file in the history.
     public private(set) var fileURL: URL
 
@@ -353,10 +354,17 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     func saveRecording() {
         Task {
             guard let url = await keepEdits() else { return }
-            guard actions.save(url) != nil else { return NSSound.beep() }
+            guard saveCopy(url) != nil else { return NSSound.beep() }
             model.flashSaved()
             announce(String(localized: "Saved", bundle: .module))
         }
+    }
+
+    @discardableResult
+    func saveCopy(_ url: URL) -> URL? {
+        guard let destination = actions.save(url) else { return nil }
+        onSaved?(destination)
+        return destination
     }
 
     func saveAs() {
@@ -368,12 +376,25 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             panel.allowedContentTypes = [UTType(filenameExtension: url.pathExtension) ?? .mpeg4Movie]
             let response = await panel.beginSheetModal(for: window)
             guard response == .OK, let destination = panel.url else { return }
-            do {
-                try await AtomicFileCopy.copy(from: url, to: destination)
-                model.flashSaved()
-            } catch {
-                fail(error)
+            if let result = await saveCopyAs(from: url, to: destination) {
+                switch result {
+                case .success:
+                    model.flashSaved()
+                case .failure(let error):
+                    fail(error)
+                }
             }
+        }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?) async -> Result<URL, Error>? {
+        guard let destination else { return nil }
+        do {
+            try await AtomicFileCopy.copy(from: source, to: destination)
+            onSaved?(destination)
+            return .success(destination)
+        } catch {
+            return .failure(error)
         }
     }
 

@@ -341,6 +341,9 @@ final class CompositionRoot {
         recordings.onChanged = { [weak self] entry in
             self?.recordingChanged(entry)
         }
+        recordings.onSaved = { [weak self] id, destination in
+            self?.quickAccess.markSaved(id, at: destination, byCard: false)
+        }
         recordings.shortcutKeys = { [weak self] in
             self?.hotkeys.keys(for: .recordScreen)
         }
