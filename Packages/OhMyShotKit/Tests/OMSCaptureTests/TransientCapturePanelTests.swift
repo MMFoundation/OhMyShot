@@ -1,4 +1,6 @@
 import AppKit
+import OMSCore
+import QuartzCore
 import Testing
 @testable import OMSCapture
 
@@ -42,4 +44,73 @@ struct TransientCapturePanelTests {
         #expect(TransientCapturePanels.visible(in: [list[1]], launcher: nil, ownPID: 10, alfredPIDs: []) != nil)
         #expect(TransientCapturePanels.visible(in: [], launcher: 1, ownPID: 10, alfredPIDs: [])?.ownWindowIDs == [1])
     }
+
+    #if DEBUG
+    /// Uses the WindowServer and ScreenCaptureKit. Opt in on a Mac with Screen Recording access.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["OMS_TEST_CAPTURE_POPOVER"] == "1"))
+    func selectedPixelsSurvivePopoverDismissal() async throws {
+        try #require(CGPreflightScreenCaptureAccess())
+        let topology = DisplayTopology()
+        let display = try #require(topology.layout.primary)
+        let cache = ShareableContentCache()
+        let capturer = ScreenCapturer(content: cache)
+        let overlay = OverlayController(topology: topology, capturer: capturer)
+        overlay.prepare()
+        _ = try await cache.current()
+        let anchor = NSWindow(contentRect: CGRect(x: display.frame.midX, y: display.frame.midY, width: 40, height: 30),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        anchor.level = .statusBar
+        anchor.orderFrontRegardless()
+        defer { anchor.orderOut(nil) }
+        for freezes in [false, true] {
+            let content = NSViewController()
+            content.view = Swatch(frame: CGRect(x: 0, y: 0, width: 180, height: 80))
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.animates = false
+            popover.contentViewController = content
+            let button = try #require(anchor.contentView)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            defer { popover.close() }
+            let window = try #require(content.view.window)
+            window.displayIfNeeded()
+            CATransaction.flush()
+            let point = window.convertPoint(toScreen: content.view.convert(CGPoint(x: 90, y: 40), to: nil))
+            let area = CGRect(x: point.x - 10, y: point.y - 10, width: 20, height: 20)
+            // The user presses the shortcut after seeing the popover. AppKit can return from show()
+            // before WindowServer has presented it, even with animations disabled.
+            var visibleColor: String?
+            for _ in 0..<15 {
+                let screen = try await capturer.captureDisplay(display, includingOwnWindows: true)
+                visibleColor = screen.cropped(to: area)?.color(atPixel: 1, 1)?.hex
+                if visibleColor == "#FF00FF" { break }
+                try await Task.sleep(for: .milliseconds(16))
+            }
+            try #require(visibleColor == "#FF00FF")
+            let panels = try #require(TransientCapturePanels.visible(launcher: CGWindowID(window.windowNumber)))
+            overlay.freezesScreen = freezes
+            var result: OverlayController.Outcome?
+            overlay.begin(options: .init(panels: panels)) { result = $0 }
+            defer { overlay.cancel() }
+            for _ in 0..<100 where overlay.isActive && !overlay.hasFrames {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            try #require(overlay.hasFrames)
+            popover.close()
+            overlay.simulateSelection(area)
+            guard case .region(_, _, _, let frame?) = result else {
+                Issue.record("Expected the selected pixels from before dismissal (freeze = \(freezes))")
+                return
+            }
+            #expect(frame.color(atPixel: frame.image.width / 2, frame.image.height / 2)?.hex == "#FF00FF", "freeze = \(freezes)")
+        }
+    }
+
+    private final class Swatch: NSView {
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1).setFill()
+            dirtyRect.fill()
+        }
+    }
+    #endif
 }
