@@ -531,7 +531,7 @@ final class CaptureCoordinator {
         do {
             var captured = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
             let captureScale = displays.layout.display(id: captured.displayID)?.pixelsPerPoint ?? captured.pixelsPerPoint
-            if let clipTo, !clipTo.frame.contains(target.frame) {
+            if let clipTo, !clipTo.frame.contains(captured.frame) {
                 let pictureFrame = WallpaperCrop.pictureFrame(of: captured.image, window: captured.frame, pixelsPerPoint: captureScale)
                 guard let clipped = captured.cropped(to: clipTo.frame, mappedFrom: pictureFrame, pixelsPerPoint: captureScale) else {
                     throw CaptureError.emptyResult

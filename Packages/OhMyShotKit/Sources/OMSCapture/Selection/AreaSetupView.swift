@@ -113,12 +113,11 @@ class AreaSetupView<Bar: NSView>: NSView {
     func setArea(_ rect: CGRect) -> Bool {
         guard let kept = AreaFrame.fitted(rect, in: bounds) else { return false }
         let snapped = AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint)
-        cancelFit()
-        fit = nil
         if let current = adjustableArea,
            AreaFrame.snapped(AreaFrame.local(current, on: display), pixelsPerPoint: display.pixelsPerPoint) == snapped {
             return true
         }
+        clearFit()
         areaAdjusted(AreaFrame.global(snapped, on: display))
         // Moved by the keys or a typed size, the area is looked at again once the keys rest; a drag looks once it ends.
         if adjustment == nil { refreshCodes(after: .milliseconds(250)) } else { clearCodes() }
@@ -234,6 +233,12 @@ class AreaSetupView<Bar: NSView>: NSView {
         NSAccessibility.post(element: self, notification: .valueChanged)
         let reading = AreaFrame.pixelReading(fit.drawn.size, pixelsPerPoint: display.pixelsPerPoint)
         VoiceOver.announce(String(localized: "Back to the area as drawn: \(reading)", bundle: .module), from: self, priority: .medium)
+    }
+
+    /// Drops any saved B-fit undo state and cancels an in-flight edge search.
+    func clearFit() {
+        cancelFit()
+        fit = nil
     }
 
     private func cancelFit() {

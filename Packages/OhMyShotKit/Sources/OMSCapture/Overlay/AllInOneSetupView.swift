@@ -168,8 +168,10 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     private func keep(_ ratio: AspectRatio?) {
         // A size being typed is set first, under the shape it was typed for.
         endTyping()
+        let changed = self.ratio != ratio
         self.ratio = ratio
         if let ratio {
+            if changed { clearFit() }
             let before = area
             let local = AreaFrame.local(area, on: display)
             setArea(AreaFrame.shaped(local, to: ratio.value, in: bounds))
