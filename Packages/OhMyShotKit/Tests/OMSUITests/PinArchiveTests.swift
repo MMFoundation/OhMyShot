@@ -51,6 +51,48 @@ struct PinArchiveTests {
         #expect(color.hex == (try #require(PinColor(p3))).hex)
     }
 
+    @Test func aPinComesBackPinnedWhenItWasWithItsCapturesBackground() throws {
+        let archive = archive()
+        defer { try? FileManager.default.removeItem(at: archive.folder) }
+        let image = try picture()
+        // To the fraction of a second, which an ISO 8601 date drops: Capture Area and Pin writes its capture's file just before.
+        let pinnedAt = Date(timeIntervalSinceReferenceDate: 785_000_000.375)
+        let background = Data(#"{"fill":{"gradient":{"_0":"sky"}}}"#.utf8)
+        let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .capture(UUID()), pinnedAt: pinnedAt, background: background)
+        archive.keepPicture(image, id: pin.id)
+        archive.save(PinArchive.Manifest(hidden: false, pins: [try record(pin)]), waits: true)
+
+        let (manifest, pictures) = try #require(archive.loadNow())
+        let back = try #require(manifest.pins.first?.pin(picture: pictures[pin.id]))
+        #expect(back.pinnedAt == pinnedAt && back.background == background)
+        // Its capture, marked up after it was pinned and before the app quit, holds a picture other than the pin's.
+        #expect(back.shows(fileChangedAt: pinnedAt.addingTimeInterval(-0.25)))
+        #expect(!back.shows(fileChangedAt: pinnedAt.addingTimeInterval(0.25)))
+    }
+
+    @Test func aPinKeptBeforeItsPinnedTimeWasHandsOverItsOwnPicture() throws {
+        let archive = archive()
+        defer { try? FileManager.default.removeItem(at: archive.folder) }
+        let image = try picture()
+        let pin = PinController.Pin(id: UUID(), content: .image(image, scale: 2), origin: .capture(UUID()))
+        archive.keepPicture(image, id: pin.id)
+        archive.save(PinArchive.Manifest(hidden: false, pins: [try record(pin)]), waits: true)
+        // The list as an earlier version wrote it, without the pinned time.
+        let list = archive.folder.appending(path: "Pins.json")
+        var written = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: list)) as? [String: Any])
+        var pins = try #require(written["pins"] as? [[String: Any]])
+        #expect(pins[0]["pinnedAt"] != nil)
+        pins[0]["pinnedAt"] = nil
+        written["pins"] = pins
+        try JSONSerialization.data(withJSONObject: written).write(to: list)
+
+        let (manifest, pictures) = try #require(archive.loadNow())
+        let back = try #require(manifest.pins.first?.pin(picture: pictures[pin.id]))
+        // Taken as changed whenever its capture was last written, so it hands over the picture it shows.
+        #expect(!back.shows(fileChangedAt: Date(timeIntervalSince1970: 0)))
+        #expect(back.background == nil)
+    }
+
     @Test func aPinWhosePictureIsMissingIsLeftOutAndALeftoverPictureRemoved() throws {
         let archive = archive()
         defer { try? FileManager.default.removeItem(at: archive.folder) }

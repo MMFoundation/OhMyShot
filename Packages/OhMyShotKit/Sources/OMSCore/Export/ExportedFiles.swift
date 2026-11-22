@@ -124,6 +124,27 @@ public enum ExportedFiles {
         return destination
     }
 
+    /// The file a capture's pin hands over when its capture's file no longer holds its picture (the capture gone from the
+    /// history, or changed since it was pinned): the pin's own picture, as `picture` draws it to leave the app, written as
+    /// `output` says and named `name`. A pin's picture never changes, so its copy is kept in a folder of the pin's own for
+    /// each way of writing it, and a second drag hands over the same file at once; `picture` is drawn only when there is
+    /// none, and throws when it can't be, so nothing is written in its place.
+    public static func file(
+        forPin id: UUID, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder,
+        picture: () throws -> CGImage
+    ) throws -> URL {
+        let directory = folder
+            .appending(path: "\(output.cacheKey)-pin", directoryHint: .isDirectory)
+            .appending(path: id.uuidString, directoryHint: .isDirectory)
+        let kept = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))
+        if let kept = kept?.first(where: { ($0 as NSString).pathExtension == output.format.fileExtension }) { return directory.appending(path: kept) }
+        let encoded = try PictureExport.encode(try picture(), pixelsPerPoint: pixelsPerPoint, output: output)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appending(path: "\(name).\(encoded.fileExtension)")
+        try encoded.data.write(to: destination, options: .atomic)
+        return destination
+    }
+
     /// How many of the clipboard's files are kept: the last few copies, which an app slow to paste, or a clipboard
     /// manager, may still name. An older one goes as a new one is made, so copying again and again does not fill the
     /// caches.

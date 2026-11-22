@@ -5,7 +5,8 @@ import OMSCore
 import OSLog
 
 /// The pins open now, kept on disk so they come back after the app quits, updates, or crashes: `Pins.json` holds each
-/// pin's kind, place, zoom, opacity, and lock, its text or color, and whether the pins were hidden; each picture is a
+/// pin's kind, place, zoom, opacity, and lock, its text or color, when it was pinned and the background its capture was
+/// put on, and whether the pins were hidden; each picture is a
 /// PNG beside it, named by its pin. Nothing is there while no pin is open. Reads and writes go through one queue of
 /// their own, in the order they were asked for, so a picture is on disk before the list that names it.
 nonisolated final class PinArchive: Sendable {
@@ -27,6 +28,12 @@ nonisolated final class PinArchive: Sendable {
         var zoom: CGFloat
         var opacity: CGFloat
         var locked: Bool
+        /// When it was pinned, in seconds since 2001 (`Date.timeIntervalSinceReferenceDate`): to the fraction, which the
+        /// list's ISO 8601 dates drop, while Capture Area and Pin writes its capture's file in the second before it pins.
+        /// Nil in a list kept before pins kept it.
+        var pinnedAt: TimeInterval?
+        /// Its capture's background, which it leaves out (`PinController.Pin.background`).
+        var background: Data?
     }
 
     struct Manifest: Codable, Equatable, Sendable {
@@ -169,7 +176,19 @@ extension PinArchive.Record {
             guard let named, let space = named.colorSpace?.name as String?, let components = named.components else { return nil }
             content = .color(space: space, components: components)
         }
-        self.init(id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked)
+        self.init(
+            id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked,
+            pinnedAt: pin.pinnedAt.timeIntervalSinceReferenceDate, background: pin.background
+        )
+    }
+
+    /// The pin as it was kept, with its picture when it is one; nil when it can't be made. It was pinned when it was, so
+    /// a capture changed since, before the app quit, still holds a picture other than the pin's; one from a list kept
+    /// before pins kept that is taken as pinned before its capture's every change, and hands over its own picture.
+    func pin(picture: CGImage?) -> PinController.Pin? {
+        guard let content = pinContent(picture: picture) else { return nil }
+        let pinnedAt = pinnedAt.map(Date.init(timeIntervalSinceReferenceDate:)) ?? .distantPast
+        return PinController.Pin(id: id, content: content, origin: origin, pinnedAt: pinnedAt, background: background)
     }
 
     /// What the pin shows, made again, with its picture when it is one; nil when it can't be.

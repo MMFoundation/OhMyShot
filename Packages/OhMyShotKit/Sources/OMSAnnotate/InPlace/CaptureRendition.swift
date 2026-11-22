@@ -28,4 +28,13 @@ nonisolated public enum CaptureRendition {
         plain.backdrop = nil
         return AnnotationRenderer.flatten(plain, base: base)
     }
+
+    /// What such a pin hands over once its capture's file no longer holds its picture: the picture it shows (`pinned`'s),
+    /// at its scale, on the background its capture was put on, as the capture was. Nil when that can't be drawn, where the
+    /// picture without its background must not stand in.
+    public static func handedOver(_ pinned: CGImage, scale: CGFloat, on backdrop: Backdrop) -> CGImage? {
+        var document = AnnotationDocument(pixelSize: CGSize(width: pinned.width, height: pinned.height), scale: scale)
+        document.backdrop = backdrop
+        return AnnotationRenderer.flatten(document, base: pinned)
+    }
 }
