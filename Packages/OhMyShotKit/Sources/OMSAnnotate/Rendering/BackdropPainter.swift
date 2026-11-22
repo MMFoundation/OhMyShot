@@ -192,9 +192,13 @@ nonisolated enum BackdropPainter {
         return (mask, rect)
     }
 
-    /// The capture's canvas, small and blurred until only its colors are left, for a `.blur` fill. A
-    /// tiny picture scaled up smoothly is as soft as a large blur at a fraction of the work.
-    static func blurredCapture(_ base: CGImage, canvas: CGRect) -> CGImage? {
+    /// The capture's canvas with its redactions on it, as they are drawn, and none of the other marks, small and blurred
+    /// until only its colors are left, for a `.blur` fill: it carries nothing a redaction hides. A tiny picture scaled up
+    /// smoothly is as soft as a large blur at a fraction of the work. `redactions` are the document's, in drawing order,
+    /// with what each draws (`AnnotationDocument.redactionCovers`); `scale` is the document's.
+    static func blurredCapture(
+        _ base: CGImage, canvas: CGRect, redactions: [(item: Annotation, coverage: Redactor.Coverage?)], scale: CGFloat
+    ) -> CGImage? {
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
         let region = canvas.standardized.integral.intersection(bounds)
         guard !region.isNull, region.width >= 1, region.height >= 1, let cropped = base.cropping(to: region) else { return nil }
@@ -213,7 +217,18 @@ nonisolated enum BackdropPainter {
             // Opaque underneath, so a window's clear surroundings do not darken the blur.
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+            // The region in the document's pixels, y down, filling the bitmap; the redactions replace what they cover
+            // in a layer of its own, which is then laid on the white.
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: CGFloat(width) / region.width, y: -CGFloat(height) / region.height)
+            context.translateBy(x: -region.minX, y: -region.minY)
+            context.clip(to: region)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            AnnotationRenderer.drawImage(cropped, in: region, context: context)
+            for (item, coverage) in redactions where item.bounds(scale: scale).intersects(region) {
+                AnnotationRenderer.draw(item, in: context, scale: scale, coverage: coverage, ground: .light)
+            }
+            context.endTransparencyLayer()
             return true
         }
         guard drawn else { return nil }
