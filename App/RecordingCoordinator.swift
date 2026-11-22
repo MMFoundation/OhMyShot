@@ -1085,6 +1085,7 @@ final class RecordingCoordinator {
         var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
         let saved = after.saves ? files.saveRecording(fileAt: url) : nil
         item.savedURL = saved?.url
+        item.ownSavedURL = saved?.url
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
         if let failure = saved?.failure { saveFailed?(failure, entry.id) }
@@ -1218,6 +1219,7 @@ final class RecordingCoordinator {
     /// A kept recording changed (edited, or put back as it was made): the composition root refreshes its
     /// card and Capture History.
     var onChanged: ((HistoryItem) -> Void)?
+    var onSaved: ((UUID, URL, Bool) -> Void)?
 
     /// Opens a kept recording in the recording window: to play, trim, leave the sound out, make smaller, or
     /// make a GIF of; a GIF only plays.
@@ -1304,6 +1306,7 @@ final class RecordingCoordinator {
                 }
             )
         )
+        controller.onSaved = { [weak self] destination, isCurrent in self?.onSaved?(id, destination, isCurrent) }
         controller.onClose = { [weak self] in
             self?.studioWindows[id] = nil
             self?.windowClosed?(id)
@@ -1381,6 +1384,7 @@ final class RecordingCoordinator {
                 copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )
+        controller.onSaved = { [weak self] destination, isCurrent in self?.onSaved?(id, destination, isCurrent) }
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
             self?.windows[id] = nil
             self?.windowClosed?(id)
