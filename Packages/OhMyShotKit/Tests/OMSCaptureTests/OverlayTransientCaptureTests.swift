@@ -88,7 +88,7 @@ struct OverlayTransientCaptureTests {
         #expect(OverlayPanel.dispatches(.leftMouseDown, keyCode: 0, whileComparisonPending: false))
     }
 
-    @Test func pendingTransientComparisonInterceptsSyntheticMouseAndResetsForReuse() throws {
+    @Test func pendingTransientComparisonBuffersSyntheticMouseEventsAndResetsForReuse() throws {
         let panel = OverlayPanel(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
         panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: false)
         #expect(panel.ignoresMouseEvents)
@@ -96,26 +96,45 @@ struct OverlayTransientCaptureTests {
 
         panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: true)
         #expect(!panel.ignoresMouseEvents)
-        let mouseEvent = try #require(NSEvent.mouseEvent(
-            with: .leftMouseDown, location: CGPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
-            windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
-        ))
-
-        panel.sendEvent(mouseEvent)
+        func mouseEvent(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: CGPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
+                windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        let mouseDown = try mouseEvent(.leftMouseDown)
+        let mouseUp = try mouseEvent(.leftMouseUp)
+        panel.sendEvent(mouseDown)
+        panel.sendEvent(mouseUp)
 
         #expect(panel.suppressesInputUntilTransientComparison)
-        #expect(panel.debugDeferredMouseEventCount == 1)
-        panel.configureInput(acceptingInput: true, suppressingInputUntilComparison: false)
-        #expect(!panel.suppressesInputUntilTransientComparison)
-        #expect(panel.debugDeferredMouseEventCount == 0)
-
-        panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: true)
-        panel.sendEvent(mouseEvent)
-        #expect(panel.debugDeferredMouseEventCount == 1)
+        #if DEBUG
+        #expect(panel.debugDeferredMouseEventCount == 2)
+        #endif
         panel.configureInput(acceptingInput: false, suppressingInputUntilComparison: false)
         #expect(!panel.suppressesInputUntilTransientComparison)
         #expect(panel.ignoresMouseEvents)
+        #if DEBUG
         #expect(panel.debugDeferredMouseEventCount == 0)
+        #endif
+    }
+
+    @Test func deferredMouseEventsArePostedInOriginalAppKitOrder() throws {
+        func mouseEvent(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: CGPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
+                windowNumber: 1, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        let events = [try mouseEvent(.leftMouseDown), try mouseEvent(.leftMouseDragged), try mouseEvent(.leftMouseUp)]
+        var queued: [NSEvent] = []
+
+        OverlayPanel.postInAppKitOrder(events) { event, atStart in
+            #expect(atStart)
+            queued.insert(event, at: 0)
+        }
+
+        #expect(queued.map(\.type) == events.map(\.type))
     }
 
     @Test func liveTransientPreviewIsBelowDimmingAndSelectionAndClearedOnResetAndCancel() throws {

@@ -27,7 +27,9 @@ final class OverlayPanel: NSPanel {
         if wasSuppressingInput && acceptingInput && !suppressingInputUntilComparison {
             let events = deferredMouseEvents
             deferredMouseEvents.removeAll()
-            events.forEach(sendEvent)
+            Self.postInAppKitOrder(events) { event, atStart in
+                NSApplication.shared.postEvent(event, atStart: atStart)
+            }
         } else if !suppressingInputUntilComparison {
             deferredMouseEvents.removeAll()
         }
@@ -83,6 +85,10 @@ final class OverlayPanel: NSPanel {
         default:
             false
         }
+    }
+
+    static func postInAppKitOrder(_ events: [NSEvent], enqueue: (NSEvent, Bool) -> Void) {
+        for event in events.reversed() { enqueue(event, true) }
     }
 
     static func dispatches(
