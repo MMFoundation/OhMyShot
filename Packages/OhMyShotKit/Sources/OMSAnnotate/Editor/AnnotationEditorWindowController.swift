@@ -50,7 +50,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     private let model: EditorModel
     private let content: EditorContentView
     private let actions: Actions
-    private var fileURL: URL
+    private var fileURL: URL?
     private var windowLease: ActiveResources.Lease?
     private var closing: Task<Bool, Never>?
     public private(set) var didClose = false
@@ -61,9 +61,12 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     ///   - image: the capture as it was taken.
     ///   - scale: pixels per point of the screen it came from.
     ///   - document: marks made on it before.
-    ///   - fileURL: the capture's file, which holds the marked-up picture once edits are kept.
-    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL, actions: Actions) {
+    ///   - fileURL: the capture's file, which holds the marked-up picture once edits are kept. Nil for a capture in no file
+    ///     yet (History couldn't take it): the picture and its marks start unkept, so nothing that needs the file goes
+    ///     without them, and closing asks before they are lost, until `keep` gives a file.
+    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL?, actions: Actions) {
         session = AnnotationSession(image: image, scale: scale, document: document)
+        session.hasUnkeptChanges = fileURL == nil
         content = EditorContentView(session: session)
         model = EditorModel()
         self.actions = actions
@@ -567,7 +570,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.endEditing()
         keepNow()
         // Edits that could not be kept are not in the file: handing it over would drop them.
-        guard !session.hasUnkeptChanges else { return nil }
+        guard !session.hasUnkeptChanges, let fileURL else { return nil }
         return actions.fileToHandOver(fileURL)
     }
 

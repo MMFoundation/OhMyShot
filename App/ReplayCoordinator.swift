@@ -5,6 +5,7 @@ import OMSCapture
 import OMSCore
 import OMSDesign
 import OMSRecording
+import OMSUI
 import OSLog
 import ScreenCaptureKit
 
@@ -32,6 +33,8 @@ final class ReplayCoordinator {
     /// Saves under way; the app waits for them before quitting.
     private var saving = 0
     private var savingDone: [() -> Void] = []
+    /// Says by the pointer that a clip went to the export folder, as it has no card to show it.
+    private lazy var notice = CopiedHUD()
 
     init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, permissions: PermissionCenter, recordings: RecordingCoordinator) {
         self.settings = settings
@@ -124,6 +127,8 @@ final class ReplayCoordinator {
     /// How saving one display's clip went.
     private enum Saved {
         case saved
+        /// History couldn't take the clip, so it went to the export folder instead.
+        case savedToFolder
         /// Nothing changed there in the last 15 seconds: the display's name, when it is still connected.
         case nothingChanged(String?)
         case failed
@@ -166,6 +171,13 @@ final class ReplayCoordinator {
         } else if saved > 1 {
             sentences.append(String(localized: "Saved the last 15 seconds of \(saved) displays."))
         }
+        let toFolder = outcomes.filter { if case .savedToFolder = $0 { true } else { false } }.count
+        if toFolder > 0 {
+            let folder = FileManager.default.displayName(atPath: settings.exportDirectory.path(percentEncoded: false))
+            sentences.append(toFolder == 1
+                ? String(localized: "The last 15 seconds were saved to \(folder) but couldn’t be added to History.")
+                : String(localized: "The last 15 seconds of \(toFolder) displays were saved to \(folder) but couldn’t be added to History."))
+        }
         for outcome in outcomes {
             guard case .nothingChanged(let name) = outcome else { continue }
             sentences.append(name.map { String(localized: "Nothing changed on \($0) in the last 15 seconds.") }
@@ -175,7 +187,13 @@ final class ReplayCoordinator {
             sentences.append(String(localized: "The last 15 seconds couldn’t be saved."))
         }
         if saved < outcomes.count { NSSound.beep() }
-        if !sentences.isEmpty { VoiceOver.announce(Sentences.joined(sentences)) }
+        guard !sentences.isEmpty else { return }
+        // A clip outside History has no card to show where it went: the reading by the pointer says it, and says it aloud.
+        if toFolder > 0 {
+            notice.show(Sentences.joined(sentences), near: NSEvent.mouseLocation)
+        } else {
+            VoiceOver.announce(Sentences.joined(sentences))
+        }
     }
 
     private func save(_ buffer: ReplayBuffer, of displayID: CGDirectDisplayID, at savedAt: Date) async -> Saved {
@@ -185,9 +203,10 @@ final class ReplayCoordinator {
         let movie = folder.appending(path: "Replay \(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: clip) }
         let probe = LatencyProbe("replay.save")
+        let finished: RecordingFinisher.Movie
         do {
             try await buffer.save(to: clip)
-            let finished = try await RecordingFinisher.finish(clip, to: movie, audio: .keeping(settings.replaySound, of: buffer.audioTracks))
+            finished = try await RecordingFinisher.finish(clip, to: movie, audio: .keeping(settings.replaySound, of: buffer.audioTracks))
             #if DEBUG
             if let folder = debugSaveFolder {
                 let kept = folder.appending(path: "replay-saved.mp4")
@@ -199,12 +218,6 @@ final class ReplayCoordinator {
                 return .saved
             }
             #endif
-            // As many of the clip's pixels as there were points on the display: the clip may be scaled to fit.
-            let pixelsPerPoint = display.flatMap { $0.frame.width > 0 ? Double(finished.pixelWidth) / Double($0.frame.width) : nil }
-            let entry = try await recordings.keepReplay(finished, savedAt: savedAt, displayID: displayID, pixelsPerPoint: pixelsPerPoint)
-            probe.end()
-            Log.recording.notice("Saved the replay of a display: \(finished.duration, format: .fixed(precision: 2), privacy: .public) s, \(finished.pixelWidth, privacy: .public)x\(finished.pixelHeight, privacy: .public), sound \(self.settings.replaySound.rawValue, privacy: .public), as \(entry.fileName, privacy: .private)")
-            return .saved
         } catch ReplayBuffer.ReplayError.nothingChanged {
             try? FileManager.default.removeItem(at: movie)
             Log.recording.notice("Nothing changed on a display in the last 15 seconds")
@@ -212,6 +225,24 @@ final class ReplayCoordinator {
         } catch {
             try? FileManager.default.removeItem(at: movie)
             Log.recording.error("Saving the replay failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
+            return .failed
+        }
+        // The clip is finished, and nothing could make it again: from here on it is kept, in History or the export folder,
+        // or left where it is, and never deleted.
+        do {
+            // As many of the clip's pixels as there were points on the display: the clip may be scaled to fit.
+            let pixelsPerPoint = display.flatMap { $0.frame.width > 0 ? Double(finished.pixelWidth) / Double($0.frame.width) : nil }
+            switch try await recordings.keepReplay(finished, savedAt: savedAt, displayID: displayID, pixelsPerPoint: pixelsPerPoint) {
+            case .history(let entry):
+                probe.end()
+                Log.recording.notice("Saved the replay of a display: \(finished.duration, format: .fixed(precision: 2), privacy: .public) s, \(finished.pixelWidth, privacy: .public)x\(finished.pixelHeight, privacy: .public), sound \(self.settings.replaySound.rawValue, privacy: .public), as \(entry.fileName, privacy: .private)")
+                return .saved
+            case .folder(let file):
+                Log.recording.error("Saved the replay of a display to the export folder as \(file.lastPathComponent, privacy: .private): History couldn't take it")
+                return .savedToFolder
+            }
+        } catch {
+            Log.recording.error("Keeping the replay failed, and its clip was not deleted (the history log says where it is): \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return .failed
         }
     }
