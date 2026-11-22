@@ -61,7 +61,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var onClose: (() -> Void)?
-    public var onSaved: ((URL) -> Void)?
+    public var onSaved: ((URL, Bool) -> Void)?
     public let studio: StudioDocument
     let model = StudioWindowModel()
     private let actions: Actions
@@ -339,7 +339,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     @discardableResult
     func saveCopy(_ url: URL) -> URL? {
         guard let destination = actions.save(url) else { return nil }
-        onSaved?(destination)
+        onSaved?(destination, true)
         return destination
     }
 
@@ -375,8 +375,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard let destination else { return nil }
         let project = studio.project
         let outcome = await save(source, destination)
-        if case .saved(let url) = outcome, studio.project == project {
-            onSaved?(url)
+        if case .saved(let url) = outcome {
+            onSaved?(url, studio.project == project)
         }
         return outcome
     }
@@ -520,7 +520,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = title
-        alert.informativeText = error.localizedDescription
+        if let failure = error as? ExportFailure {
+            alert.informativeText = "\(failure.summary)\n\(failure.detail)"
+        } else {
+            alert.informativeText = error.localizedDescription
+        }
         guard let window, window.isVisible else {
             NSApp.activate()
             alert.runModal()

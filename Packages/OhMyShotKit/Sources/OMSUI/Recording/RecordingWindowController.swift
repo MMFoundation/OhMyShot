@@ -71,7 +71,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     public var onClose: (() -> Void)?
-    public var onSaved: ((URL) -> Void)?
+    public var onSaved: ((URL, Bool) -> Void)?
     /// The recording's file in the history.
     public private(set) var fileURL: URL
 
@@ -369,7 +369,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     @discardableResult
     func saveCopy(_ url: URL) -> URL? {
         guard let destination = actions.save(url) else { return nil }
-        onSaved?(destination)
+        onSaved?(destination, true)
         return destination
     }
 
@@ -406,8 +406,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         let revision = contentRevision
         let edit = self.edit
         let outcome = await save(source, destination)
-        if case .saved(let url) = outcome, revision == contentRevision, edit == self.edit {
-            onSaved?(url)
+        if case .saved(let url) = outcome {
+            onSaved?(url, revision == contentRevision && edit == self.edit)
         }
         return outcome
     }
@@ -472,9 +472,16 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     private func fail(_ error: any Error) {
         NSSound.beep()
         let alert = NSAlert(error: error)
+        let exportFailure = error as? ExportFailure
+        if let exportFailure {
+            alert.messageText = exportFailure.summary
+            alert.informativeText = exportFailure.detail
+        }
         guard let window, window.isVisible else {
             // Edits kept as the window closed: said in an alert of its own, so they are not lost without a word.
-            alert.messageText = String(localized: "The edited recording couldn’t be kept", bundle: .module)
+            if exportFailure == nil {
+                alert.messageText = String(localized: "The edited recording couldn’t be kept", bundle: .module)
+            }
             NSApp.activate()
             alert.runModal()
             return

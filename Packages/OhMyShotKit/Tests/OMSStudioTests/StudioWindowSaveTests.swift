@@ -73,17 +73,23 @@ struct StudioWindowSaveTests {
             editor.window?.close()
             document.releasePreview()
         }
-        var reported: [URL] = []
-        editor.onSaved = { reported.append($0) }
+        var reportedURLs: [URL] = []
+        var reportedCurrentness: [Bool] = []
+        editor.onSaved = { url, isCurrent in
+            reportedURLs.append(url)
+            reportedCurrentness.append(isCurrent)
+        }
 
         #expect(editor.saveCopy(source) == saved)
         saveResult = nil
         #expect(editor.saveCopy(source) == nil)
-        #expect(reported == [saved])
+        #expect(reportedURLs == [saved])
+        #expect(reportedCurrentness == [true])
 
         let canceled = await editor.saveCopyAs(from: source, to: nil)
         if case .some = canceled { #expect(Bool(false), "Canceled Save As reported a result") }
-        #expect(reported == [saved])
+        #expect(reportedURLs == [saved])
+        #expect(reportedCurrentness == [true])
 
         let destination = folder.appending(path: "saved-as.mp4")
         let copied = await editor.saveCopyAs(from: source, to: destination)
@@ -92,14 +98,16 @@ struct StudioWindowSaveTests {
             return
         }
         #expect(copiedURL == destination)
-        #expect(reported == [saved, destination])
+        #expect(reportedURLs == [saved, destination])
+        #expect(reportedCurrentness == [true, true])
 
         let alias = folder.appending(path: "alias")
         try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: folder)
         let sameFile = await editor.saveCopyAs(from: source, to: alias.appending(path: source.lastPathComponent))
         #expect(sameFile?.url == nil && sameFile?.failure != nil)
         #expect(try Data(contentsOf: source) == Data([1, 2, 3]))
-        #expect(reported == [saved, destination])
+        #expect(reportedURLs == [saved, destination])
+        #expect(reportedCurrentness == [true, true])
 
         let missing = folder.appending(path: "missing.mp4")
         let failed = await editor.saveCopyAs(from: missing, to: folder.appending(path: "failed.mp4"))
@@ -107,7 +115,8 @@ struct StudioWindowSaveTests {
             #expect(Bool(false), "A failed copy should return a failure")
             return
         }
-        #expect(reported == [saved, destination])
+        #expect(reportedURLs == [saved, destination])
+        #expect(reportedCurrentness == [true, true])
         try await document.flushSave()
     }
 
@@ -123,8 +132,12 @@ struct StudioWindowSaveTests {
             editor.window?.close()
             document.releasePreview()
         }
-        var reported: [URL] = []
-        editor.onSaved = { reported.append($0) }
+        var reportedURLs: [URL] = []
+        var reportedCurrentness: [Bool] = []
+        editor.onSaved = { url, isCurrent in
+            reportedURLs.append(url)
+            reportedCurrentness.append(isCurrent)
+        }
 
         let (startedEvents, announceStarted) = AsyncStream<Void>.makeStream()
         let gate = StudioSaveOutcomeGate()
@@ -146,7 +159,8 @@ struct StudioWindowSaveTests {
         document.project = changedProject
         await gate.complete(.saved(destination))
         #expect(await saveTask.value == .saved(destination))
-        #expect(reported.isEmpty)
+        #expect(reportedURLs == [destination])
+        #expect(reportedCurrentness == [false])
         try await document.flushSave()
     }
 }

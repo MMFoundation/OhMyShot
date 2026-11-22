@@ -451,15 +451,32 @@ public final class QuickAccessController {
     /// Marks a capture saved on its card: a copy of it is at `url`, so the card is not saved again when it closes by itself.
     /// `byCard`: the card saved it itself, and its Move to Trash takes it with the capture. A copy saved elsewhere (from the
     /// editor or Capture History) is not the card's to take: its Trash leaves it, and takes only a copy of its own, if any.
-    public func markSaved(_ id: UUID, at url: URL, byCard: Bool = false) {
+    /// A successful but stale external copy only relinquishes ownership if it replaced that same file.
+    public func markSaved(_ id: UUID, at url: URL, byCard: Bool = false, isCurrent: Bool = true) {
         pruneSavedCopiesIfNeeded()
         if let history, history.item(id: id) == nil {
             savedCopiesByID[id] = nil
             return
         }
-        let currentOwnURL = items.first(where: { $0.id == id })?.ownSavedURL
-            ?? recentlyClosed.first(where: { $0.item.id == id })?.item.ownSavedURL
-            ?? savedCopiesByID[id]?.ownSavedURL
+        let currentItem = visibleOrRecentlyClosedItem(id)
+        let currentOwnURL = currentItem?.ownSavedURL ?? savedCopiesByID[id]?.ownSavedURL
+        if !isCurrent {
+            guard !byCard, let ownURL = currentOwnURL, Self.sameFileURL(url, ownURL) else { return }
+            let savedURL: URL?
+            if let currentItem {
+                savedURL = currentItem.savedURL
+            } else {
+                savedURL = savedCopiesByID[id]?.savedURL
+            }
+            setSavedCopies(SavedCopies(savedURL: savedURL, ownSavedURL: nil), for: id)
+            if let index = items.firstIndex(where: { $0.id == id }) {
+                items[index].ownSavedURL = nil
+            }
+            if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
+                recentlyClosed[index].item.ownSavedURL = nil
+            }
+            return
+        }
         var copies = SavedCopies(savedURL: url, ownSavedURL: byCard ? url : currentOwnURL)
         if !byCard, let ownURL = copies.ownSavedURL, Self.sameFileURL(url, ownURL) {
             copies.ownSavedURL = nil

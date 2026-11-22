@@ -361,6 +361,79 @@ struct QuickAccessRetentionTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func staleExternalExportKeepsCaptureUnsavedAndOnlyReleasesMatchingOwnership(replacesSameFile: Bool) async throws {
+        var trashedOwnURL: URL?
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { _ in }
+            actions.moveToTrash = { item in
+                trashedOwnURL = item.ownSavedURL
+                if let ownSavedURL = item.ownSavedURL { try FileManager.default.removeItem(at: ownSavedURL) }
+            }
+        }) { cards, history, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent()
+            let owned = folder.appending(path: "owned.png")
+            try Data([1]).write(to: owned)
+            var automatic = capture
+            automatic.savedURL = owned
+            automatic.ownSavedURL = owned
+            cards.add(automatic)
+
+            let failure = ExportFailure(cause: .diskFull, summary: "An earlier save failed", detail: "The disk is full.")
+            #expect(cards.showFailure(failure, for: capture.id))
+
+            let external: URL
+            if replacesSameFile {
+                let alias = folder.appending(path: "folder-alias")
+                try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: folder)
+                external = alias.appending(path: owned.lastPathComponent)
+            } else {
+                external = folder.appending(path: "external.png")
+            }
+
+            let (startedEvents, announceStarted) = AsyncStream<Void>.makeStream()
+            let startedReader = AsyncEventReader(startedEvents)
+            let gate = AsyncSaveOutcomeGate()
+            let exportTask = Task {
+                announceStarted.yield(())
+                let outcome = await gate.wait()
+                if let destination = outcome.url {
+                    cards.markSaved(capture.id, at: destination, isCurrent: false)
+                }
+            }
+            guard await waitForEvent(from: startedReader) != nil else {
+                await gate.complete(.cancelled)
+                _ = await exportTask.value
+                #expect(Bool(false), "The external export did not start")
+                announceStarted.finish()
+                return
+            }
+
+            let entry = try #require(history.item(id: capture.id))
+            let edit = cards.pictureChanged(entry, savedCopyIsStale: true) { nil }
+            await edit?.value
+            #expect(cards.item(capture.id)?.savedURL == nil)
+            #expect(cards.item(capture.id)?.ownSavedURL == owned)
+
+            try Data([2]).write(to: external)
+            await gate.complete(.saved(external))
+            await exportTask.value
+            announceStarted.finish()
+
+            let card = try #require(cards.item(capture.id))
+            #expect(card.savedURL == nil)
+            #expect(card.ownSavedURL == (replacesSameFile ? nil : owned))
+            #expect(cards.failure(for: capture.id) == failure)
+            cards.perform(.moveToTrash, on: card, keyed: false)
+            cards.finishTrashingNow()
+            #expect(trashedOwnURL == (replacesSameFile ? nil : owned))
+            #expect(FileManager.default.fileExists(atPath: external.path))
+            #expect(FileManager.default.fileExists(atPath: owned.path) == replacesSameFile)
+        }
+    }
+
     @Test func historyExportWithoutCardSeedsSavedStateOnRestore() async throws {
         var saves = 0
         let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
