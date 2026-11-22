@@ -176,6 +176,13 @@ public final class QuickAccessController {
     private var failures: [UUID: ExportFailure] = [:]
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [(item: QuickAccessItem, evicted: Bool)] = []
+    private struct SavedCopies {
+        var savedURL: URL?
+        var ownSavedURL: URL?
+    }
+    private var savedCopiesByID: [UUID: SavedCopies] = [:]
+    private var savedCopiesPrunedAt: TimeInterval?
+    private static let savedCopiesPruneInterval: TimeInterval = 60
     private static let hiddenThumbnail: CGImage = {
         let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -223,6 +230,53 @@ public final class QuickAccessController {
         items.first { $0.id == id }
     }
 
+    private func rememberSavedCopies(for item: QuickAccessItem) {
+        setSavedCopies(SavedCopies(savedURL: item.savedURL, ownSavedURL: item.ownSavedURL), for: item.id)
+    }
+
+    private func setSavedCopies(_ copies: SavedCopies, for id: UUID) {
+        if copies.savedURL == nil && copies.ownSavedURL == nil {
+            savedCopiesByID[id] = nil
+        } else {
+            savedCopiesByID[id] = copies
+        }
+    }
+
+    private func pruneSavedCopiesIfNeeded() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard savedCopiesPrunedAt.map({ now - $0 >= Self.savedCopiesPruneInterval }) ?? true else { return }
+        savedCopiesPrunedAt = now
+        if let history {
+            savedCopiesByID = savedCopiesByID.filter { history.item(id: $0.key) != nil }
+        } else {
+            var trackedIDs = Set(items.map(\.id))
+            trackedIDs.formUnion(recentlyClosed.map { $0.item.id })
+            trackedIDs.formUnion(trashing.map(\.id))
+            savedCopiesByID = savedCopiesByID.filter { trackedIDs.contains($0.key) }
+        }
+    }
+
+    private func invalidateSavedCopy(for id: UUID) {
+        var copies = savedCopiesByID[id] ?? SavedCopies(
+            savedURL: visibleOrRecentlyClosedItem(id)?.savedURL,
+            ownSavedURL: visibleOrRecentlyClosedItem(id)?.ownSavedURL
+        )
+        copies.savedURL = nil
+        setSavedCopies(copies, for: id)
+        if let index = items.firstIndex(where: { $0.id == id }) {
+            items[index].savedURL = nil
+            stack?.markUnsaved(id)
+        }
+        if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
+            recentlyClosed[index].item.savedURL = nil
+        }
+    }
+
+    private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
+        guard lhs.isFileURL, rhs.isFileURL else { return lhs == rhs }
+        return lhs.standardizedFileURL.resolvingSymlinksInPath() == rhs.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
     private func visibleOrRecentlyClosedItem(_ id: UUID) -> QuickAccessItem? {
         item(id) ?? recentlyClosed.first { $0.item.id == id }?.item
     }
@@ -241,10 +295,11 @@ public final class QuickAccessController {
         guard let history else { return }
         let url = history.fileURL(for: entry)
         guard let current = history.item(forFileAt: url), current.id == entry.id else { return }
+        pruneSavedCopiesIfNeeded()
         if let card = visibleOrRecentlyClosedItem(entry.id) {
             add(card)
         } else {
-            add(QuickAccessItem(current, fileURL: url, thumbnail: Self.hiddenThumbnail, displayID: displayID))
+            add(QuickAccessItem(current, fileURL: url, thumbnail: Self.hiddenThumbnail, displayID: displayID, savedURL: savedCopiesByID[entry.id]?.savedURL))
             pictureChanged(current, savedCopyIsStale: false) {
                 await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels)
             }
@@ -288,22 +343,30 @@ public final class QuickAccessController {
     }
 
     func insertIntoStack(_ item: QuickAccessItem) {
+        pruneSavedCopiesIfNeeded()
+        var item = item
+        if let copies = savedCopiesByID[item.id] {
+            item.savedURL = copies.savedURL
+            item.ownSavedURL = copies.ownSavedURL
+        } else {
+            rememberSavedCopies(for: item)
+        }
         items.removeAll { $0.id == item.id }
         recentlyClosed.removeAll { $0.item.id == item.id }
         items.append(item)
         while items.count > maximumCards { letGo(items.removeFirst(), evicted: true) }
     }
 
-    /// Shows a capture's new picture (marked up, or put back as taken) on its card, where it is. The copy
-    /// saved from the card stays the card's, unless `keepsSaved` is false: it is of the picture as it was, and
-    /// the card offers Save again.
+    /// Shows a capture's new picture (marked up, or put back as taken) on its card, where it is. When `keepsSaved` is
+    /// false, its old export no longer counts as saved and the card offers Save again; ownership of that export remains.
     private func update(_ item: QuickAccessItem, keepsSaved: Bool = true) {
         var item = item
         guard let index = items.firstIndex(where: { $0.id == item.id }) else {
             if let closed = recentlyClosed.firstIndex(where: { $0.item.id == item.id }) {
                 item.savedURL = keepsSaved ? item.savedURL ?? recentlyClosed[closed].item.savedURL : nil
-                item.ownSavedURL = keepsSaved ? item.ownSavedURL ?? recentlyClosed[closed].item.ownSavedURL : nil
+                item.ownSavedURL = item.ownSavedURL ?? recentlyClosed[closed].item.ownSavedURL
                 recentlyClosed[closed].item = item
+                rememberSavedCopies(for: item)
             }
             return
         }
@@ -312,8 +375,10 @@ public final class QuickAccessController {
             item.ownSavedURL = item.ownSavedURL ?? items[index].ownSavedURL
         } else {
             item.savedURL = nil
+            item.ownSavedURL = item.ownSavedURL ?? items[index].ownSavedURL
             stack?.markUnsaved(item.id)
         }
+        rememberSavedCopies(for: item)
         let size = actions.preferences().size
         let reshaped = CaptureCardView.preferredHeight(for: item, size: size) != CaptureCardView.preferredHeight(for: items[index], size: size)
         items[index] = item
@@ -328,6 +393,8 @@ public final class QuickAccessController {
     /// The old pixels must not be restored while the edited thumbnail is decoding, even if decoding fails.
     @discardableResult
     public func pictureChanged(_ entry: HistoryItem, savedCopyIsStale: Bool, thumbnail: @escaping () async -> CGImage?) -> Task<Void, Never>? {
+        pruneSavedCopiesIfNeeded()
+        if savedCopyIsStale { invalidateSavedCopy(for: entry.id) }
         guard let card = visibleOrRecentlyClosedItem(entry.id) else { return nil }
         update(QuickAccessItem(entry, fileURL: card.fileURL, thumbnail: Self.hiddenThumbnail, displayID: card.displayID), keepsSaved: !savedCopyIsStale)
         thumbnailUpdates[entry.id]?.cancel()
@@ -379,14 +446,27 @@ public final class QuickAccessController {
     /// `byCard`: the card saved it itself, and its Move to Trash takes it with the capture. A copy saved elsewhere (from the
     /// editor or Capture History) is not the card's to take: its Trash leaves it, and takes only a copy of its own, if any.
     public func markSaved(_ id: UUID, at url: URL, byCard: Bool = false) {
+        pruneSavedCopiesIfNeeded()
+        if let history, history.item(id: id) == nil {
+            savedCopiesByID[id] = nil
+            return
+        }
+        let currentOwnURL = items.first(where: { $0.id == id })?.ownSavedURL
+            ?? recentlyClosed.first(where: { $0.item.id == id })?.item.ownSavedURL
+            ?? savedCopiesByID[id]?.ownSavedURL
+        var copies = SavedCopies(savedURL: url, ownSavedURL: byCard ? url : currentOwnURL)
+        if !byCard, let ownURL = copies.ownSavedURL, Self.sameFileURL(url, ownURL) {
+            copies.ownSavedURL = nil
+        }
+        setSavedCopies(copies, for: id)
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].savedURL = url
-            if byCard { items[index].ownSavedURL = url }
+            items[index].ownSavedURL = copies.ownSavedURL
             stack?.markSaved(id, at: url)
             clearFailure(for: id)
         } else if let index = recentlyClosed.firstIndex(where: { $0.item.id == id }) {
             recentlyClosed[index].item.savedURL = url
-            if byCard { recentlyClosed[index].item.ownSavedURL = url }
+            recentlyClosed[index].item.ownSavedURL = copies.ownSavedURL
         }
     }
 
@@ -493,8 +573,9 @@ public final class QuickAccessController {
         Task {
             for item in saving {
                 await finish(item) { [self] in
-                    if item.savedURL != nil { return true }
-                    return await save(item, .quiet).url != nil
+                    guard let current = self.item(item.id), !isTrashing(item.id) else { return true }
+                    if current.savedURL != nil { return true }
+                    return await save(current, .quiet).url != nil
                 }
             }
         }
@@ -503,6 +584,7 @@ public final class QuickAccessController {
     /// Removes a capture that was deleted elsewhere: its card goes without the closed callback, and it
     /// can no longer be restored.
     public func remove(_ id: UUID) {
+        savedCopiesByID[id] = nil
         thumbnailUpdates.removeValue(forKey: id)?.cancel()
         if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         completing[id] = nil
@@ -559,6 +641,7 @@ public final class QuickAccessController {
         }
         schedule.forget(item.id)
         if !evicted { actions.closed(item) }
+        pruneSavedCopiesIfNeeded()
     }
 
     /// Re-lays the stack after cards left it; the last card slides out before the panel goes.
@@ -747,6 +830,7 @@ public final class QuickAccessController {
         } else {
             do {
                 try actions.moveToTrash(item)
+                savedCopiesByID[item.id] = nil
                 items.removeAll { $0.id == item.id }
                 failures[item.id] = nil
                 return

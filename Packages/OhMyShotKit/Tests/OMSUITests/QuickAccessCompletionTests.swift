@@ -190,6 +190,59 @@ struct QuickAccessCompletionTests {
         controller.dismissAll()
     }
 
+    @Test func saveAllUsesCurrentStateAfterAnEarlierSaveWaits() async throws {
+        let first = try item(), savedElsewhere = try item(), removed = try item(), trashing = try item()
+        let (startedEvents, announceStarted) = AsyncStream<Void>.makeStream()
+        let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        var resumeFirstSave: CheckedContinuation<SaveOutcome, Never>?
+        var savedIDs: [UUID] = []
+        var configured = actions(succeeds: true)
+        configured.closed = { announceClosed.yield($0.id) }
+        configured.save = { item, _ in
+            savedIDs.append(item.id)
+            if item.id == first.id {
+                return await withCheckedContinuation { continuation in
+                    resumeFirstSave = continuation
+                    announceStarted.yield(())
+                }
+            }
+            return .saved(item.fileURL)
+        }
+        let controller = QuickAccessController(actions: configured)
+        controller.maximumCards = 4
+        defer {
+            controller.undoTrash(trashing.id)
+            controller.dismissAll()
+            announceStarted.finish()
+            announceClosed.finish()
+        }
+        [first, savedElsewhere, removed, trashing].forEach { controller.add($0) }
+        controller.saveAll()
+        var startedIterator = startedEvents.makeAsyncIterator()
+        guard let _ = await startedIterator.next() else {
+            #expect(Bool(false))
+            return
+        }
+
+        controller.markSaved(savedElsewhere.id, at: URL(filePath: "/tmp/history-export.png"))
+        controller.remove(removed.id)
+        controller.perform(.moveToTrash, on: trashing, keyed: false)
+        let continuation = try #require(resumeFirstSave)
+        continuation.resume(returning: .saved(URL(filePath: "/tmp/first-export.png")))
+        var closedIterator = closedEvents.makeAsyncIterator()
+        guard let firstClosed = await closedIterator.next(), let nextClosed = await closedIterator.next() else {
+            #expect(Bool(false))
+            return
+        }
+
+        #expect(firstClosed == first.id)
+        #expect(nextClosed == savedElsewhere.id)
+        #expect(savedIDs == [first.id])
+        #expect(controller.item(savedElsewhere.id) == nil)
+        #expect(controller.item(removed.id) == nil)
+        #expect(controller.item(trashing.id) != nil)
+    }
+
     private static let diskFull = ExportFailure(cause: .diskFull, summary: "Couldn’t save: the disk is full", detail: "The disk is full.")
 
     private func card(in controller: QuickAccessController) throws -> CaptureCardView {

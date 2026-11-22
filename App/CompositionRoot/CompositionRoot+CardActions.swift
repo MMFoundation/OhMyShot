@@ -341,7 +341,7 @@ extension CompositionRoot {
     func recordingChanged(_ entry: HistoryItem) {
         historyWindow?.reload()
         let url = history.fileURL(for: entry)
-        quickAccess.pictureChanged(entry, savedCopyIsStale: false) {
+        quickAccess.pictureChanged(entry, savedCopyIsStale: true) {
             await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels)
         }
     }

@@ -64,6 +64,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - With Save and Close on, a Quick Access card whose capture you already saved from Capture History no longer saves another copy when it closes by itself. The card shows it saved, and its Save shows that copy in Finder, as after a save from the editor. The card's Move to Trash takes only the copy the card itself saved, never one saved from the editor or Capture History.
 - The system log no longer shows the names of captures and files, where they are kept, the text of errors about them, or the server a cloud reading goes to, so a file name made from a window's title or typed in Save As no longer turns up in a log collected for a bug report. Most errors still show their domain and code, so the log still says what went wrong; a failed Studio save or History text reading only says that it failed.
 
+- Quick Access saved status follows the current capture: annotation and recording edits invalidate it, even without a tracked card, so Save and Close exports the changed content. History exports are remembered for the session and seed restored cards; Save All checks each card's current state before saving. Replacing a card-owned export from the editor or Capture History relinquishes the card's Trash ownership, leaving the replacement in place.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

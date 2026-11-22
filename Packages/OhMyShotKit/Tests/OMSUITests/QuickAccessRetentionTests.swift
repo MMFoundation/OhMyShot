@@ -5,10 +5,37 @@ import Testing
 @testable import OMSUI
 
 @MainActor
+@Suite(.serialized)
 struct QuickAccessRetentionTests {
+    enum Tracking: Equatable, Sendable {
+        case visible
+        case recentlyClosed
+        case untracked
+    }
+
+    private struct ItemFactory {
+        let history: HistoryStore
+        let thumbnail: CGImage
+
+        func callAsFunction() throws -> QuickAccessItem {
+            let entry = try history.add(data: Data([0]), name: UUID().uuidString, fileExtension: "png", kind: .screenshot,
+                                        pixelWidth: 1, pixelHeight: 1, appName: nil)
+            return QuickAccessItem(entry, fileURL: history.fileURL(for: entry), thumbnail: thumbnail, displayID: 0)
+        }
+    }
+
     private func fixture(
         configure: (inout QuickAccessController.Actions) -> Void = { _ in },
-        _ run: (QuickAccessController, () throws -> QuickAccessItem) async throws -> Void
+        _ run: (QuickAccessController, ItemFactory) async throws -> Void
+    ) async throws {
+        try await fixtureWithHistory(configure: configure) { cards, _, make in
+            try await run(cards, make)
+        }
+    }
+
+    private func fixtureWithHistory(
+        configure: (inout QuickAccessController.Actions) -> Void = { _ in },
+        _ run: (QuickAccessController, HistoryStore, ItemFactory) async throws -> Void
     ) async throws {
         let folder = URL.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
@@ -27,11 +54,7 @@ struct QuickAccessRetentionTests {
             }
         )
         configure(&actions)
-        try await run(QuickAccessController(actions: actions, history: history)) {
-            let entry = try history.add(data: Data([0]), name: UUID().uuidString, fileExtension: "png", kind: .screenshot,
-                                        pixelWidth: 1, pixelHeight: 1, appName: nil)
-            return QuickAccessItem(entry, fileURL: history.fileURL(for: entry), thumbnail: thumbnail, displayID: 0)
-        }
+        try await run(QuickAccessController(actions: actions, history: history), history, ItemFactory(history: history, thumbnail: thumbnail))
     }
 
     @Test(arguments: [false, true])
@@ -244,6 +267,168 @@ struct QuickAccessRetentionTests {
             #expect(current.thumbnail.width == 4 && current.thumbnail.height == 4)
             #expect(current.pixelWidth == 4 && current.pixelHeight == 4)
             #expect(current.savedURL == saved)
+        }
+    }
+
+    @Test(arguments: [Tracking.visible, .recentlyClosed, .untracked])
+    func contentEditsInvalidateSavedCopiesForEveryTrackingState(tracking: Tracking) async throws {
+        var saved: [UUID] = []
+        let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        var waitingForClose = false
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { if waitingForClose { announceClosed.yield($0.id) } }
+            actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
+            actions.save = { item, _ in
+                saved.append(item.id)
+                return .saved(item.fileURL.deletingLastPathComponent().appending(path: "updated.png"))
+            }
+        }) { cards, history, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let export = capture.fileURL.deletingLastPathComponent().appending(path: "original.png")
+            cards.add(capture)
+            cards.markSaved(capture.id, at: export, byCard: true)
+            if tracking != .visible {
+                cards.dismiss(capture.id)
+                if tracking == .untracked { _ = cards.takeRecentlyClosed() }
+            }
+
+            let entry = try #require(history.item(id: capture.id))
+            let update = cards.pictureChanged(entry, savedCopyIsStale: true) { nil }
+            switch update {
+            case .some(let update):
+                #expect(tracking != .untracked)
+                await update.value
+            case .none:
+                #expect(tracking == .untracked)
+            }
+            if tracking == .recentlyClosed {
+                cards.restoreRecentlyClosed()
+            } else if tracking == .untracked {
+                cards.restore(entry, on: 0)
+            }
+            let restored = try #require(cards.item(capture.id))
+            #expect(restored.savedURL == nil)
+            #expect(restored.ownSavedURL == export)
+
+            waitingForClose = true
+            cards.closeDueCards(at: .greatestFiniteMagnitude)
+            var closedIterator = closedEvents.makeAsyncIterator()
+            let closedID = await closedIterator.next()
+            #expect(closedID == capture.id)
+            #expect(saved == [capture.id])
+            announceClosed.finish()
+        }
+    }
+
+    @Test(arguments: [Tracking.visible, .recentlyClosed, .untracked])
+    func replacingOwnedExportFromHistoryRelinquishesTrashOwnership(tracking: Tracking) async throws {
+        var trashedOwnURL: URL?
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { _ in }
+            actions.moveToTrash = { item in
+                trashedOwnURL = item.ownSavedURL
+                if let ownSavedURL = item.ownSavedURL { try FileManager.default.removeItem(at: ownSavedURL) }
+            }
+        }) { cards, history, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let folder = capture.fileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: folder.appending(path: "nested"), withIntermediateDirectories: false)
+            let owned = URL(filePath: folder.path + "/nested/../replacement.png")
+            let replacement = folder.appending(path: "replacement.png")
+            try Data([1]).write(to: replacement)
+            cards.add(capture)
+            cards.markSaved(capture.id, at: owned, byCard: true)
+            if tracking != .visible {
+                cards.dismiss(capture.id)
+                if tracking == .untracked { _ = cards.takeRecentlyClosed() }
+            }
+            cards.markSaved(capture.id, at: replacement)
+            if tracking == .recentlyClosed {
+                cards.restoreRecentlyClosed()
+            } else if tracking == .untracked {
+                cards.restore(try #require(history.item(id: capture.id)), on: 0)
+            }
+
+            let restored = try #require(cards.item(capture.id))
+            #expect(restored.savedURL == replacement)
+            #expect(restored.ownSavedURL == nil)
+            cards.perform(.moveToTrash, on: restored, keyed: false)
+            cards.finishTrashingNow()
+            #expect(trashedOwnURL == nil)
+            #expect(FileManager.default.fileExists(atPath: replacement.path))
+        }
+    }
+
+    @Test func historyExportWithoutCardSeedsSavedStateOnRestore() async throws {
+        var saves = 0
+        let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { announceClosed.yield($0.id) }
+            actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
+            actions.save = { item, _ in
+                saves += 1
+                return .saved(item.fileURL)
+            }
+        }) { cards, history, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let export = capture.fileURL.deletingLastPathComponent().appending(path: "history-export.png")
+            cards.markSaved(capture.id, at: export)
+            let entry = try #require(history.item(id: capture.id))
+            cards.restore(entry, on: 0)
+            #expect(cards.item(capture.id)?.savedURL == export)
+
+            cards.closeDueCards(at: .greatestFiniteMagnitude)
+            var closedIterator = closedEvents.makeAsyncIterator()
+            let closedID = await closedIterator.next()
+            #expect(closedID == capture.id)
+            #expect(cards.item(capture.id) == nil)
+            #expect(saves == 0)
+            announceClosed.finish()
+        }
+    }
+
+    @Test func initialCardExportSurvivesRecentlyClosedEviction() async throws {
+        try await fixtureWithHistory(configure: { $0.closed = { _ in } }) { cards, history, make in
+            defer { cards.dismissAll() }
+            var initial = try make()
+            let export = initial.fileURL.deletingLastPathComponent().appending(path: "initial-export.png")
+            initial.savedURL = export
+            initial.ownSavedURL = export
+            cards.maximumCards = 1
+            cards.insertIntoStack(initial)
+            for _ in 0..<22 { cards.insertIntoStack(try make()) }
+            #expect(cards.item(initial.id) == nil)
+
+            let entry = try #require(history.item(id: initial.id))
+            cards.restore(entry, on: 0)
+            #expect(cards.item(initial.id)?.savedURL == export)
+            #expect(cards.item(initial.id)?.ownSavedURL == export)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func removalAndTrashClearSessionSavedMetadata(trash: Bool) async throws {
+        try await fixtureWithHistory(configure: { actions in
+            actions.closed = { _ in }
+            actions.moveToTrash = { _ in }
+        }) { cards, history, make in
+            defer { cards.dismissAll() }
+            let capture = try make()
+            let export = capture.fileURL.deletingLastPathComponent().appending(path: "export.png")
+            cards.markSaved(capture.id, at: export)
+            let entry = try #require(history.item(id: capture.id))
+            if trash {
+                cards.restore(entry, on: 0)
+                cards.perform(.moveToTrash, on: try #require(cards.item(capture.id)), keyed: false)
+                cards.finishTrashingNow()
+            } else {
+                cards.remove(capture.id)
+            }
+            cards.restore(entry, on: 0)
+            #expect(cards.item(capture.id)?.savedURL == nil)
         }
     }
 }

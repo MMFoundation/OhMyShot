@@ -396,7 +396,7 @@ final class CompositionRoot {
             }
         })
         annotations.onChange = { [weak self] entry, data in
-            self?.pictureChanged(entry, data: data)
+            self?.pictureChanged(entry, data: data, savedCopyIsStale: true)
         }
         // A card is not closed by itself under the editor that has its capture open.
         annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }
