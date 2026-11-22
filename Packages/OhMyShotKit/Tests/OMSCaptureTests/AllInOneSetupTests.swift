@@ -141,15 +141,34 @@ struct AllInOneSetupTests {
     }
 
     @Test func aRatioMatchingTheAreaRefreshesTheChipWithoutLosingWindowChrome() {
-        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true, windowFrames: [Self.area])
-        #expect(view.barSummary == "600 × 300 any")
+        let area = CGRect(x: 100, y: 200, width: 300, height: 200)
+        let view = AllInOneSetupView(display: Self.display, area: area, offersUpload: true, windowFrames: [area])
+        #expect(view.barSummary == "600 × 400 any")
         #expect(view.chrome.selectionPath != nil)
 
-        _ = view.debugAct("ratio=2:1")
+        _ = view.debugAct("ratio=3:2")
 
-        #expect(view.area == Self.area)
-        #expect(view.barSummary == "600 × 300 2:1")
+        #expect(view.area == area)
+        #expect(view.barSummary == "600 × 400 3:2")
         #expect(view.chrome.selectionPath != nil)
+    }
+
+    @Test func offDisplayWindowFramesAreIgnoredInRoundedSetupChrome() {
+        let onDisplay = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let offDisplay = CGRect(x: 900, y: 200, width: 300, height: 150)
+        let view = AllInOneSetupView(
+            display: Self.display, area: onDisplay, offersUpload: true, windowFrames: [onDisplay, offDisplay]
+        )
+        view.layoutSubtreeIfNeeded()
+        #expect(view.chrome.selectionPath?.boundingBox == AreaFrame.local(onDisplay, on: Self.display))
+        #expect(view.chrome.showsHandles == false)
+
+        let onlyOffDisplay = AllInOneSetupView(
+            display: Self.display, area: onDisplay, offersUpload: true, windowFrames: [offDisplay]
+        )
+        onlyOffDisplay.layoutSubtreeIfNeeded()
+        #expect(onlyOffDisplay.chrome.selectionPath == nil)
+        #expect(onlyOffDisplay.chrome.showsHandles == true)
     }
 
     /// Larger than the display, a typed size is cut to it, and a shape kept stays kept.

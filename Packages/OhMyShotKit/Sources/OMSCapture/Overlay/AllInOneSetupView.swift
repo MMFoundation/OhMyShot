@@ -142,12 +142,16 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     private func update() {
         chrome.selection = frameRect
-        let localWindowFrames = windowFrames.map { AreaFrame.local($0.intersection(display.frame), on: display) }
-        chrome.selectionPath = windowFrames.isEmpty ? nil : OverlayView.roundedWindowPath(localWindowFrames)
-        chrome.selectionMaskPath = windowFrames.isEmpty
+        let localWindowFrames = windowFrames.compactMap { frame -> CGRect? in
+            let clipped = frame.intersection(display.frame)
+            guard !clipped.isNull, !clipped.isEmpty else { return nil }
+            return AreaFrame.local(clipped, on: display)
+        }
+        chrome.selectionPath = localWindowFrames.isEmpty ? nil : OverlayView.roundedWindowPath(localWindowFrames)
+        chrome.selectionMaskPath = localWindowFrames.isEmpty
             ? nil
             : SelectionChromeView.unionPath(OverlayView.roundedWindowPaths(localWindowFrames))
-        chrome.showsHandles = windowFrames.isEmpty
+        chrome.showsHandles = localWindowFrames.isEmpty
         bar.show(pixelSize: pixelSize, ratio: ratio)
         placeBar()
         setAccessibilityValue(pixelReading)

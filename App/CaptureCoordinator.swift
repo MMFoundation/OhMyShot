@@ -186,7 +186,7 @@ final class CaptureCoordinator {
             let followUp = CaptureFollowUp(action: action)
             if !windows.isEmpty {
                 if windows.count == 1 {
-                    Task { await captureWindow(windows[0], copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display.frame) }
+                    Task { await captureWindow(windows[0], copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display) }
                 } else {
                     Task { await captureWindows(windows, copiesToClipboard: copiesToClipboard, followUp: followUp) }
                 }
@@ -195,7 +195,7 @@ final class CaptureCoordinator {
             let window = overlay.window(framing: area)
             let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
             if let window {
-                Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display.frame) }
+                Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display) }
             } else if let frozen {
                 Task { await deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
             } else {
@@ -525,18 +525,18 @@ final class CaptureCoordinator {
     /// windows; `modifiers` with Shift, as the window was clicked, takes it the other way round.
     private func captureWindow(
         _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none,
-        modifiers: NSEvent.ModifierFlags = [], clipTo: CGRect? = nil
+        modifiers: NSEvent.ModifierFlags = [], clipTo: DisplayInfo? = nil
     ) async {
         let probe = LatencyProbe("capture.window")
         do {
             var captured = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
-            if let clipTo {
-                let scale = displays.layout.display(id: captured.displayID)?.pixelsPerPoint ?? captured.pixelsPerPoint
-                let pictureFrame = WallpaperCrop.pictureFrame(of: captured.image, window: captured.frame, pixelsPerPoint: scale)
-                guard let clipped = captured.cropped(to: clipTo, mappedFrom: pictureFrame, pixelsPerPoint: scale) else {
+            let captureScale = displays.layout.display(id: captured.displayID)?.pixelsPerPoint ?? captured.pixelsPerPoint
+            if let clipTo, !clipTo.frame.contains(target.frame) {
+                let pictureFrame = WallpaperCrop.pictureFrame(of: captured.image, window: captured.frame, pixelsPerPoint: captureScale)
+                guard let clipped = captured.cropped(to: clipTo.frame, mappedFrom: pictureFrame, pixelsPerPoint: captureScale) else {
                     throw CaptureError.emptyResult
                 }
-                captured = clipped
+                captured = CapturedFrame(image: clipped.image, hdrImage: clipped.hdrImage, displayID: clipTo.id, frame: clipped.frame)
             }
             let frame = captured
             probe.end()
@@ -544,7 +544,7 @@ final class CaptureCoordinator {
             // The display's scale: the capture is larger than the window's frame by its shadow.
             await deliver(
                 frame, appName: target.ownerName, windowTitle: target.title, copiesToClipboard: copiesToClipboard, background: background,
-                pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
+                pixelsPerPoint: captureScale, followUp: followUp
             )
         } catch CaptureError.windowNotFound {
             tellWindowClosed(at: target.frame)

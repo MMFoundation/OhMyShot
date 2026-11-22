@@ -897,6 +897,10 @@ public final class OverlayController {
         on display: DisplayInfo, area: CGRect, sizing: Bool = false, ratio: AspectRatio? = nil, windowFrames: [CGRect] = []
     ) -> Bool {
         guard let entry = entries[display.id], let area = AreaFrame.fitted(area, in: display.frame) else { return false }
+        hovered = nil
+        pressedWindow = nil
+        allInOneSelectedWindows = []
+        for entry in entries.values { entry.view.setSelectedWindows([]) }
         keepOnly(entry)
         let setup = AllInOneSetupView(
             display: display, area: area, offersUpload: (options.allInOne?.offersUpload ?? false) && !sizing,
@@ -904,7 +908,10 @@ public final class OverlayController {
             ratio: sizing ? ratio : nil, windowFrames: windowFrames
         )
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
-        setup.onAreaAdjusted = { [weak self] _ in self?.allInOneCaptureWindows = [] }
+        setup.onAreaAdjusted = { [weak self] _ in
+            self?.allInOneCaptureWindows = []
+            self?.framed = nil
+        }
         setup.codeFinder = codes
         setup.edgeTolerance = measureTolerance
         setup.onChoose = { [weak self, weak setup] choice, area, wholeDisplay in
@@ -921,6 +928,7 @@ public final class OverlayController {
                 setup?.removeFromSuperview()
                 select(area, startingOn: display, modifiers: [])
             } else if choice == .record {
+                allInOneCaptureWindows = []
                 setup?.removeFromSuperview()
                 setUpRecording(on: display, target: area == display.frame ? .display : .area(area))
             } else {
@@ -1146,9 +1154,10 @@ extension OverlayController {
         return selected + [target]
     }
 
-    private func toggleAllInOneWindow(_ target: WindowTarget) {
+    private func toggleAllInOneWindow(_ target: WindowTarget, on view: OverlayView) {
         allInOneSelectedWindows = Self.toggledWindow(target, in: allInOneSelectedWindows)
         showHover()
+        view.announceValue()
     }
 
     /// Frames the window a click in All-In-One was on, its part on the display clicked on, as a drag over it would have:
@@ -1160,18 +1169,18 @@ extension OverlayController {
         guard let rect = selection.rect, !selection.isTooSmall else { return }
         framed = (clicked.window, rect)
         Log.capture.notice("All-In-One window \(clicked.window.id, privacy: .public) clicked: \(NSStringFromRect(rect), privacy: .public) on display \(clicked.display.id, privacy: .public)")
-        select(rect, startingOn: clicked.display, modifiers: modifiers)
+        select(rect, startingOn: clicked.display, modifiers: modifiers, windowFrames: [clicked.window.frame])
     }
 
     /// Ends the session with an area: handed to in-place annotation, or kept as it was frozen on screen,
     /// or captured once the overlay has gone. `display` is where the drag began; the outcome names the
     /// display holding most of the area.
-    private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags) {
+    private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags, windowFrames: [CGRect] = []) {
         if isAllInOne {
             switch allInOneMode {
             case .record?: setUpRecording(on: display, target: rect == display.frame ? .display : .area(rect))
             case let mode?: endAllInOne(mode, rect, on: display)
-            case nil: startAllInOneSetup(on: display, area: rect)
+            case nil: startAllInOneSetup(on: display, area: rect, windowFrames: windowFrames)
             }
             return
         }
@@ -1280,7 +1289,7 @@ extension OverlayController: OverlayViewDelegate {
             selection.reset()
             if let clicked {
                 if isAllInOne, allInOneMode == nil, purpose == .screenshot, modifiers.contains(.shift) {
-                    toggleAllInOneWindow(clicked.window)
+                    toggleAllInOneWindow(clicked.window, on: view)
                     updateHover(at: drag.point)
                     showSelection()
                     return
@@ -1539,6 +1548,9 @@ extension OverlayController: OverlayViewDelegate {
         hoverWindows = []
         hovered = nil
         pressedWindow = nil
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
+        framed = nil
         cancelTextDetections()
         snapsToText = false
         let point = pointer ?? NSEvent.mouseLocation

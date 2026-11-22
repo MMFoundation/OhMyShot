@@ -340,6 +340,7 @@ final class OverlayView: NSView {
     /// interface in-place annotation put over it.
     func clear() {
         capturedFrame = nil
+        selectedWindows = []
         highlightedWindow = nil
         measure?.clear()
         isAnnotating = false
@@ -1200,8 +1201,13 @@ final class OverlayView: NSView {
         let highlighted = mode == .area && selection.isTooSmall ? highlightedWindow : nil
         // A drag that passes the click threshold is an area selection, so its rectangular frame supersedes the
         // retained Shift-selected window outlines. Before then, keep those outlines and the live hover preview.
-        var roundedWindows = mode == .area && selection.isTooSmall ? selectedWindows.map { $0.frame.intersection(display.frame) } : []
+        var areaWindows: [WindowTarget] = mode == .area && selection.isTooSmall ? selectedWindows : []
+        var roundedWindows: [CGRect] = areaWindows.compactMap { window in
+            let part = window.frame.intersection(display.frame)
+            return !part.isNull && !part.isEmpty ? part : nil
+        }
         if let highlighted, !selectedWindows.contains(highlighted.window) {
+            areaWindows.append(highlighted.window)
             roundedWindows.append(highlighted.area)
         }
         let selectedBounds = roundedWindows.dropFirst().reduce(roundedWindows.first) { $0?.union($1) }
@@ -1248,15 +1254,24 @@ final class OverlayView: NSView {
             } else {
                 text = "\(width) × \(height)"
             }
-        } else if let highlighted {
-            let size = AreaFrame.pixelReading(highlighted.area.size, pixelsPerPoint: display.pixelsPerPoint)
-            text = highlighted.window.ownerName.isEmpty ? size : "\(highlighted.window.ownerName)  ·  \(size)"
+        } else if mode == .area, selection.isTooSmall, !roundedWindows.isEmpty {
+            let scale = display.pixelsPerPoint
+            let width = Int((globalRect.width * scale).rounded())
+            let height = Int((globalRect.height * scale).rounded())
+            if areaWindows.count > 1 {
+                text = String(localized: "\(areaWindows.count) windows  ·  \(width) × \(height)", bundle: .module)
+            } else if let win = areaWindows.first {
+                let size = AreaFrame.pixelReading(globalRect.size, pixelsPerPoint: scale)
+                text = win.ownerName.isEmpty ? size : "\(win.ownerName)  ·  \(size)"
+            } else {
+                text = AreaFrame.pixelReading(globalRect.size, pixelsPerPoint: scale)
+            }
         } else {
             let size = selection.pixelSize
             text = "\(size.width) × \(size.height)"
         }
         sizePill.text = text
-        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading && highlighted == nil)
+        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading && roundedWindows.isEmpty)
         // Text mode has no readings; a hovered window is named, without its size.
         setAccessibilityValue(purpose == .text ? (mode == .window ? hoveredWindow?.ownerName : nil) : text)
         // Centered under the selection; tucked inside when there is no room below, and lifted above the

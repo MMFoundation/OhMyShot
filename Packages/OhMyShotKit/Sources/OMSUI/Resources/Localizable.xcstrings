@@ -5646,19 +5646,19 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Capturar la sombra"
+            "value" : "Incluir la sombra de la ventana"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Capturer l’ombre"
+            "value" : "Inclure l’ombre de la fenêtre"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "影をキャプチャ"
+            "value" : "ウインドウの影を含める"
           }
         },
         "zh-Hans" : {
@@ -5670,7 +5670,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "視窗陰影"
+            "value" : "包含視窗陰影"
           }
         }
       }
@@ -17446,19 +17446,19 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sin fondo"
+            "value" : "Fondo transparente"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aucun arrière-plan"
+            "value" : "Arrière-plan transparent"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "背景なし"
+            "value" : "透明な背景"
           }
         },
         "zh-Hans" : {
@@ -17470,7 +17470,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無背景"
+            "value" : "透明背景"
           }
         }
       }
@@ -20491,36 +20491,36 @@
         }
       }
     },
-    "Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture > Windows. Screenshot background uses the saved preset selected here, but skips Rounded corners and shadow for windows. Other saved presets can be chosen for Background around windows in Capture > Windows. Save a background as a preset with the editor’s Background tool." : {
+    "Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture › Windows. In Capture › Windows, Screenshot background uses the saved preset selected here, skipping Rounded corners and shadow for windows. Save a background as a preset with the editor’s Background tool." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configura el fondo automático de las nuevas capturas. «Esquinas redondeadas y sombra» redondea las capturas de áreas y pantallas y añade una sombra suave. Las capturas de ventanas conservan sus esquinas redondeadas nativas; la sombra nativa se controla por separado en Captura > Ventanas. «Fondo de capturas» usa el preajuste seleccionado aquí, pero omite «Esquinas redondeadas y sombra» en las ventanas. Los demás preajustes guardados se pueden elegir para el fondo alrededor de las ventanas en Captura > Ventanas. Guarda un fondo como preajuste con la herramienta Fondo del editor."
+            "value" : "Configura el fondo automático de las nuevas capturas. «Esquinas redondeadas y sombra» redondea las capturas de áreas y pantallas y añade una sombra suave. Las capturas de ventanas conservan sus esquinas redondeadas nativas; su sombra nativa se controla por separado en Capturar › Ventanas. En Capturar › Ventanas, «Fondo de capturas de pantalla» usa el preajuste guardado elegido aquí y omite «Esquinas redondeadas y sombra» en las ventanas. Guarda un fondo como preajuste con la herramienta Fondo del editor."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Définit l’arrière-plan automatique des nouvelles captures. « Coins arrondis et ombre » arrondit les captures de zone et d’écran et ajoute une ombre douce. Les fenêtres conservent leurs coins arrondis natifs ; leur ombre native se règle séparément dans Capture > Fenêtres. « Arrière-plan des captures » utilise le préréglage choisi ici, mais ignore « Coins arrondis et ombre » pour les fenêtres. Les autres préréglages enregistrés peuvent être choisis pour l’arrière-plan autour des fenêtres dans Capture > Fenêtres. Enregistrez un arrière-plan comme préréglage avec l’outil Arrière-plan de l’éditeur."
+            "value" : "Définit l’arrière-plan automatique des nouvelles captures. « Coins arrondis et ombre » arrondit les captures de zone et d’écran et ajoute une ombre douce. Les fenêtres conservent leurs coins arrondis natifs ; leur ombre native se règle séparément dans Capturer › Fenêtres. Dans Capturer › Fenêtres, « Arrière-plan des captures » utilise le préréglage choisi ici en ignorant « Coins arrondis et ombre » pour les fenêtres. Enregistrez un arrière-plan comme préréglage avec l’outil Arrière-plan de l’éditeur."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新しいキャプチャの自動背景を設定します。「角丸と影」は領域やディスプレイのキャプチャの角を丸め、柔らかな影を付けます。ウインドウはネイティブの角丸を保ち、ネイティブな影は「キャプチャ ＞ ウインドウ」で別に設定します。「スクリーンショットの背景」はここで選んだプリセットを使いますが、ウインドウでは「角丸と影」を省略します。ほかの保存済みプリセットは「キャプチャ ＞ ウインドウ」の「ウインドウ周囲の背景」に選べます。背景はエディタの「背景」ツールでプリセットとして保存できます。"
+            "value" : "新しいキャプチャの自動背景を設定します。「角丸と影」は領域やディスプレイのキャプチャの角を丸め、柔らかな影を付けます。ウインドウはネイティブの角丸を保ち、ネイティブな影は「キャプチャ › ウインドウ」で別に設定します。「キャプチャ › ウインドウ」の「スクリーンショットの背景」では、ここで選んだ保存済みプリセットが使われ、ウインドウには「角丸と影」を適用しません。背景はエディタの「背景」ツールでプリセットとして保存できます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "为新截图设置自动背景。“圆角与阴影”会为区域和显示器截图添加圆角和柔和阴影。窗口截图保留原生圆角；原生阴影由“Capture > Windows”中的设置单独控制。“截图背景”使用此处选定的预设，但窗口截图会跳过“圆角与阴影”。其他保存的预设可在“Capture > Windows”中选作“窗口周围的背景”。可使用编辑器的“背景”工具将背景保存为预设。"
+            "value" : "为新截图设置自动背景。“圆角与阴影”会为区域和显示器截图添加圆角和柔和阴影。窗口截图保留原生圆角；原生阴影由“截取 › 窗口”中的设置单独控制。在“截取 › 窗口”中，“截图背景”会使用此处选定的已保存预设，但窗口截图会跳过“圆角与阴影”。可使用编辑器的“背景”工具将背景保存为预设。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "為新截圖設定自動背景。「圓角與陰影」會為區域和顯示器截圖加上圓角和柔和陰影。視窗截圖保留原生圓角；原生陰影由「Capture > Windows」中的設定個別控制。「截圖背景」使用此處選定的預設組合，但視窗截圖會略過「圓角與陰影」。其他已儲存的預設組合可在「Capture > Windows」中選作「視窗周圍的背景」。可使用編輯器的「背景」工具將背景儲存為預設組合。"
+            "value" : "為新截圖設定自動背景。「圓角與陰影」會為區域和顯示器截圖加上圓角和柔和陰影。視窗截圖保留原生圓角；原生陰影由「擷取 › 視窗」中的設定個別控制。在「擷取 › 視窗」中，「截圖背景」會使用此處選定的已儲存預設組合，但視窗截圖會略過「圓角與陰影」。可使用編輯器的「背景」工具將背景儲存為預設組合。"
           }
         }
       }
@@ -25880,19 +25880,19 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mismo fondo que las capturas de pantalla"
+            "value" : "Fondo de capturas de pantalla"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Même arrière-plan que les captures d’écran"
+            "value" : "Arrière-plan des captures"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "スクリーンショットと同じ背景"
+            "value" : "スクリーンショットの背景"
           }
         },
         "zh-Hans" : {
@@ -34164,19 +34164,19 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fondo de la ventana"
+            "value" : "Fondo alrededor de las ventanas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Arrière-plan des fenêtres"
+            "value" : "Arrière-plan autour des fenêtres"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ウインドウの背景"
+            "value" : "ウインドウ周囲の背景"
           }
         },
         "zh-Hans" : {
@@ -34188,7 +34188,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "視窗背景"
+            "value" : "視窗周圍背景"
           }
         }
       }

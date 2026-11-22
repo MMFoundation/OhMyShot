@@ -125,4 +125,26 @@ struct AllInOneWindowHoverTests {
         view.show(selection: selection, showsReading: true, isDragging: true)
         #expect(view.debugSizeReading == "200 × 100")
     }
+
+    @Test func shiftSelectedWindowsInAreaModeShowCountAndIgnoreEdgeTouchingWindows() throws {
+        let view = OverlayView(display: Self.left)
+        view.reset(pointer: CGPoint(x: 150, y: 150), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        let touchingRight = WindowTarget(id: 50, frame: CGRect(x: 800, y: 100, width: 200, height: 150), ownerName: "Other", title: nil)
+        let second = WindowTarget(id: 51, frame: CGRect(x: 150, y: 120, width: 300, height: 200), ownerName: "Mail", title: nil)
+        view.setSelectedWindows([Self.front, touchingRight])
+        #expect(view.debugSizeReading == "2 windows  ·  600 × 400")
+
+        view.setSelectedWindows([Self.back])
+        #expect(view.debugSizeReading == "Safari  ·  1200 × 800")
+        #expect(view.accessibilityValue() as? String == "Safari  ·  1200 × 800")
+
+        view.setSelectedWindows([second])
+        let hovered = try #require(OverlayController.hoveredWindow(at: CGPoint(x: 150, y: 150), in: Self.windows, on: Self.left))
+        view.highlight(hovered)
+        #expect(view.debugSizeReading == "2 windows  ·  700 × 440")
+
+        view.highlight(nil)
+        view.setSelectedWindows([second, Self.front])
+        #expect(view.debugSizeReading == "2 windows  ·  700 × 440")
+    }
 }
