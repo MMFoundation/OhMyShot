@@ -11,8 +11,8 @@ import Foundation
 /// digits a line starts with before a space. Short readings inside the same column ("S5" for 55) and numbers
 /// Vision read together ("757677") go with it, and a line that starts inside the column keeps only the code
 /// after its number ("12 let x = 1", "13}", a misread "З import" between two of its numbers). A line that starts
-/// left of the column is code the numbers belong to, so there is no gutter. It goes only when what remains is a
-/// code listing, so a numbered list or `cat -n` output keeps its numbers.
+/// left of the column is code the numbers belong to ("a = [" above "1 + foo(),"), so there is no gutter. It goes
+/// only when what remains is a code listing, so a numbered list or `cat -n` output keeps its numbers.
 enum LineNumbers {
     /// The lines less the gutter, and where the gutter ends: its numbers' right edge, or where the code starts if
     /// that is further left. A reading of the code again keeps right of it, or it reads the numbers back in.
@@ -32,7 +32,7 @@ enum LineNumbers {
         let values = numbers.map(\.value)
         let rising = zip(values, values.dropFirst()).filter { $0 < $1 }.count
         let counting = numbers.count == 2 ? values[1] == values[0] + 1 : rising * 4 >= (values.count - 1) * 3
-        guard aligned, counting else { return (lines, nil) }
+        guard aligned, counting, !lines.contains(where: { $0.box.minX < left - height / 2 }) else { return (lines, nil) }
 
         let rows = numbers[0].box.midY...numbers[numbers.count - 1].box.midY
         var remaining: [OCRLine] = []
@@ -41,8 +41,7 @@ enum LineNumbers {
                 // Misread numbers ("S5"), and numbers read together across rows ("757677"), are in it too.
                 let characters = line.text.filter { !$0.isWhitespace }
                 if characters.count > 5, !characters.allSatisfy({ $0.isASCII && $0.isNumber }) { remaining.append(line) }
-            } else if line.box.minX < right, line.box.minX >= left - height / 2,
-                      let code = code(after: line, misread: rows.contains(line.box.midY), ink: ink) {
+            } else if line.box.minX < right, let code = code(after: line, misread: rows.contains(line.box.midY), ink: ink) {
                 remaining.append(code)
             } else {
                 remaining.append(line)

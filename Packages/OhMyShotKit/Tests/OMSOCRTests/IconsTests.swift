@@ -218,6 +218,9 @@ struct LineNumbersTests {
         let operands = [line("1 + foo(),", x: 40, y: 1, width: 100), line("2 + bar()", x: 40, y: 2, width: 90)]
         let outdented = [line("nums = [", x: 0, y: 0, width: 80)] + operands
         #expect(LineNumbers.removed(from: outdented).lines == outdented)
+        // Short enough to fit the column's width.
+        let short = [line("a = [", x: 0, y: 0, width: 50)] + operands + [line("]", x: 0, y: 3, width: 10)]
+        #expect(LineNumbers.removed(from: short).lines == short)
         let aligned = [line("nums = [", x: 40, y: 0, width: 80)] + operands
         #expect(LineNumbers.removed(from: aligned).lines == aligned)
     }
