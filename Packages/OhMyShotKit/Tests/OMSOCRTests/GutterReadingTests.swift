@@ -8,7 +8,7 @@ import Testing
 /// out, and `rereadCodeWithLatinModel` reads the code again right of them, the comment in Chinese with its `//`.
 struct GutterReadingTests {
     private static let code = [
-        "import { useState } from \"react\";",
+        "import { useState } from 'react';",
         "export function Counter({ initial = 0 }: Props) {",
         "  const [count, setCount] = useState(initial);",
         "  // 点击后加一",
@@ -51,12 +51,7 @@ struct GutterReadingTests {
         var options = VisionPipeline.Options()
         options.timeout = .seconds(60)
         let result = try await VisionPipeline(options: options).recognize(try screenshot())
-        let lines = result.text.split(separator: "\n").map(String.init)
-
-        #expect(lines.count == Self.code.count)
-        #expect(!lines.contains { $0.first?.isNumber == true })
-        #expect(lines.contains("  // 点击后加一"))
-        let indentation = { (line: String) in line.prefix { $0 == " " }.count }
-        #expect(lines.map(indentation) == Self.code.map(indentation))
+        // Every line as drawn: no numbers, the indentation, the comment's `//`, and the code itself.
+        #expect(result.text.split(separator: "\n").map(String.init) == Self.code)
     }
 }

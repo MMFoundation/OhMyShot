@@ -213,6 +213,9 @@ struct LineNumbersTests {
         // Read with its numbers, its punctuation full-width as the Chinese model reads it.
         let fullWidth = ["1 let x ＝ 1", "2 let y ＝ 2"].enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
         #expect(LineNumbers.removed(from: fullWidth).lines.map(\.text) == ["let x ＝ 1", "let y ＝ 2"])
+        // Two lines of YAML.
+        let yaml = ["1 name: app", "2 port: 8080"].enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
+        #expect(LineNumbers.removed(from: yaml).lines.map(\.text) == ["name: app", "port: 8080"])
     }
 
     @Test func twoNumbersThatDoNotFollowEachOtherStay() {
@@ -232,6 +235,10 @@ struct LineNumbersTests {
         #expect(LineNumbers.removed(from: short).lines == short)
         let aligned = [line("nums = [", x: 40, y: 0, width: 80)] + operands
         #expect(LineNumbers.removed(from: aligned).lines == aligned)
+        // At two indents and nothing else: the deeper numbers, on rows of their own, keep the shallower ones from a gutter.
+        let nested = [("1 + foo(),", 40), ("2 + bar(),", 40), ("3 + baz() + sum([", 40), ("4 * tax,", 80), ("5 * fee,", 80), ("6 * price,", 80)]
+            .enumerated().map { line($1.0, x: CGFloat($1.1), y: $0, width: CGFloat($1.0.count * 10)) }
+        #expect(LineNumbers.removed(from: nested).lines == nested)
     }
 
     /// A shell's `history`: its numbers count up beside commands, which are no code listing.
@@ -278,6 +285,15 @@ struct LineNumbersTests {
             line("print(os.sep)", x: 60, y: 3, width: 130),
         ]
         #expect(LineNumbers.removed(from: lines).lines.map(\.text) == ["import sys", "import os", "print(os.sep)"])
+        // Between 99 and 101, a misread 100 is as long as the number below it.
+        let wider = [
+            line("98", x: 40, y: 0, width: 20), line("def main():", x: 80, y: 0, width: 110),
+            line("99", x: 40, y: 1, width: 20), line("import sys", x: 120, y: 1, width: 100),
+            line("I00 import os", x: 30, y: 2, width: 130),
+            line("101", x: 30, y: 3, width: 30), line("print(sys.argv)", x: 120, y: 3, width: 150),
+            line("102", x: 30, y: 4, width: 30), line("return 0", x: 120, y: 4, width: 80),
+        ]
+        #expect(LineNumbers.removed(from: wider).lines.map(\.text) == ["def main():", "import sys", "import os", "print(sys.argv)", "return 0"])
     }
 
     /// A line a little left of the column is no number misread: its first word stays.

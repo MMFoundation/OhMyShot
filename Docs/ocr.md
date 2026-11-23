@@ -2105,11 +2105,13 @@ symbols with one beyond ASCII, set apart by a gap, are what an icon reads as (L1
 box. A full-width twin of an ASCII mark no longer counts as beyond ASCII there (`Icons.isIconReading`); the icon
 regions, real and drawn, read as before. That took `vscode-ts` from 1.1% to 0.0%.
 
-A gutter is the leftmost column of numbers: numbers further right are the code's own ("3 * price," in a list) and no
-longer outvote it. A number read with a closing brace counts ("100}"), so the one wider number of a right-aligned gutter
-no longer starts left of it; a short row read inside the column keeps its "}" or "};"; and a reading as long as the
-numbers beside it goes with them ("2O import" for 20). Two numbers make a gutter only beside code that shows its
-punctuation, as two numbered lines of prose can read as code by their first words ("1 for more information"). The code
+A gutter is the leftmost column of numbers: a number further right on a row the column numbers too is the code's own
+("3 * price," in a list) and no longer outvotes it, while one on a row of its own still keeps the column from being a
+gutter (numbers that start code at two indents). A number read with a closing brace counts ("100}"), so the one wider
+number of a right-aligned gutter no longer starts left of it; a short row read inside the column keeps its "}" or "};";
+and a reading as long as the number on its row, or above or below it, goes with them ("2O import" for 20, "I00" between
+99 and 101). Two numbers make a gutter only beside code that shows its punctuation (a bracket, ";", "=", ":", ASCII or
+full-width), as two numbered lines of prose can read as code by their first words ("1 for more information"). The code
 is read again right of the widest number, not the middle one. A misread number on the first or last row, with no
 number past it, still keeps the gutter: cutting a short word there would take the `a` from `a = [` above
 `1 + foo(),`.

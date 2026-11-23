@@ -89,8 +89,8 @@ enum Icons {
     /// answer.
     private static func isIconReading(_ text: Substring) -> Bool {
         let characters = text.filter { !$0.isWhitespace }
-        // An ellipsis ends a truncated label; it is never an icon.
-        if characters.allSatisfy({ $0 == "…" || $0 == "." }) { return false }
+        // An ellipsis ends a truncated label, full-width too; it is never an icon.
+        if characters.allSatisfy({ "….．".contains($0) }) { return false }
         if characters.count == 1 { return true }
         guard (2...3).contains(characters.count) else { return false }
         return characters.allSatisfy { !$0.isLetter && !$0.isNumber && !Script.isCJK($0) }
