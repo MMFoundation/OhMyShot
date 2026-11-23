@@ -62,7 +62,7 @@ enum LineNumbers {
             }
         }
         guard let textStart = remaining.map(\.box.minX).min(), right <= textStart + height / 4,
-              numbers.count > 2 || remaining.contains(where: { $0.text.contains(where: "{}()[];=".contains) }),
+              numbers.count > 2 || remaining.contains(where: { $0.text.contains { "{}()[];=".contains(Punctuation.halfWidth[$0] ?? $0) } }),
               TextAssembler.isCodeListing(ReadingOrder.sorted(remaining)) else { return (lines, nil) }
         return (remaining, min(rightEdges.last { $0 <= right + height / 2 } ?? right, textStart))
     }

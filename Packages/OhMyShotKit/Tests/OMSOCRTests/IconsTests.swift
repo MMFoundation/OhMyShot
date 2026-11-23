@@ -210,6 +210,9 @@ struct LineNumbersTests {
         let snippet = ["let total = items.reduce(0) { $0 + $1.price }", "print(total)"]
         let lines = snippet.enumerated().map { line($1, x: 100, y: $0, width: 450) }
         #expect(LineNumbers.removed(from: numbers + lines).lines.map(\.text) == snippet)
+        // Read with its numbers, its punctuation full-width as the Chinese model reads it.
+        let fullWidth = ["1 let x ＝ 1", "2 let y ＝ 2"].enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
+        #expect(LineNumbers.removed(from: fullWidth).lines.map(\.text) == ["let x ＝ 1", "let y ＝ 2"])
     }
 
     @Test func twoNumbersThatDoNotFollowEachOtherStay() {
