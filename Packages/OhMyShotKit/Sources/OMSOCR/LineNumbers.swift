@@ -69,8 +69,12 @@ enum LineNumbers {
                 remaining.append(line)
             }
         }
-        guard let textStart = remaining.map(\.box.minX).min(), right <= textStart + height / 4,
-              numbers.count > 2 || remaining.contains(where: { $0.text.contains { "{}()[];=:".contains(Punctuation.halfWidth[$0] ?? $0) } }),
+        // Two numbers need code that shows it: a bracket, ";", "=", or a YAML key, ASCII or full-width.
+        let punctuated = remaining.contains { line in
+            let text = String(line.text.trimmingCharacters(in: .whitespaces).map { Punctuation.halfWidth[$0] ?? $0 })
+            return text.contains(where: "{}()[];=".contains) || text.range(of: TextAssembler.keyValue, options: .regularExpression) != nil
+        }
+        guard let textStart = remaining.map(\.box.minX).min(), right <= textStart + height / 4, numbers.count > 2 || punctuated,
               TextAssembler.isCodeListing(ReadingOrder.sorted(remaining)) else { return (lines, nil) }
         return (remaining, min(rightEdges.last { $0 <= right + height / 2 } ?? right, textStart))
     }
@@ -87,15 +91,20 @@ enum LineNumbers {
         return (value, CGRect(x: line.box.minX, y: line.box.minY, width: width, height: line.box.height))
     }
 
+    /// Letters Vision reads for a digit: O for 0, I for 1, З for 3, S for 5.
+    private static let digitLike: Set<Character> = [
+        "O", "o", "D", "Q", "I", "l", "i", "L", "|", "Z", "z", "З", "з", "S", "s", "b", "G", "T", "B", "g", "q",
+    ]
+
     /// A line that starts inside the gutter less what it read there: its digits ("12 let x = 1", "13}"), or a reading
-    /// as long as a number beside it (`lengths`) before a space: digits with a misread one ("1O import"), or, where
-    /// it `misread` may be one, a misread number alone ("З import"). The code starts at the first ink past them, or as
-    /// far along as the characters before it reach.
+    /// of digits and letters like them, as long as a number beside it (`lengths`), before a space: digits with a
+    /// misread one ("1O import"), or, where it `misread` may be one, a misread number alone ("З import"). The code
+    /// starts at the first ink past them, or as far along as the characters before it reach.
     private static func code(after line: OCRLine, lengths: Set<Int>, misread: Bool, ink: ((CGRect) -> InkProfile?)?) -> OCRLine? {
         let text = line.text
         let digits = text.prefix { $0.isASCII && $0.isNumber }
         let token = text.prefix { !$0.isWhitespace }
-        let isMisread = lengths.contains(token.count) && token.count < text.count && token.allSatisfy { $0.isLetter || $0.isNumber }
+        let isMisread = lengths.contains(token.count) && token.count < text.count && token.allSatisfy { $0.isNumber || digitLike.contains($0) }
             && (digits.isEmpty ? misread : token.count > digits.count)
         let number = isMisread ? token : digits
         let code = text[number.endIndex...].drop(while: \.isWhitespace)

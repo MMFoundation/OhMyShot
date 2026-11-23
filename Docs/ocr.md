@@ -2109,10 +2109,11 @@ A gutter is the leftmost column of numbers: a number further right on a row the 
 ("3 * price," in a list) and no longer outvotes it, while one on a row of its own still keeps the column from being a
 gutter (numbers that start code at two indents). A number read with a closing brace counts ("100}"), so the one wider
 number of a right-aligned gutter no longer starts left of it; a short row read inside the column keeps its "}" or "};";
-and a reading as long as the number on its row, or above or below it, goes with them ("2O import" for 20, "I00" between
-99 and 101). Two numbers make a gutter only beside code that shows its punctuation (a bracket, ";", "=", ":", ASCII or
-full-width), as two numbered lines of prose can read as code by their first words ("1 for more information"). The code
-is read again right of the widest number, not the middle one. A misread number on the first or last row, with no
+and a reading of digits and letters like them (O, I, З, S …) as long as the number on its row, or above or below it,
+goes with them ("2O import" for 20, "I00" between 99 and 101; "let" between them stays). Two numbers make a gutter only
+beside code that shows its punctuation (a bracket, ";", "=", or a YAML key, ASCII or full-width), as two numbered lines
+of prose can read as code by their first words ("1 for more information: see …"). The code is read again right of the
+widest number, not the middle one. A misread number on the first or last row, with no
 number past it, still keeps the gutter: cutting a short word there would take the `a` from `a = [` above
 `1 + foo(),`.
 

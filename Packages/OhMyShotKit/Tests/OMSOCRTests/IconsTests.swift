@@ -239,6 +239,10 @@ struct LineNumbersTests {
         let nested = [("1 + foo(),", 40), ("2 + bar(),", 40), ("3 + baz() + sum([", 40), ("4 * tax,", 80), ("5 * fee,", 80), ("6 * price,", 80)]
             .enumerated().map { line($1.0, x: CGFloat($1.1), y: $0, width: CGFloat($1.0.count * 10)) }
         #expect(LineNumbers.removed(from: nested).lines == nested)
+        // Between 99 and 101, a keyword as long as 101 is no misread number.
+        let keyword = [("98 + foo();", 0), ("99 + bar();", 1), ("let x = 1;", 2), ("101 + baz();", 4), ("102 + qux();", 5)]
+            .map { line($0.0, x: 40, y: $0.1, width: CGFloat($0.0.count * 10)) }
+        #expect(LineNumbers.removed(from: keyword).lines == keyword)
     }
 
     /// A shell's `history`: its numbers count up beside commands, which are no code listing.
@@ -320,10 +324,10 @@ struct LineNumbersTests {
 
     /// Two numbered lines of prose, however much their first words look like code.
     @Test func twoNumberedLinesOfProseKeepTheirNumbers() {
-        let lines = ["1 for more information see the guide", "2 return the form by Friday"].enumerated().map {
-            line($1, x: 20, y: $0, width: CGFloat($1.count * 10))
+        for first in ["1 for more information see the guide", "1 for more information: see the guide"] {
+            let lines = [first, "2 return the form by Friday"].enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
+            #expect(LineNumbers.removed(from: lines).lines == lines)
         }
-        #expect(LineNumbers.removed(from: lines).lines == lines)
     }
 
     /// A left-aligned gutter: the code is read again right of its widest number, not of the middle one.
