@@ -2105,18 +2105,28 @@ symbols with one beyond ASCII, set apart by a gap, are what an icon reads as (L1
 box. A full-width twin of an ASCII mark no longer counts as beyond ASCII there (`Icons.isIconReading`); the icon
 regions, real and drawn, read as before. That took `vscode-ts` from 1.1% to 0.0%.
 
+A gutter is the leftmost column of numbers: numbers further right are the code's own ("3 * price," in a list) and no
+longer outvote it. A number read with a closing brace counts ("100}"), so the one wider number of a right-aligned gutter
+no longer starts left of it; a short row read inside the column keeps its "}" or "};"; and a reading as long as the
+numbers beside it goes with them ("2O import" for 20). Two numbers make a gutter only beside code that shows its
+punctuation, as two numbered lines of prose can read as code by their first words ("1 for more information"). The code
+is read again right of the widest number, not the middle one. A misread number on the first or last row, with no
+number past it, still keeps the gutter: cutting a short word there would take the `a` from `a = [` above
+`1 + foo(),`.
+
 Measured with `ocr-bench --engine l1` on an M3 Max with macOS 27.3, main against this change, with 15 editor views
 drawn at 2× outside the corpus (VS Code, Xcode, Vim, GitHub, JetBrains, and Sublime gutters, light and dark; Swift,
 TypeScript with a Chinese comment, Python, Go, a two-line snippet, Markdown):
 
 | | Content CER | Raw CER | Line order |
 | --- | --- | --- | --- |
-| The 15 editor views | 3.46% → 0.95% | 5.14% → 0.92% | 0.920 → 0.987 |
-| Xcode, Vim, a tight theme, the two-line snippet (5 of them) | 5.2–15.4% → 0.0–3.1% | 8.3–29.3% → 0.0–4.0% | 0.56–1.00 → 1.00 |
+| The 15 editor views | 3.46% → 0.98% | 5.14% → 0.93% | 0.920 → 0.987 |
+| Xcode, Vim, a tight theme, the two-line snippet (5 of them) | 5.2–15.4% → 0.0–4.6% | 8.3–29.3% → 0.0–5.1% | 0.56–1.00 → 1.00 |
 | The 34 drawn cases, the 12 real regions, the 12 shrunk copies | unchanged but one | unchanged but one | unchanged but one |
 
-The one is `real-vscode-code`, a little better (content 1.3% → 1.1%, line order 0.88 → 0.90). One editor view is
-worse: `xcode-light` 0.5% → 1.1%, where the rereading, now cut at the gutter, reads one `[` as `I`. Time is about the
-same: p50 313 → 309 ms on the corpus and the real regions, 350 → 367 ms on the editor views, where the code with a
-Chinese comment is now read again whole. Not handled: a diff's two columns of numbers side by side, and Markdown or
-other prose beside a gutter, which is no code listing, so its numbers stay.
+The one is `real-vscode-code`, a little better (content 1.3% → 1.1%, line order 0.88 → 0.90). No editor view is worse
+than on main; `xcode-go-tight` is a character worse than with the middle number's edge (`i++` read as `it+`), and
+`xcode-light` and `vim-ts` a character better, where the second reading starts a pixel or two further right. Time is
+about the same: p50 313 → 299 ms on the corpus and the real regions, 350 → 358 ms on the editor views, where the code
+with a Chinese comment is now read again whole. Not handled: a diff's two columns of numbers side by side, and Markdown
+or other prose beside a gutter, which is no code listing, so its numbers stay.

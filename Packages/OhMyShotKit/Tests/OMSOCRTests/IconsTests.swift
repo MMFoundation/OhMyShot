@@ -62,6 +62,12 @@ struct IconsTests {
         #expect(Line(text: "您的服，…", spans: spans).trimmed() == nil)
     }
 
+    @Test func aFullWidthEllipsisStays() {
+        // The Chinese model reads "..." full-width.
+        let spans = cjk(3, from: 0) + [78...82, 86...90, 94...98]
+        #expect(Line(text: "您的服．．．", spans: spans).trimmed() == nil)
+    }
+
     @Test func aHeartBeforeACountGoes() {
         #expect(Line(text: "♥ 10", spans: [0...15, 26...31, 34...40]).trimmed() == "10")
     }
@@ -229,5 +235,85 @@ struct LineNumbersTests {
     @Test func aShellHistoryKeepsItsNumbers() {
         let lines = ["501 git status", "502 git pull --rebase", "503 open .", "504 swift build"].enumerated().map { line($1, x: 20, y: $0, width: 200) }
         #expect(LineNumbers.removed(from: lines).lines == lines)
+    }
+    /// A right-aligned gutter, 14 px a character: a wider number read with its closing brace starts left of the others.
+    @Test func aWiderNumberReadWithItsBraceGoes() {
+        let lines = [
+            line("98", x: 40, y: 0, width: 28),
+            line("if done {", x: 96, y: 0, width: 126),
+            line("99", x: 40, y: 1, width: 28),
+            line("return", x: 152, y: 1, width: 84),
+            line("100}", x: 26, y: 2, width: 56),
+        ]
+        let removed = LineNumbers.removed(from: lines)
+        #expect(removed.lines.map(\.text) == ["if done {", "return", "}"])
+        #expect(removed.end == 68)
+    }
+
+    /// Short rows read with their numbers inside the column keep their code.
+    @Test func aShortRowReadWithItsNumberKeepsItsCode() {
+        let lines = [
+            line("1", x: 40, y: 0, width: 10),
+            line("let f = {", x: 60, y: 0, width: 90),
+            line("2", x: 40, y: 1, width: 10),
+            line("print(x)", x: 100, y: 1, width: 80),
+            line("3};", x: 40, y: 2, width: 21),
+            line("4", x: 40, y: 3, width: 10),
+            line("if x {", x: 60, y: 3, width: 60),
+            line("5}", x: 40, y: 4, width: 20),
+        ]
+        #expect(LineNumbers.removed(from: lines).lines.map(\.text) == ["let f = {", "print(x)", "};", "if x {", "}"])
+    }
+
+    /// A digit misread in a number read with its code (\"2O\" for 20) goes with the number.
+    @Test func aMisreadDigitGoesWithItsNumber() {
+        let lines = [
+            line("18 import sys", x: 30, y: 0, width: 130),
+            line("19", x: 30, y: 1, width: 20),
+            line("2O import os", x: 30, y: 2, width: 120),
+            line("21", x: 30, y: 3, width: 20),
+            line("print(os.sep)", x: 60, y: 3, width: 130),
+        ]
+        #expect(LineNumbers.removed(from: lines).lines.map(\.text) == ["import sys", "import os", "print(os.sep)"])
+    }
+
+    /// A line a little left of the column is no number misread: its first word stays.
+    @Test func aWordLeftOfTheColumnStays() {
+        let lines = [
+            line("1", x: 40, y: 0, width: 10),
+            line("func f() {", x: 60, y: 0, width: 100),
+            line("let x = 1", x: 35, y: 1, width: 90),
+            line("2", x: 40, y: 2, width: 10),
+            line("return x", x: 60, y: 2, width: 80),
+            line("3", x: 40, y: 3, width: 10),
+            line("}", x: 60, y: 3, width: 10),
+        ]
+        #expect(LineNumbers.removed(from: lines).lines == lines)
+    }
+
+    /// The code's own numbers, right of the gutter, are not part of it.
+    @Test func numbersInTheCodeDoNotHideTheGutter() {
+        let numbers = (1...6).map { line("\($0)", x: 40, y: $0 - 1, width: 10) }
+        let code = [("def totals():", 60), ("return [", 100), ("3 * price,", 140), ("4 * tax,", 140), ("5 * fee,", 140), ("]", 100)]
+        let lines = code.enumerated().map { line($1.0, x: CGFloat($1.1), y: $0, width: CGFloat($1.0.count * 10)) }
+        #expect(LineNumbers.removed(from: numbers + lines).lines.map(\.text) == code.map(\.0))
+    }
+
+    /// Two numbered lines of prose, however much their first words look like code.
+    @Test func twoNumberedLinesOfProseKeepTheirNumbers() {
+        let lines = ["1 for more information see the guide", "2 return the form by Friday"].enumerated().map {
+            line($1, x: 20, y: $0, width: CGFloat($1.count * 10))
+        }
+        #expect(LineNumbers.removed(from: lines).lines == lines)
+    }
+
+    /// A left-aligned gutter: the code is read again right of its widest number, not of the middle one.
+    @Test func theGutterEndsAtItsWidestNumber() {
+        let numbers = (7...11).map { line("\($0)", x: 30, y: $0 - 7, width: $0 < 10 ? 10 : 20) }
+        let code = ["func f() {", "let a = 1", "let b = 2", "return a + b", "}"]
+        let lines = code.enumerated().map { line($1, x: 60, y: $0, width: CGFloat($1.count * 10)) }
+        let removed = LineNumbers.removed(from: numbers + lines)
+        #expect(removed.lines.map(\.text) == code)
+        #expect(removed.end == 50)
     }
 }
