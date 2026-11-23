@@ -214,8 +214,10 @@ struct LineNumbersTests {
         let fullWidth = ["1 let x ＝ 1", "2 let y ＝ 2"].enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
         #expect(LineNumbers.removed(from: fullWidth).lines.map(\.text) == ["let x ＝ 1", "let y ＝ 2"])
         // Two lines of YAML.
-        let yaml = ["1 name: app", "2 port: 8080"].enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
-        #expect(LineNumbers.removed(from: yaml).lines.map(\.text) == ["name: app", "port: 8080"])
+        for yaml in [["1 name: app", "2 port: 8080"], ["1 - name: app", "2 - name: worker"], ["1 Services:", "2 - app"]] {
+            let lines = yaml.enumerated().map { line($1, x: 20, y: $0, width: CGFloat($1.count * 10)) }
+            #expect(LineNumbers.removed(from: lines).lines.map(\.text) == yaml.map { String($0.dropFirst(2)) })
+        }
     }
 
     @Test func twoNumbersThatDoNotFollowEachOtherStay() {

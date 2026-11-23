@@ -177,8 +177,13 @@ public enum TextAssembler {
         return result + asProse(String(rest))
     }
 
-    /// A YAML key and its colon, the key looking like code: lowercase, or with _ . -.
-    static let keyValue = #"^([a-z_][\w.-]*|[A-Za-z_]\w*[_.-][\w.-]*):(\s|$)"#
+    /// Lines of YAML: a key and its value, the key looking like code (lowercase, or with _ . -); a key alone; an entry
+    /// of a sequence, "- key: value".
+    static let yaml = [
+        #"^([a-z_][\w.-]*|[A-Za-z_]\w*[_.-][\w.-]*):(\s|$)"#,
+        #"^[A-Za-z_][\w.-]*:$"#,
+        #"^-\s+[A-Za-z_][\w.-]*:"#,
+    ]
 
     static func isCodeLike(_ text: String) -> Bool {
         let trimmed = String(text.trimmingCharacters(in: .whitespaces).map { Punctuation.halfWidth[$0] ?? $0 })
@@ -195,11 +200,8 @@ public enum TextAssembler {
             // key: value, as in YAML, when the key looks like code (lowercase, or with _ . -) or stands
             // alone; a capitalized label with a value ("Phone: +1 …") is as likely prose and counts half,
             // so a contact card is not a code listing, while "Type: AWS::S3::Bucket" still is.
-            (keyValue, 2),
-            (#"^[A-Za-z_][\w.-]*:$"#, 2),
             (#"^[A-Z]\w*:\s"#, 1),
-            (#"^-\s+[A-Za-z_][\w.-]*:"#, 2), // - key: value
-        ]
+        ] + yaml.map { ($0, 2) }
         for (pattern, weight) in patterns where trimmed.range(of: pattern, options: .regularExpression) != nil {
             score += weight
         }

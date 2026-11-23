@@ -69,10 +69,11 @@ enum LineNumbers {
                 remaining.append(line)
             }
         }
-        // Two numbers need code that shows it: a bracket, ";", "=", or a YAML key, ASCII or full-width.
+        // Two numbers need code that shows it: a bracket, ";", "=", or a line of YAML, ASCII or full-width.
         let punctuated = remaining.contains { line in
             let text = String(line.text.trimmingCharacters(in: .whitespaces).map { Punctuation.halfWidth[$0] ?? $0 })
-            return text.contains(where: "{}()[];=".contains) || text.range(of: TextAssembler.keyValue, options: .regularExpression) != nil
+            return text.contains(where: "{}()[];=".contains)
+                || TextAssembler.yaml.contains { text.range(of: $0, options: .regularExpression) != nil }
         }
         guard let textStart = remaining.map(\.box.minX).min(), right <= textStart + height / 4, numbers.count > 2 || punctuated,
               TextAssembler.isCodeListing(ReadingOrder.sorted(remaining)) else { return (lines, nil) }
