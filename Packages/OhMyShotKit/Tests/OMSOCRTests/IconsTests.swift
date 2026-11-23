@@ -88,6 +88,8 @@ struct IconsTests {
         // "// 计算": two slashes, then a monospaced cell of space.
         let comment = [0...6, 9...15] + cjk(4, from: 28)
         #expect(Line(text: "// 计算缩略", spans: comment).trimmed() == nil)
+        // The Chinese model reads the second slash full-width.
+        #expect(Line(text: "/／ 计算缩略", spans: comment).trimmed() == nil)
     }
 
     @Test func spacedOutTextStays() {
@@ -114,7 +116,7 @@ struct LineNumbersTests {
     @Test func aGutterBesideCodeGoes() {
         let numbers = (0..<5).map { line("\(32 + $0)", x: 20, y: $0, width: 30) }
         let lines = code.enumerated().map { line($1, x: 100, y: $0, width: 500) }
-        let kept = LineNumbers.removed(from: numbers + lines)
+        let kept = LineNumbers.removed(from: numbers + lines).lines
         #expect(kept.map(\.text) == code)
     }
 
@@ -122,20 +124,97 @@ struct LineNumbersTests {
         let values = ["39", "48", "41", "42", "43"]
         let numbers = values.enumerated().map { line($1, x: 20, y: $0, width: 30) }
         let lines = code.enumerated().map { line($1, x: 100, y: $0, width: 500) }
-        #expect(LineNumbers.removed(from: numbers + lines).count == 5)
+        #expect(LineNumbers.removed(from: numbers + lines).lines.count == 5)
     }
 
     @Test func misreadNumbersInTheColumnGoWithIt() {
         let values = ["32", "33", "S5", "35", "LL9", "373839"]
         let numbers = values.enumerated().map { line($1, x: 20, y: $0, width: 30) }
         let lines = code.enumerated().map { line($1, x: 100, y: $0, width: 500) }
-        #expect(LineNumbers.removed(from: numbers + lines).map(\.text) == code)
-        #expect(LineNumbers.removed(from: numbers + lines).count == code.count)
+        #expect(LineNumbers.removed(from: numbers + lines).lines.map(\.text) == code)
+        #expect(LineNumbers.removed(from: numbers + lines).lines.count == code.count)
     }
 
     @Test func aNumberedListKeepsItsNumbers() {
         let numbers = (1...4).map { line("\($0)", x: 20, y: $0, width: 12) }
         let items = ["Apples", "Oranges", "Pears", "Plums"].enumerated().map { line($1, x: 60, y: $0 + 1, width: 120) }
-        #expect(LineNumbers.removed(from: numbers + items).count == 8)
+        #expect(LineNumbers.removed(from: numbers + items).lines.count == 8)
+    }
+
+    /// Beside a narrow gutter, as Vim's `number` draws it (one space after the numbers), Vision reads a number and the
+    /// code after it as one line. 10 px a character: the numbers end at 50, the code starts at 60.
+    @Test func numbersReadWithTheirCodeGo() {
+        let lines = [
+            line("32 func thumbnail(for url: URL) -> CGImage? {", x: 30, y: 0, width: 450),
+            line("33", x: 30, y: 1, width: 20),
+            line("guard let source = make(url) else {", x: 100, y: 1, width: 350),
+            line("34", x: 30, y: 2, width: 20),
+            line("return nil", x: 140, y: 2, width: 100),
+            line("35 }", x: 30, y: 3, width: 40),
+        ]
+        let removed = LineNumbers.removed(from: lines)
+        #expect(removed.lines.map(\.text) == ["func thumbnail(for url: URL) -> CGImage? {", "guard let source = make(url) else {", "return nil", "}"])
+        #expect(removed.lines.map(\.box.minX) == [60, 100, 140, 60])
+        #expect(removed.end == 50)
+    }
+
+    /// Where the picture's ink is known, the code read with a number starts at its first glyph: Vision's one space
+    /// stands for the indentation too.
+    @Test func inkPlacesTheCodeReadWithANumber() {
+        let text = "guard let source = make(url) else {"
+        let lines = [
+            line("32", x: 30, y: 0, width: 20),
+            line("func thumbnail(for url: URL) -> CGImage? {", x: 60, y: 0, width: 420),
+            line("33 " + text, x: 30, y: 1, width: 420),
+            line("34", x: 30, y: 2, width: 20),
+            line("return nil", x: 140, y: 2, width: 100),
+        ]
+        // Digits at 31–39 and 41–49, the code's glyphs from 101, 10 px apart.
+        let ink = { (box: CGRect) -> InkProfile? in
+            let columns = (Int(box.minX)..<Int(box.maxX)).map { x in
+                x < 50 ? (x - 31) % 10 < 8 && x >= 31 : x >= 101 && (x - 101) % 10 < 8
+            }
+            return InkProfile(originX: Int(box.minX), ink: columns)
+        }
+        let removed = LineNumbers.removed(from: lines, ink: ink).lines
+        #expect(removed.map(\.text) == ["func thumbnail(for url: URL) -> CGImage? {", text, "return nil"])
+        #expect(removed[1].box.minX == 101)
+        #expect(removed[1].box.maxX == 450)
+    }
+
+    /// Inside the column, a number read with a closing brace and no space, and a misread number before a space.
+    @Test func whatALineStartsWithInsideTheColumnGoes() {
+        let lines = [
+            line("1", x: 40, y: 0, width: 10),
+            line("func f() {", x: 60, y: 0, width: 100),
+            line("З import os", x: 40, y: 1, width: 110),
+            line("3", x: 40, y: 2, width: 10),
+            line("x = g(1)", x: 100, y: 2, width: 80),
+            line("4", x: 40, y: 3, width: 10),
+            line("return x", x: 100, y: 3, width: 80),
+            line("5}", x: 40, y: 4, width: 30),
+        ]
+        let removed = LineNumbers.removed(from: lines).lines
+        #expect(removed.map(\.text) == ["func f() {", "import os", "x = g(1)", "return x", "}"])
+        #expect(removed[1].box.minX == 60)
+    }
+
+    @Test func aSnippetOfTwoLinesLosesItsNumbers() {
+        let numbers = ["41", "42"].enumerated().map { line($1, x: 20, y: $0, width: 30) }
+        let snippet = ["let total = items.reduce(0) { $0 + $1.price }", "print(total)"]
+        let lines = snippet.enumerated().map { line($1, x: 100, y: $0, width: 450) }
+        #expect(LineNumbers.removed(from: numbers + lines).lines.map(\.text) == snippet)
+    }
+
+    @Test func twoNumbersThatDoNotFollowEachOtherStay() {
+        let numbers = ["3", "7"].enumerated().map { line($1, x: 20, y: $0, width: 12) }
+        let lines = ["let total = items.reduce(0) { $0 + $1.price }", "print(total)"].enumerated().map { line($1, x: 100, y: $0, width: 450) }
+        #expect(LineNumbers.removed(from: numbers + lines).lines.count == 4)
+    }
+
+    /// A shell's `history`: its numbers count up beside commands, which are no code listing.
+    @Test func aShellHistoryKeepsItsNumbers() {
+        let lines = ["501 git status", "502 git pull --rebase", "503 open .", "504 swift build"].enumerated().map { line($1, x: 20, y: $0, width: 200) }
+        #expect(LineNumbers.removed(from: lines).lines == lines)
     }
 }
