@@ -212,6 +212,16 @@ struct LineNumbersTests {
         #expect(LineNumbers.removed(from: numbers + lines).lines.count == 4)
     }
 
+    /// Code whose lines start with numbers, and no gutter: the assignment starts left of the numbers' column, or
+    /// in it above them, where no misread number is.
+    @Test func codeStartingWithNumbersKeepsThem() {
+        let operands = [line("1 + foo(),", x: 40, y: 1, width: 100), line("2 + bar()", x: 40, y: 2, width: 90)]
+        let outdented = [line("nums = [", x: 0, y: 0, width: 80)] + operands
+        #expect(LineNumbers.removed(from: outdented).lines == outdented)
+        let aligned = [line("nums = [", x: 40, y: 0, width: 80)] + operands
+        #expect(LineNumbers.removed(from: aligned).lines == aligned)
+    }
+
     /// A shell's `history`: its numbers count up beside commands, which are no code listing.
     @Test func aShellHistoryKeepsItsNumbers() {
         let lines = ["501 git status", "502 git pull --rebase", "503 open .", "504 swift build"].enumerated().map { line($1, x: 20, y: $0, width: 200) }
