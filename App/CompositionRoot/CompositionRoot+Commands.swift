@@ -19,7 +19,7 @@ extension CompositionRoot {
         if !keepsLauncherOpen { statusItem?.dismissLauncher() }
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
-        usageTelemetry?.recordFeature(shortcut.rawValue, from: source)
+        recordUse(of: shortcut.rawValue, from: source)
         if shortcut == .captureArea, beginOnboardingCaptureIfReady() {
             if keepsLauncherOpen { statusItem?.dismissLauncher() }
             return
@@ -126,6 +126,18 @@ extension CompositionRoot {
         }
     }
 
+    /// Counts a feature's use in usage data, unless running it now only stops what it started: a recording or its
+    /// countdown, a Self-Timer countdown, or a scrolling capture.
+    private func recordUse(of feature: String, from source: UsageTelemetry.Source) {
+        let stops = switch feature {
+        case "recordScreen": recordings.isRecording || recordings.isCountingDown
+        case "selfTimer": captures.isSelfTimerRunning
+        case "scrollingCapture": scrolling.isCapturing
+        default: false
+        }
+        if !stops { usageTelemetry?.recordFeature(feature, from: source) }
+    }
+
     /// Runs a URL API command from an approved caller, as CleanShot X runs it under the same name and parameters, and a
     /// shortcut's. `done` is told the record of a capture command's capture once it is kept, or nil when none is: it was
     /// cancelled or failed, or never began (no Screen Recording, an area on no display, an upload with nowhere to go). Any
@@ -140,7 +152,7 @@ extension CompositionRoot {
             followUpTakesDone = true
             return followUp
         }
-        usageTelemetry?.recordFeature(command.usageName, from: .automation)
+        recordUse(of: command.usageName, from: .automation)
         if command.readsScreen {
             quickAccess.dismissFirstCaptureHint()
             permissions.refresh([.screenRecording])

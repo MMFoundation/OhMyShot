@@ -89,6 +89,13 @@ extension CompositionRoot {
         failureNotice.show(failure.summary, near: NSEvent.mouseLocation)
     }
 
+    /// A card's Save or Save As outcome, its failure counted in usage data as `showSaveFailure` counts the others; the card
+    /// says why itself.
+    private func countingFailure(_ outcome: SaveOutcome) -> SaveOutcome {
+        if outcome.failure != nil { usageTelemetry?.record(.exportFailure) }
+        return outcome
+    }
+
     /// Where a copy saved from a window went, nil when it was not saved; a failure is said by the pointer first.
     func savedOrSaidWhy(_ outcome: SaveOutcome) -> URL? {
         if let failure = outcome.failure { showSaveFailure(failure, onCardOf: nil) }
@@ -147,8 +154,14 @@ extension CompositionRoot {
     func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
             copy: { [weak self] item in await self?.files.copyToClipboard(fileAt: item.fileURL) ?? false },
-            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) ?? .cancelled },
-            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) ?? .cancelled },
+            save: { [weak self] item, asks in
+                guard let self else { return .cancelled }
+                return countingFailure(await files.saveCapture(fileAt: item.fileURL, asks: asks))
+            },
+            saveAs: { [weak self] item in
+                guard let self else { return .cancelled }
+                return countingFailure(await files.saveCaptureAs(fileAt: item.fileURL))
+            },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
