@@ -71,6 +71,11 @@ extension CompositionRoot {
     /// of those things: let it go now unless a card (or, after a failure, the card that comes back with Retry),
     /// or the editor, still holds it.
     func uploadEnded(_ id: UUID, _ outcome: UploadCoordinator.Outcome) {
+        switch outcome {
+        case .finished: usageTelemetry?.record(.upload)
+        case .failed: usageTelemetry?.record(.uploadFailure)
+        case .cancelled: break
+        }
         if outcome == .failed, showsQuickAccess(forCaptureWith: id) { return }
         retention.releaseIfUnheld(id)
     }
@@ -79,6 +84,7 @@ extension CompositionRoot {
     /// `captureID` has one on screen, which holds it from closing by itself, else in the reading by the pointer (from the
     /// editor, a pin, History, or after a capture with Quick Access off). Either way VoiceOver hears it.
     func showSaveFailure(_ failure: ExportFailure, onCardOf captureID: UUID?) {
+        usageTelemetry?.record(.exportFailure)
         if let captureID, quickAccess.showFailure(failure, for: captureID) { return }
         failureNotice.show(failure.summary, near: NSEvent.mouseLocation)
     }

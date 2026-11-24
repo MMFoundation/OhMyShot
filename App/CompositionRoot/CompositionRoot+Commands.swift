@@ -13,12 +13,13 @@ import UniformTypeIdentifiers
 
 /// What the global shortcuts and the URL API's commands run.
 extension CompositionRoot {
-    func handle(_ shortcut: CaptureShortcut) {
+    func handle(_ shortcut: CaptureShortcut, from source: UsageTelemetry.Source) {
         let keepsLauncherOpen = StatusItemController.shouldKeepLauncherOpen(for: shortcut)
         let launcherWindowID = keepsLauncherOpen ? statusItem?.launcherWindowID : nil
         if !keepsLauncherOpen { statusItem?.dismissLauncher() }
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
+        usageTelemetry?.recordFeature(shortcut.rawValue, from: source)
         if shortcut == .captureArea, beginOnboardingCaptureIfReady() {
             if keepsLauncherOpen { statusItem?.dismissLauncher() }
             return
@@ -59,6 +60,7 @@ extension CompositionRoot {
         permissions.refresh([.screenRecording])
         guard permissions.status(of: .screenRecording) == .granted else {
             if keepsLauncherOpen { statusItem?.dismissLauncher() }
+            usageTelemetry?.record(.permissionBlocked)
             showOnboarding()
             return
         }
@@ -138,10 +140,14 @@ extension CompositionRoot {
             followUpTakesDone = true
             return followUp
         }
+        usageTelemetry?.recordFeature(command.usageName, from: .automation)
         if command.readsScreen {
             quickAccess.dismissFirstCaptureHint()
             permissions.refresh([.screenRecording])
-            if permissions.status(of: .screenRecording) != .granted { return showOnboarding() }
+            if permissions.status(of: .screenRecording) != .granted {
+                usageTelemetry?.record(.permissionBlocked)
+                return showOnboarding()
+            }
         }
         switch command {
         case .allInOne(let region):
@@ -291,6 +297,42 @@ extension CompositionRoot {
         } catch {
             Log.automation.error("Could not add \(url.lastPathComponent, privacy: .private) to Quick Access: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
+        }
+    }
+}
+
+private extension AutomationCommand {
+    /// Its feature's name in usage data: that of the keyboard shortcut doing the same, else the command's own.
+    var usageName: String {
+        switch self {
+        case .allInOne: "allInOne"
+        case .captureArea(_, let action):
+            switch action {
+            case nil: "captureArea"
+            case .copy?: "captureAreaAndCopy"
+            case .save?: "captureAreaAndSave"
+            case .annotate?: "captureAreaAndAnnotate"
+            case .upload?: "captureAreaAndUpload"
+            case .pin?: "pinArea"
+            }
+        case .capturePreviousArea: "capturePreviousArea"
+        case .captureFullscreen(let action): action == .upload ? "captureFullscreenAndUpload" : "captureFullscreen"
+        case .captureWindow: "captureWindow"
+        case .selfTimer: "selfTimer"
+        case .scrollingCapture: "scrollingCapture"
+        case .pin: "pinImage"
+        case .recordScreen: "recordScreen"
+        case .captureText(_, _, let lineBreaks): lineBreaks == false ? "captureTextJoined" : "captureText"
+        case .captureFormula: "captureFormula"
+        case .openAnnotate: "openAnnotate"
+        case .openFromClipboard: "openFromClipboard"
+        case .pinFromClipboard: "pinFromClipboard"
+        case .togglePins: "togglePins"
+        case .toggleDesktopIcons, .hideDesktopIcons, .showDesktopIcons: "toggleDesktopIcons"
+        case .addQuickAccessOverlay: "addToQuickAccess"
+        case .openHistory: "openHistory"
+        case .restoreRecentlyClosed: "restoreRecentlyClosed"
+        case .openSettings: "openSettings"
         }
     }
 }
