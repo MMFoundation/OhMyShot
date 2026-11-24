@@ -131,18 +131,18 @@ extension CompositionRoot {
                 // A picture already on disk or on the clipboard, to annotate, pin, or read.
                 .init(title: String(localized: "Open Image"), systemImage: "photo") { [weak self] in
                     [
-                        .init(title: String(localized: "Annotate…")) { [weak self] in
+                        .init(title: String(localized: "Annotate…"), perform: { [weak self] in
                             self?.usedFromMenu("openAnnotate")
                             self?.chooseFilesToAnnotate()
-                        },
-                        .init(title: String(localized: "Pin…")) { [weak self] in
+                        }),
+                        .init(title: String(localized: "Pin…"), perform: { [weak self] in
                             self?.usedFromMenu("pinImage")
                             self?.choosePicturesToPin()
-                        },
-                        .init(title: String(localized: "Recognize Text…")) { [weak self] in
+                        }),
+                        .init(title: String(localized: "Recognize Text…"), perform: { [weak self] in
                             self?.usedFromMenu("captureText")
                             self?.textCapture.openImageFile()
-                        },
+                        }),
                     ]
                 },
                 .init(title: String(localized: "From Clipboard"), systemImage: "list.clipboard") { [weak self] in
