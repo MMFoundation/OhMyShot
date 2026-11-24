@@ -190,6 +190,7 @@ final class CompositionRoot {
             self?.usageTelemetry?.record(.permissionBlocked)
             self?.showOnboarding()
         },
+        used: { [weak self] feature in self?.usageTelemetry?.recordFeature(feature, from: .automation) },
         run: { [weak self] command, kept, done in
             guard let self else { done?(nil); return }
             perform(command, kept: kept, done: done)

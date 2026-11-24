@@ -301,7 +301,7 @@ extension CompositionRoot {
     }
 }
 
-private extension AutomationCommand {
+extension AutomationCommand {
     /// Its feature's name in usage data: that of the keyboard shortcut doing the same, else the command's own.
     var usageName: String {
         switch self {

@@ -123,6 +123,7 @@ extension CompositionRoot {
                     }
                 ) { [weak self] in
                     guard let self else { return }
+                    usedFromMenu("toggleDesktopIcons")
                     setDesktopIconsHidden(!settings.hidesDesktopIcons)
                 },
             ],
@@ -130,9 +131,18 @@ extension CompositionRoot {
                 // A picture already on disk or on the clipboard, to annotate, pin, or read.
                 .init(title: String(localized: "Open Image"), systemImage: "photo") { [weak self] in
                     [
-                        .init(title: String(localized: "Annotate…")) { [weak self] in self?.chooseFilesToAnnotate() },
-                        .init(title: String(localized: "Pin…")) { [weak self] in self?.choosePicturesToPin() },
-                        .init(title: String(localized: "Recognize Text…")) { [weak self] in self?.textCapture.openImageFile() },
+                        .init(title: String(localized: "Annotate…")) { [weak self] in
+                            self?.usedFromMenu("openAnnotate")
+                            self?.chooseFilesToAnnotate()
+                        },
+                        .init(title: String(localized: "Pin…")) { [weak self] in
+                            self?.usedFromMenu("pinImage")
+                            self?.choosePicturesToPin()
+                        },
+                        .init(title: String(localized: "Recognize Text…")) { [weak self] in
+                            self?.usedFromMenu("captureText")
+                            self?.textCapture.openImageFile()
+                        },
                     ]
                 },
                 .init(title: String(localized: "From Clipboard"), systemImage: "list.clipboard") { [weak self] in
@@ -151,6 +161,7 @@ extension CompositionRoot {
                             title: String(localized: "Recognize Text"),
                             isEnabled: { PasteboardImage.mayHoldImage(.general) }
                         ) { [weak self] in
+                            self?.usedFromMenu("captureText")
                             self?.textCapture.openClipboardImage()
                         },
                     ]
@@ -187,7 +198,10 @@ extension CompositionRoot {
             ],
             historyEntries: [
                 .init(title: String(localized: "Annotate Latest Capture"), systemImage: "pencil.tip.crop.circle", shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture, from: .menu) },
-                .init(title: String(localized: "Capture History…"), systemImage: "clock.arrow.circlepath", shortcut: .openHistory) { [weak self] in self?.showHistory() },
+                .init(title: String(localized: "Capture History…"), systemImage: "clock.arrow.circlepath", shortcut: .openHistory) { [weak self] in
+                    self?.usedFromMenu("openHistory")
+                    self?.showHistory()
+                },
                 .init(
                     title: String(localized: "Restore Recently Closed"),
                     systemImage: "arrow.uturn.backward.circle",
@@ -217,16 +231,26 @@ extension CompositionRoot {
                 },
                 .init(title: String(localized: "What’s New…"), systemImage: "sparkles", isHidden: { [weak self] in self?.updates == nil }) { [weak self] in self?.updates?.showReleaseNotes() },
             ],
-            openSettings: { [weak self] in self?.showSettings() },
+            openSettings: { [weak self] in
+                self?.usedFromMenu("openSettings")
+                self?.showSettings()
+            },
             // A shortcut's row in Settings › Shortcuts, lit up, or the pane's top for none.
             editShortcut: { [weak self] shortcut in self?.showSettings(.shortcuts, landingOn: shortcut?.title) },
             quit: { NSApp.terminate(nil) },
             debugEntries: debugMenuEntries()
         )
         statusItem.onDrop = { [weak self] pasteboard in
-            self?.textCapture.openPanel(from: pasteboard, source: String(localized: "Dropped Image")) ?? false
+            self?.usedFromMenu("captureText")
+            return self?.textCapture.openPanel(from: pasteboard, source: String(localized: "Dropped Image")) ?? false
         }
         return statusItem
+    }
+
+    /// Counts a menu item's feature in usage data, under its usage-data name, where the item doesn't run a shortcut
+    /// through `handle(_:from:)`, which counts it there.
+    private func usedFromMenu(_ feature: String) {
+        usageTelemetry?.recordFeature(feature, from: .menu)
     }
 
     /// The replay's menu bar entries: the displays to keep (with how saved clips sound), and Save.
