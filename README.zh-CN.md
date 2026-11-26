@@ -76,8 +76,8 @@
   <tr>
     <td width="50%" valign="top">
       <h3>🔒 本地优先，数据透明</h3>
-      截图、录屏、识别出的文字、文件名和剪贴板内容默认留在你的 Mac 上，绝不发送给 MMFoundation——只有当你主动开启填写了个人
-      API Key 的云端 OCR 模型，或主动上传到你自己的存储时才会离开本机。正式版默认发送<a href="#optional-usage-data">匿名每日使用计数</a>（自 v0.3.0 起默认开启，可在「设置 › 通用 › 使用数据」一键关闭，详见<a href="https://www.ohmyshot.org/zh/privacy/">隐私声明</a>）。
+      截图、录屏、识别出的文字、文件名和剪贴板内容默认留在你的 Mac 上，绝不发送给 MMFoundation——只有当你主动分享（如通过邮件、macOS 系统共享或上传到你自己的存储），或主动开启填写了个人
+      API Key 的云端 OCR 模型时才会离开本机。正式版默认发送<a href="#optional-usage-data">匿名每日使用计数</a>（自 v0.3.0 起默认开启，可在「设置 › 通用 › 使用数据」一键关闭，详见<a href="https://www.ohmyshot.org/zh/privacy/">隐私声明</a>）。
     </td>
     <td width="50%" valign="top">
       <h3>🍎 原生、免费、开源</h3>

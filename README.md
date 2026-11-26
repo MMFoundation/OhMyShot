@@ -85,8 +85,8 @@
     <td width="50%" valign="top">
       <h3>🔒 Local-first &amp; transparent</h3>
       Captures, recognized text, file names, and clipboard contents stay on your Mac by default — they leave your Mac
-      only when you explicitly enable cloud OCR with your own API key or upload to storage you own, and are never sent to
-      MMFoundation. Release builds send <a href="#optional-usage-data">anonymous daily usage counts</a> (on by default
+      only when you explicitly share them (via email, macOS Share, or uploads to storage you own) or enable cloud OCR
+      with your own API key, and are never sent to MMFoundation. Release builds send <a href="#optional-usage-data">anonymous daily usage counts</a> (on by default
       since v0.3.0, one-click opt-out in Settings › General › Usage Data;
       <a href="https://www.ohmyshot.org/privacy/">Privacy Notice</a>).
     </td>
