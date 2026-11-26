@@ -76,8 +76,8 @@
   <tr>
     <td width="50%" valign="top">
       <h3>🔒 本地优先，数据透明</h3>
-      截图、录屏、识别出的文字、文件名和剪贴板内容绝不离开你的 Mac：上传只会传到你自己的存储，云端 OCR 模型也只有在你填入自己的
-      API Key 并主动开启后才会使用。正式版默认发送<a href="#optional-usage-data">匿名每日使用计数</a>（自 v0.4.0 起默认开启，可在「设置 › 通用 › 使用数据」一键关闭，详见<a href="https://www.ohmyshot.org/zh/privacy/">隐私声明</a>）。
+      截图、录屏、识别出的文字、文件名和剪贴板内容默认留在你的 Mac 上，绝不发送给 MMFoundation——只有当你主动开启填写了个人
+      API Key 的云端 OCR 模型，或主动上传到你自己的存储时才会离开本机。正式版默认发送<a href="#optional-usage-data">匿名每日使用计数</a>（自 v0.3.0 起默认开启，可在「设置 › 通用 › 使用数据」一键关闭，详见<a href="https://www.ohmyshot.org/zh/privacy/">隐私声明</a>）。
     </td>
     <td width="50%" valign="top">
       <h3>🍎 原生、免费、开源</h3>
@@ -233,7 +233,7 @@ Development 团队（免费的个人团队即可）。
 
 ### 可选的使用数据
 
-「设置 › 通用 › 使用数据」自 v0.4.0 起默认开启，随时可以在那里关闭，「重置为默认设置」也不会改动这个选择。数据保留周期等详情见完整[隐私声明](https://www.ohmyshot.org/zh/privacy/)。开启时，OhMyShot 每个 UTC 日向 `www.ohmyshot.org`
+「设置 › 通用 › 使用数据」自 v0.3.0 起默认开启，随时可以在那里关闭，「重置为默认设置」也不会改动这个选择。数据保留周期等详情见完整[隐私声明](https://www.ohmyshot.org/zh/privacy/)。开启时，OhMyShot 每个 UTC 日向 `www.ohmyshot.org`
 发送一份报告，当天内随使用更新，并带有每个 UTC 日更换的随机 ID。报告包含：
 
 - 各功能的使用次数（以其快捷键的名称命名，如 `captureArea`），以及是通过快捷键、菜单栏还是自动化（URL API 与快捷指令）启动；

@@ -84,9 +84,10 @@
   <tr>
     <td width="50%" valign="top">
       <h3>🔒 Local-first &amp; transparent</h3>
-      Captures, recognized text, file names, and clipboard contents never leave your Mac — uploads go only to storage
-      you own, and cloud OCR runs only with your own API key. Release builds send <a href="#optional-usage-data">anonymous
-      daily usage counts</a> (on by default since v0.4.0, one-click opt-out in Settings › General › Usage Data;
+      Captures, recognized text, file names, and clipboard contents stay on your Mac by default — they leave your Mac
+      only when you explicitly enable cloud OCR with your own API key or upload to storage you own, and are never sent to
+      MMFoundation. Release builds send <a href="#optional-usage-data">anonymous daily usage counts</a> (on by default
+      since v0.3.0, one-click opt-out in Settings › General › Usage Data;
       <a href="https://www.ohmyshot.org/privacy/">Privacy Notice</a>).
     </td>
     <td width="50%" valign="top">
@@ -256,7 +257,7 @@ Debug builds never check. How releases are made, signed, and notarized is in [Do
 
 ### Optional usage data
 
-Settings › General › Usage Data is on by default since v0.4.0 and can be turned off there at any time; Reset to Default Settings keeps that choice. See the full [Privacy Notice](https://www.ohmyshot.org/privacy/) for retention details. While it is on, OhMyShot sends `www.ohmyshot.org`
+Settings › General › Usage Data is on by default since v0.3.0 and can be turned off there at any time; Reset to Default Settings keeps that choice. See the full [Privacy Notice](https://www.ohmyshot.org/privacy/) for retention details. While it is on, OhMyShot sends `www.ohmyshot.org`
 one report for each UTC day, updated as the day goes on, under a random ID that changes each UTC day. It says:
 
 - how many times each feature was used (named as its keyboard shortcut is, `captureArea`), and whether from a shortcut, the
