@@ -9,6 +9,46 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-28
+
+### Security hardening and safer edits
+
+- **Hardened ShareX, Studio packages, and cloud settings.** Blocked XML external entity (XXE) expansion and negative regex group indexes in ShareX templates, rejected symlinks and reserved filenames in `.omsstudio` project packages, validated Amazon S3 regions and custom cloud endpoints, and required WebDAV passwords explicitly.
+- **Safer closing, deleting, and relaunching.** Pending inline text and crop drafts now commit automatically before copying, saving, or closing the annotation editor; discarding an active recording asks for confirmation; and relaunching waits for unsaved-changes confirmation so cancelling never spawns a second app instance.
+
+### Smoother annotation, recording, and Studio editing
+
+- **Predictable copy shortcuts and cleaner rendering.** `⌘C` in the annotation editor now always copies the rendered screenshot while `⌥⌘C` (`Copy Marks`) copies selected marks across windows. Fixed Spotlight dimming over blurred/pixelated redactions, premultiplied-alpha eyedropper sampling, opaque-mark double-click protection, and overflow clamping in Image Size.
+- **More reliable capture, recording, and Studio.** Fixed multi-display window cycling, temporary desktop icon restoration, Replay cancellation during startup, camera pause ordering, GIF frame-rate ceiling (50 fps) with concurrent export guards, narrow-window Studio toolbar layout, and empty-movie cut protection.
+
+### Better OCR, History, Pins, Export, and updates
+
+- **Sharper OCR and multi-image Share.** Formula formatting no longer alters currency prose (such as `$5 to $10`), Markdown/HTML table exports strip carriage returns, zero-height lines no longer break translation layouts, and sharing multiple images to Recognize Text opens cascaded OCR windows without overwriting earlier images.
+- **Polished History, Quick Access, Pins, and Export.** Added LIFO multi-item Undo Trash and filter-aware selection cleanup in History, fixed top-corner Quick Access stack shifts and Quick Look sync, fixed short text pin zoom and stale rotated-pin drag caches, applied EXIF orientation across export/PDF/collage/thumbnails, preserved Retina DPI in clipboard TIFFs, preferred Display P3 fallback for wide-gamut exports, unified the global Escape hot key stack, and fixed Sparkle background update checks.
+
+### Security
+
+- Disabled external entity loading in ShareX XML template parsing and rejected negative regex group indexes.
+- Rejected symlinks and reserved filenames (`project.json`, `movie.mp4`, `telemetry.json`, audio/camera sidecars) during `.omsstudio` package import and export.
+- Validated Amazon S3 region strings and custom cloud OCR endpoints; WebDAV uploads now fail explicitly when the password secret is missing.
+
+### Changed
+
+- Annotation editor `⌘C` always copies the rendered capture even when a mark is selected; cross-editor mark copy is bound to `⌥⌘C` (`Edit › Copy Marks`).
+- GIF export frame rate now clamps to the GIF specification ceiling of 50 fps.
+- Multi-image batches shared to Recognize Text open separate cascaded OCR windows instead of replacing previous images.
+
+### Fixed
+
+- Fixed editor closing/saving without committing active inline text edits or uncommitted crop frames, and added confirmation before discarding an active recording.
+- Fixed app relaunch bypassing the unsaved-changes gate and spawning duplicate instances when a save sheet was cancelled.
+- Fixed Spotlight dimming over filtered redactions, premultiplied-alpha eyedropper colors, double-clicking text behind opaque redactions, and overflowing Image Size inputs.
+- Fixed multi-display window cycling, Replay startup cancellation, CameraRecorder pause ordering, concurrent recording export actions, narrow Studio toolbars, and cuts that could leave a zero-length movie.
+- Fixed formula delimiter formatting touching currency prose, carriage returns in Markdown/HTML tables, non-finite translation layouts on zero-height lines, and missing table/barcode detection when reusing OCR lines.
+- Fixed Quick Access top-corner card shifts, independent `.sharing` hold tracking, Quick Look sync on dismiss/trash, History multi-item Undo Trash and stale hidden selections, and multi-recording clipboard hold tracking.
+- Fixed short text pin scroll-to-zoom deadlock, stale drag-out caches after rotating/editing pins, missing EXIF orientation handling across export/PDF/collage/thumbnails, Retina TIFF DPI loss, extreme collage spacing overflow, and sRGB clamping on extended-range exports.
+- Fixed Carbon Escape hot key conflicts across Self-Timer, Color Card, and Capture Text, Sparkle background update check stalls, `About OhMyShot` and `File › Move to Trash` menu bindings, ShareX legacy binary/schemeless URL/literal pipe imports, Custom HTTP optional template failures, and macOS < 27 Replay Shortcut handling.
+
 ## [0.5.0] - 2026-11-25
 
 ### Smarter capture, screen recording, and Studio editing

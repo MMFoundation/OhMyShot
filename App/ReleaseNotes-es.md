@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-28
+
+### Seguridad reforzada y edición más segura
+
+- **Mayor seguridad en ShareX, paquetes Studio y ajustes en la nube.** Se bloqueó la expansión de entidades externas XML (XXE) y los índices negativos en plantillas ShareX, se rechazan enlaces simbólicos y nombres reservados en paquetes `.omsstudio`, se validan las regiones de Amazon S3 y endpoints personalizados y WebDAV exige explícitamente contraseña.
+- **Cierre, borrado y reinicio protegidos.** El editor de anotaciones aplica automáticamente borradores pendientes de texto y recorte antes de copiar, guardar o cerrar; descartar una grabación activa pide confirmación; y el reinicio espera a que se apruebe el cierre para evitar abrir dos copias si se cancela el guardado.
+
+### Anotación, grabación y Studio más pulidos
+
+- **Atajos de copia más claros y correcciones de renderizado.** `⌘C` en el editor copia siempre la captura final, mientras que `⌥⌘C` («Copiar marcas») copia las marcas seleccionadas entre ventanas. Se corrigió el atenuado de Foco sobre ocultaciones borrosas o pixeladas, el cuentagotas en píxeles semitransparentes, la protección frente a doble clic tras marcas opacas y el límite de tamaño de imagen.
+- **Captura, grabación y Studio más estables.** Se corrigieron el cambio de ventana entre varias pantallas, la restauración de iconos del escritorio, la cancelación de Repetición al iniciarse, el orden de pausa de la cámara, el límite de 50 fps en GIF con bloqueo ante exportaciones simultáneas, la barra compacta de Studio y la protección frente a cortes que dejan el vídeo vacío.
+
+### Mejoras en OCR, Historial, Fijados, exportación y actualizaciones
+
+- **OCR más preciso y varias imágenes desde Compartir.** El formateo de fórmulas ya no altera precios en texto (como `$5 to $10`), las tablas Markdown/HTML eliminan retornos de carro, las líneas de altura cero no rompen la traducción y compartir varias imágenes a Reconocer texto abre ventanas OCR en cascada sin sobrescribir las anteriores.
+- **Historial, Acceso rápido, Fijados, exportación y actualizaciones.** Se añadió una pila LIFO para deshacer varios envíos individuales a la Papelera y ajuste automático de selección al filtrar; se corrigieron saltos de tarjetas en las esquinas superiores y la sincronización de Vista rápida, el zoom en notas fijadas cortas y la caché obsoleta al arrastrar fijados rotados; se aplicó la orientación EXIF en exportaciones/PDF/collages/miniaturas, se conservó el DPI Retina en TIFF del portapapeles, se priorizó Display P3 en color amplio, se unificó la tecla global `Esc` y se corrigieron las comprobaciones en segundo plano de Sparkle.
+
 ## [0.5.0] - 2026-11-25
 
 ### Captura, grabación y edición en Studio más ágiles

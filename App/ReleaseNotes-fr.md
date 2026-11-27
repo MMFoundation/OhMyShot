@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-28
+
+### Sécurité renforcée et éditions plus sûres
+
+- **ShareX, paquets Studio et réglages cloud sécurisés.** Blocage des entités XML externes (XXE) et des index regex négatifs dans les modèles ShareX, refus des liens symboliques et noms réservés dans les paquets `.omsstudio`, validation des régions Amazon S3 et des adresses cloud personnalisées, et exigence explicite d’un mot de passe pour WebDAV.
+- **Fermeture, suppression et relance protégées.** L’éditeur valide automatiquement les textes en cours et les recadrages non appliqués avant de copier, enregistrer ou fermer ; abandonner un enregistrement en cours demande confirmation ; et la relance attend la confirmation de fermeture afin d’éviter deux instances si l’enregistrement est annulé.
+
+### Annotation, enregistrement et Studio plus fluides
+
+- **Raccourcis de copie clairs et rendu corrigé.** `⌘C` dans l’éditeur copie toujours la capture rendue, tandis que `⌥⌘C` (« Copier les annotations ») copie les marques entre fenêtres. Correction de l’atténuation Projecteur sur les masquages flous/pixelisés, de la pipette sur les pixels semi-transparents, du double-clic bloqué derrière les marques opaques et du plafonnement dans Taille de l’image.
+- **Capture, enregistrement et Studio plus fiables.** Correction du changement de fenêtre multi-écran, de la restauration des icônes du bureau, de l’annulation du Replay au démarrage, de l’ordre de pause caméra, du plafond GIF à 50 ips avec protection contre les exports concurrents, de la barre compacte de Studio et de la protection contre les coupes vidant entièrement la vidéo.
+
+### OCR, Historique, épingles, export et mises à jour améliorés
+
+- **OCR plus fidèle et partage multi-images.** Le formatage des formules ne modifie plus les montants en prose (comme `$5 to $10`), les tableaux Markdown/HTML suppriment les retours chariot, les lignes de hauteur nulle ne cassent plus la mise en page traduite et le partage de plusieurs images vers Reconnaître le texte ouvre des fenêtres OCR en cascade.
+- **Historique, Accès rapide, épingles, export et mises à jour.** Pile LIFO d’annulation pour plusieurs mises à la Corbeille consécutives et synchronisation de la sélection lors du filtrage ; correction des décalages en haut d’écran et de Coup d’œil dans Accès rapide, du zoom des épingles texte courtes et du cache obsolète après rotation ; prise en charge de l’orientation EXIF dans les exports/PDF/collages/vignettes, conservation du DPI Retina en TIFF, repli prioritaire vers Display P3 en large gamme, pile unifiée pour la touche globale `Échap` et correction des vérifications Sparkle en arrière-plan.
+
 ## [0.5.0] - 2026-11-25
 
 ### Capture, enregistrement et montage Studio plus fluides
