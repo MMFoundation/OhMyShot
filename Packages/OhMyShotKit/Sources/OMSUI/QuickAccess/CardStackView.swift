@@ -79,9 +79,13 @@ final class CardStackView: NSView {
         let leaving = cards.values.filter { !ids.contains($0.item.id) }
         leaving.forEach { cards[$0.item.id] = nil }
 
-        // From the bottom up: the newest card is the last item.
+        // From the bottom up: the newest card is the last item. For top corners while shrinking,
+        // offset the stack up to the panel's top edge so staying cards glide straight to their final
+        // screen position before the panel shrinks from the bottom.
+        let neededHeight = Self.height(for: items, size: size)
+        let baseOffset = corner.isTop ? max(0, bounds.height - neededHeight) : 0
         var frames: [UUID: CGRect] = [:]
-        var y = Self.margin
+        var y = Self.margin + baseOffset
         for item in items.reversed() {
             let height = CaptureCardView.preferredHeight(for: item, size: size)
             frames[item.id] = CGRect(x: Self.margin, y: y, width: size.cardWidth, height: height)
@@ -122,6 +126,18 @@ final class CardStackView: NSView {
             leaving.forEach { $0.removeFromSuperview() }
             guard let self, generation == self.generation else { return }
             completion?()
+            self.updatePointerHover()
+        }
+    }
+
+    /// Shifts every card view vertically without animation to compensate when a top-anchored panel
+    /// changes height and moves its bottom-left origin on screen.
+    func shiftCards(byY deltaY: CGFloat) {
+        guard deltaY != 0 else { return }
+        for card in cards.values {
+            var frame = card.frame
+            frame.origin.y += deltaY
+            card.frame = frame
         }
     }
 

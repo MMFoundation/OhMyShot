@@ -557,4 +557,33 @@ struct PictureEditingTests {
         let nonRetina = ImageSizeModel(document: AnnotationDocument(pixelSize: CGSize(width: 800, height: 600), scale: 1))
         #expect(!nonRetina.isRetina)
     }
+
+    @Test func imageSizingClampsOverflowingDimensionsAndCommandCCopiesRenderedImage() throws {
+        // Huge dimensions clamp safely without trapping and are flagged as disallowed.
+        let model = ImageSizeModel(document: AnnotationDocument(pixelSize: CGSize(width: 1000, height: 500), scale: 1))
+        model.updateWidthText("999999999999999")
+        #expect(!model.allowed && !model.canResize)
+        model.updateScaleText("99999999")
+        #expect(!model.allowed && !model.canResize)
+
+        // ⌘C copies the rendered capture even when a mark is selected; ⌥⌘C (`copyAnnotations:`) validates on selection.
+        let session = makeSession()
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        let mark = Annotation(
+            shape: .rectangle(Box(rect: CGRect(x: 10, y: 10, width: 40, height: 30))),
+            style: Style()
+        )
+        step(session) {
+            session.commit(AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 1, items: [mark]), selecting: [mark.id], actionName: "Add")
+        }
+        var renderedCopies = 0
+        canvas.onCopy = { renderedCopies += 1 }
+        canvas.copy(nil)
+        #expect(renderedCopies == 1)
+        #expect(canvas.validateMenuItem(NSMenuItem(title: "", action: #selector(AnnotationCanvasView.copy(_:)), keyEquivalent: "c")))
+        #expect(canvas.validateMenuItem(NSMenuItem(title: "", action: #selector(AnnotationCanvasView.copyAnnotations(_:)), keyEquivalent: "c")))
+        session.select([])
+        #expect(!canvas.validateMenuItem(NSMenuItem(title: "", action: #selector(AnnotationCanvasView.copyAnnotations(_:)), keyEquivalent: "c")))
+    }
 }

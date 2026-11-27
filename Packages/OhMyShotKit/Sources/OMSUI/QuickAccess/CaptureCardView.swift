@@ -807,7 +807,17 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         onHold?(.drag, false)
+        reconcilePointerHover()
         if !operation.isEmpty, resolvedClosesAfterAction { onCommand?(.close) }
+    }
+
+    private func reconcilePointerHover() {
+        let inside: Bool = if let window, window.isVisible {
+            window.convertToScreen(convert(bounds, to: nil)).contains(NSEvent.mouseLocation)
+        } else {
+            false
+        }
+        setHovering(inside)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -1132,6 +1142,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
 
     func menuDidClose(_ menu: NSMenu) {
         onHold?(.menu, false)
+        reconcilePointerHover()
     }
 
     /// Share, always, and Send by Email while a message can be started; then the upload entries, which exist
@@ -1212,7 +1223,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         let picker = NSSharingServicePicker(items: [file])
         sharingPicker = picker
         picker.delegate = self
-        onHold?(.action, true)
+        onHold?(.sharing, true)
         picker.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
     }
 
@@ -1223,18 +1234,23 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, didChoose service: NSSharingService?) {
         sharingService = service
         sharingPicker = nil
-        if service == nil { onHold?(.action, false) }
+        if service == nil {
+            onHold?(.sharing, false)
+            reconcilePointerHover()
+        }
     }
 
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
         self.sharingService = nil
-        onHold?(.action, false)
+        onHold?(.sharing, false)
+        reconcilePointerHover()
         if resolvedClosesAfterAction { onCommand?(.close) }
     }
 
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: any Error) {
         self.sharingService = nil
-        onHold?(.action, false)
+        onHold?(.sharing, false)
+        reconcilePointerHover()
     }
 
     /// As Share, the file in the format Settings choose; close only after the service succeeds.
@@ -1246,7 +1262,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         sharingService = service
         service.delegate = self
         service.subject = EmailSharing.subject(for: file)
-        onHold?(.action, true)
+        onHold?(.sharing, true)
         service.perform(withItems: [file])
     }
 

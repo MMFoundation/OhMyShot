@@ -186,8 +186,9 @@ public final class StudioDocument {
     public func loadWaveform() {
         waveformTask?.cancel()
         let urls = soundFiles.isEmpty ? [source] : soundFiles.map(\.url)
+        let totalDuration = duration
         waveformTask = Task { [weak self] in
-            let peaks = await StudioWaveform.extract(from: urls, binCount: 200)
+            let peaks = await StudioWaveform.extract(from: urls, binCount: 200, duration: totalDuration)
             guard !Task.isCancelled, let self else { return }
             self.waveform = peaks
         }
@@ -427,7 +428,7 @@ public final class StudioDocument {
         if on {
             // A zoom placed by hand wins where the two meet, and the automatic ones on either side of it stay apart.
             let hand = zooms
-            zooms += AutoZoom.zooms(for: telemetry, duration: duration, around: hand)
+            zooms += AutoZoom.zooms(for: telemetry, duration: duration, around: hand, crop: project.crop)
                 .filter { auto in !hand.contains { $0.start < auto.end && auto.start < $0.end } }
         }
         changed.zooms = zooms.sorted { $0.start < $1.start }
@@ -565,13 +566,13 @@ public final class StudioDocument {
     /// The zooms the clicks and the typing place; empty when the recording holds no two clicks or keys close
     /// enough together to follow.
     public var automaticZooms: [StudioProject.Zoom] {
-        AutoZoom.zooms(for: telemetry, duration: duration)
+        AutoZoom.zooms(for: telemetry, duration: duration, crop: project.crop)
     }
 
     /// Whether the recording holds a click or a key to follow at all: when it places no zoom, it held too few, or
     /// too spread out.
     public var hasEventsToFollow: Bool {
-        AutoZoom.hasEvents(in: telemetry)
+        AutoZoom.hasEvents(in: telemetry, crop: project.crop)
     }
 
     /// Whether keys were written down, so typing can place zooms as clicks do.
@@ -886,7 +887,7 @@ public final class StudioDocument {
         let limits = limits(ofCameraSegment: id)
         var segment = project.cameraSegments[index]
         change(&segment)
-        let shortest = StudioProject.shortestSegment
+        let shortest = min(StudioProject.shortestSegment, max(0, limits.upperBound - limits.lowerBound))
         segment.start = min(max(segment.start, limits.lowerBound), limits.upperBound - shortest)
         segment.end = min(max(segment.end, segment.start + shortest), limits.upperBound)
         project.cameraSegments[index] = segment
@@ -997,6 +998,9 @@ public final class StudioDocument {
         let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
         guard upper - lower >= Self.shortestCut else { return }
         let cuts = StudioProject.normalizedCuts(project.cuts + [lower...upper], duration: duration)
+        // Refuse cuts that would leave the movie completely empty.
+        let totalCut = cuts.reduce(0.0) { $0 + ($1.upperBound - $1.lowerBound) }
+        guard duration - totalCut >= Self.shortestCut else { return }
         // The cut it became, with those it met: the cuts are apart, so only that one holds its start.
         guard let merged = cuts.first(where: { $0.contains(lower) }) else { return }
         change(named: String(localized: "Cut", bundle: .module)) {
@@ -1005,7 +1009,8 @@ public final class StudioDocument {
         selection = .cut(merged.lowerBound)
     }
 
-    /// Keeps only `range` (the recording's seconds) by cutting everything before and after it in one undoable step.
+    /// Keeps only `range` (the recording's seconds) by cutting everything before and after it in one undoable step,
+    /// preserving any existing interior cuts while refusing a trim that would leave the movie completely empty.
     public func keepOnly(_ range: ClosedRange<Double>) {
         let lower = max(0, min(range.lowerBound, duration))
         let upper = max(lower, min(range.upperBound, duration))
@@ -1018,6 +1023,8 @@ public final class StudioDocument {
             return
         }
         let cuts = StudioProject.normalizedCuts(project.cuts + additions, duration: duration)
+        let totalCut = cuts.reduce(0.0) { $0 + ($1.upperBound - $1.lowerBound) }
+        guard duration - totalCut >= Self.shortestCut else { return }
         guard cuts != project.cuts else {
             selection = .none
             return
@@ -1194,10 +1201,18 @@ nonisolated public enum StudioFiles {
     public static let systemAudio = "system audio.m4a"
     public static let microphone = "microphone.m4a"
 
-    /// Verifies that an asset filename stored in `project.json` is a safe single path component (no slashes or traversal).
+    /// Reserved package and project filenames that a custom background asset must never collide with.
+    public static let reservedFileNames: Set<String> = [
+        "movie.mp4", telemetry.lowercased(), project.lowercased(),
+        camera.lowercased(), systemAudio.lowercased(), microphone.lowercased(),
+    ]
+
+    /// Verifies that an asset filename stored in `project.json` is a safe single path component (no slashes,
+    /// traversal, or collision with reserved Studio package filenames).
     public static func isValidAssetName(_ name: String) -> Bool {
         guard !name.isEmpty, name != ".", name != "..",
-              !name.contains("/"), !name.contains("\\"), !name.contains("\0") else {
+              !name.contains("/"), !name.contains("\\"), !name.contains("\0"),
+              !reservedFileNames.contains(name.lowercased()) else {
             return false
         }
         return (name as NSString).lastPathComponent == name

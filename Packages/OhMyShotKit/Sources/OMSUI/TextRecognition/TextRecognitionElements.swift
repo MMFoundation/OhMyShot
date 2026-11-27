@@ -7,6 +7,8 @@ import SwiftUI
 /// Double-clicking any cell edits its text inline.
 struct TablePreview: View {
     private struct CellID: Hashable {
+        let source: TextRecognitionModel.TextSource
+        let tableIndex: Int
         let row: Int
         let column: Int
     }
@@ -18,8 +20,11 @@ struct TablePreview: View {
     @FocusState private var cellFocused: Bool
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.undoManager) private var undoManager
 
     var body: some View {
+        let activeTableIndex = model.tables.indices.contains(model.tableIndex) ? model.tableIndex : 0
+        let activeSource = model.source
         VStack(alignment: .leading, spacing: 10) {
             if model.tables.count > 1 {
                 Picker(selection: $model.tableIndex) {
@@ -43,7 +48,7 @@ struct TablePreview: View {
                     ForEach(Array(table.rows.enumerated()), id: \.offset) { row, cells in
                         GridRow {
                             ForEach(0..<width, id: \.self) { column in
-                                let cellID = CellID(row: row, column: column)
+                                let cellID = CellID(source: activeSource, tableIndex: activeTableIndex, row: row, column: column)
                                 let value = column < cells.count ? cells[column] : ""
                                 cellView(
                                     cellID: cellID,
@@ -74,7 +79,17 @@ struct TablePreview: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            model.commitPendingTableEdit = { commitEdit() }
+        }
+        .onDisappear {
+            commitEdit()
+            model.commitPendingTableEdit = nil
+        }
         .onChange(of: model.tableIndex) { _, _ in
+            commitEdit()
+        }
+        .onChange(of: model.source) { _, _ in
             commitEdit()
         }
         .onChange(of: cellFocused) { _, focused in
@@ -151,7 +166,14 @@ struct TablePreview: View {
         guard let editingCell else { return }
         let updated = draftText
         self.editingCell = nil
-        model.updateTableCell(row: editingCell.row, column: editingCell.column, value: updated)
+        model.updateTableCell(
+            source: editingCell.source,
+            tableIndex: editingCell.tableIndex,
+            row: editingCell.row,
+            column: editingCell.column,
+            value: updated,
+            undoManager: undoManager
+        )
     }
 
     private func cancelEdit() {

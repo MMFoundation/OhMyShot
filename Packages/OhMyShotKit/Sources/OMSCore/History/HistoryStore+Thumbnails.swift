@@ -69,8 +69,8 @@ extension HistoryStore {
     /// so the larger decoding is let go.
     private static func cardThumbnail(of source: CGImageSource, maxPixels: Int) -> CGImage? {
         guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width > 0, height > 0 else { return thumbnail(of: source, maxPixels: maxPixels) }
+              let size = ImageLoader.orientedPixelSize(in: properties) else { return thumbnail(of: source, maxPixels: maxPixels) }
+        let width = size.width, height = size.height
         let part = CardPicture.shownRect(width: width, height: height)
         guard part.width < CGFloat(width) || part.height < CGFloat(height) else { return thumbnail(of: source, maxPixels: maxPixels) }
         // The whole at the size that makes the part `maxPixels` on its longer side, but no more than about 64 MB of

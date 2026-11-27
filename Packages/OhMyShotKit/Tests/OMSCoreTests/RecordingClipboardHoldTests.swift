@@ -109,4 +109,21 @@ struct RecordingClipboardHoldTests {
         #expect(hold.watch == nil)
         #expect(hold.heldID == nil)
     }
+
+    @Test func multipleRecordingsHeldSimultaneouslyAreAllReleasedWhenClipboardChanges() {
+        var count = 1, released = Set<UUID>()
+        let center = NotificationCenter()
+        let hold = RecordingClipboardHold(
+            changeCount: { count },
+            released: { released.insert($0) },
+            notificationCenter: center
+        )
+        let first = UUID(), second = UUID()
+        hold.copied([first, second], retention: .never)
+        #expect(hold.heldIDs == [first, second])
+        count += 1
+        hold.check()
+        #expect(released == [first, second])
+        #expect(hold.heldIDs.isEmpty)
+    }
 }

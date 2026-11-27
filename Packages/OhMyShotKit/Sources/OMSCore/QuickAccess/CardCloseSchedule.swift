@@ -80,6 +80,7 @@ public struct CardCloseSchedule: Sendable {
     /// Card `id` stays until closed: its copy could not be saved, and it is not tried again.
     public mutating func keepOpen(_ id: UUID) {
         kept.insert(id)
+        countdowns[id] = nil
     }
 
     /// Drops everything about card `id`, which is gone: nothing of it may wake the timer.

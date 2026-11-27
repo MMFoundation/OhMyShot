@@ -262,6 +262,14 @@ final class ScrollingCaptureCoordinator {
             run.against = 0
             return
         }
+        // Once the stitcher has locked onto an axis orthogonal to the current auto-scroll default (e.g.
+        // short manual horizontal scroll while default is `.down`), immediately align direction to that axis.
+        if let axis = run.axis, run.direction.isVertical != (axis == .vertical) {
+            run.direction = direction
+            run.against = 0
+            panel.setAutoScrollDirection(direction)
+            return
+        }
         run.against += abs(offset)
         let pixels = extent(of: run) * Double(run.capture.source.pixelsPerPoint)
         guard Double(run.against) >= (run.hasAutoScrolled ? pixels : pixels / 4) else { return }
@@ -433,6 +441,10 @@ final class ScrollingCaptureCoordinator {
 
     private func setAutoScrollDirection(_ direction: AutoScroller.Direction) {
         guard let run, run.direction != direction else { return }
+        if let axis = run.axis, direction.isVertical != (axis == .vertical) {
+            NSSound.beep()
+            return
+        }
         run.direction = direction
         run.against = 0
         panel.setAutoScrollDirection(direction)

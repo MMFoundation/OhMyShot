@@ -251,6 +251,7 @@ class AreaSetupView<Bar: NSView>: NSView {
     override func viewWillMove(toSuperview newSuperview: NSView?) {
         super.viewWillMove(toSuperview: newSuperview)
         guard newSuperview == nil else { return }
+        clearCodes()
         cancelFit()
         (superview as? OverlayView)?.putKeysAway()
     }
@@ -291,6 +292,7 @@ class AreaSetupView<Bar: NSView>: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
+        if !bar.isHidden, bar.frame.contains(point) { return }
         if let area = adjustableArea.map({ AreaFrame.local($0, on: display) }) {
             if let handle = AreaFrame.handle(at: point, of: frameRect, in: bounds) {
                 // Held by the line as drawn, which steps in where the frame meets the display's edge.

@@ -514,4 +514,41 @@ struct HistorySelectionTests {
         model.resolvedTranslate?(first)
         #expect(translatedOverride == [first.id])
     }
+
+    @Test func multipleSingleItemTrashesStackLIFOAndFilterReconcilesSelection() throws {
+        let suite = "OMSUITests-LIFO-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = HistoryStore(directory: FileManager.default.temporaryDirectory.appending(path: "HistoryLIFO-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        var trashed: [UUID] = []
+        let actions = HistoryActions(
+            restore: { _ in }, copy: { _ in }, save: { _ in }, open: { _ in }, annotate: { _ in }, reveal: { _ in },
+            recognizeText: { _ in }, pin: { _ in }, moveToTrash: { trashed.append($0.id) }
+        )
+        let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions)
+        defer { model.release() }
+        let first = try store.add(data: Data([1, 2, 3]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let second = try store.add(data: Data([4, 5, 6]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let third = try store.add(data: Data([7, 8, 9]), fileExtension: "mp4", kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        model.items = [first, second, third]
+
+        // Consecutive single-item trashes accumulate in LIFO order without prematurely committing earlier items.
+        model.click(first.id, modifiers: [])
+        model.trashSelection()
+        model.click(second.id, modifiers: [])
+        model.trashSelection()
+        #expect(model.pendingTrashes.map(\.item.id) == [first.id, second.id])
+        #expect(trashed.isEmpty)
+        #expect(model.undoPendingTrash())
+        #expect(model.pendingTrashes.map(\.item.id) == [first.id])
+        #expect(model.selection == [second.id])
+        #expect(model.undoPendingTrash())
+        #expect(model.pendingTrashes.isEmpty)
+        #expect(model.selection == [first.id])
+
+        // Filtering out selected items reconciles the selection so hidden items cannot be deleted.
+        model.filter = .recordings
+        #expect(model.selection.isEmpty)
+    }
 }

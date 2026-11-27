@@ -13,6 +13,8 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         didSet { selectOnScreen.isHidden = onSelectOnScreen == nil }
     }
     var onRecordingChange: ((WindowTarget, RecordingChoices) -> Void)?
+    var onCameraCommand: ((CameraBubbleCommand) -> Void)?
+    var cameraFills: () -> Bool = { false }
 
     private let layout: DisplayLayout
     private let preferredProcessID: pid_t?
@@ -83,6 +85,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         root.onConfirm = { [weak self] modifiers in self?.choose(modifiers: modifiers) }
         root.onMove = { [weak self] step in self?.moveApplication(by: step) }
         root.onMoveWindow = { [weak self] step in self?.moveWindow(by: step) }
+        root.onSelectOnScreen = { [weak self] in self?.onSelectOnScreen?() }
         // The well and the tiles draw themselves, so Increase Contrast reaches them only when they are drawn again.
         displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -307,6 +310,18 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         bar.onMicrophone = { [weak self] id in
             self?.change { $0.microphone = id != nil; if let id { $0.microphoneID = id } }
         }
+        bar.onCamera = { [weak self] id in
+            self?.change { $0.camera = id != nil; if let id { $0.cameraID = id } }
+        }
+        bar.onCameraStyle = { [weak self] style in
+            self?.change { $0.cameraStyle = style }
+        }
+        bar.onCameraCommand = { [weak self] command in
+            self?.onCameraCommand?(command)
+        }
+        bar.cameraFills = { [weak self] in
+            self?.cameraFills() ?? false
+        }
         bar.onToggle = { [weak self] toggle in
             self?.change {
                 switch toggle {
@@ -314,7 +329,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
                 case .microphone: $0.microphone.toggle()
                 case .clicks: $0.showsClicks.toggle()
                 case .keystrokes: $0.showsKeystrokes.toggle()
-                case .camera: break
+                case .camera: $0.camera.toggle()
                 }
             }
         }
@@ -513,6 +528,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         guard let id = sender.selectedItem?.representedObject as? UInt32 else { return }
         model.selectWindow(id)
         selectCurrent()
+        window?.makeFirstResponder(root)
     }
     @objc private func retryClicked(_ sender: Any?) { reload() }
     @objc private func searchClicked(_ sender: Any?) { showSearch() }
@@ -550,8 +566,9 @@ private final class WindowPickerPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { onCancel?() }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command {
-            if event.charactersIgnoringModifiers == "f" { onSearch?(); return true }
-            if event.charactersIgnoringModifiers == "r" { onRefresh?(); return true }
+            let key = event.charactersIgnoringModifiers?.lowercased()
+            if key == "f" { onSearch?(); return true }
+            if key == "r" { onRefresh?(); return true }
         }
         return super.performKeyEquivalent(with: event)
     }
@@ -561,11 +578,13 @@ private final class WindowPickerContent: NSView {
     var onConfirm: ((NSEvent.ModifierFlags) -> Void)?
     var onMove: ((Int) -> Void)?
     var onMoveWindow: ((Int) -> Void)?
+    var onSelectOnScreen: (() -> Void)?
     override var acceptsFirstResponder: Bool { true }
     override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); dirtyRect.fill() }
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 36, 76: onConfirm?(event.modifierFlags)
+        case 49: onSelectOnScreen?()
         case 123: onMove?(-1)
         case 124: onMove?(1)
         case 126: onMoveWindow?(-1)

@@ -189,6 +189,8 @@ public final class OverlayController {
     /// All-In-One is about to turn into Measure (M), in its own session: whoever measures sets the ruler's unit,
     /// tolerance, and snapping, and what hears them and copies the measurement, as Measure would.
     public var onWillMeasure: (() -> Void)?
+    /// Called whenever an active overlay session finishes or is cancelled, so shortcut trackers can clear state.
+    public var onDidEnd: (() -> Void)?
     /// Whether this session (or the one just ended) set up a recording, so whoever began it knows a cancel left a
     /// camera preview to put away.
     public private(set) var didSetUpRecording = false
@@ -330,7 +332,16 @@ public final class OverlayController {
     /// Creates the panels for the current displays ahead of time, so the hotkey only has to show them.
     public func prepare() {
         let layout = currentLayout
-        for (id, entry) in entries where layout.display(id: id) != entry.view.display {
+        for (id, entry) in entries {
+            if isActive, id == annotatedDisplay, Self.keepsAnnotating(on: entry.view.display, in: layout) {
+                continue
+            }
+            if let current = layout.display(id: id),
+               current.frame == entry.view.display.frame,
+               current.pixelSize == entry.view.display.pixelSize,
+               current.backingScale == entry.view.display.backingScale {
+                continue
+            }
             entry.panel.orderOut(nil)
             entries[id] = nil
         }
@@ -542,7 +553,8 @@ public final class OverlayController {
         if presentsPanels {
             BackgroundCursor.allow(true)
             (purpose == .text ? NSCursor.crosshair : NSCursor.arrow).set()
-            cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
+            let pointerMode = pointerDisplay.flatMap { entries[$0.id]?.view.mode } ?? .area
+            cursorVisibility.begin(drawsPointer: purpose != .text && pointerMode == .area, overControls: wantsSystemCursor(at: pointer))
         }
         CATransaction.flush()
         // Log key focus after AppKit has processed the nonactivating panel's request.
@@ -948,6 +960,7 @@ public final class OverlayController {
         let showsCursor = Self.framesShowPointer(showsPointer, purpose: purpose, holdsStill: holdsStill, allInOne: isAllInOne, recaptured: options.recapturesLive)
         for (index, display) in displays.enumerated() {
             guard isActive, session == self.session, windowPicker == nil else { return }
+            if index > 0, setup != nil || isAnnotating { return }
             do {
                 let frame: CapturedFrame
                 let capturing = index == 0 ? LatencyProbe("overlay.capture") : nil
@@ -960,6 +973,7 @@ public final class OverlayController {
                 #endif
                 capturing?.end()
                 guard isActive, session == self.session, windowPicker == nil else { return }
+                if index > 0, setup != nil || isAnnotating { return }
                 let previewFrame = transientCaptureSnapshots.isEmpty
                     ? frame
                     : frame.restoringTransientContent(from: transientCaptureSnapshots) ?? frame
@@ -979,8 +993,12 @@ public final class OverlayController {
                 }
             } catch {
                 Log.capture.error("Overlay frame for display \(display.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                if cancelsOnFirstFailure, index == 0, isActive, session == self.session, windowPicker == nil { end(.cancelled) }
-                return
+                if cancelsOnFirstFailure, index == 0, isActive, session == self.session, windowPicker == nil {
+                    end(.cancelled)
+                    return
+                }
+                if index == 0 { return }
+                continue
             }
         }
     }
@@ -1217,9 +1235,10 @@ public final class OverlayController {
         if presentsPanels {
             BackgroundCursor.allow(true)
             NSCursor.arrow.set()
-            cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
+            cursorVisibility.begin(drawsPointer: purpose != .text && mode == .area, overControls: wantsSystemCursor(at: pointer))
         }
         if mode == .area, isAllInOne {
+            if hoverWindows.isEmpty { loadHoverWindows() }
             updateHover(at: pointer)
         }
         CATransaction.flush()
@@ -1317,6 +1336,7 @@ public final class OverlayController {
         let completion = self.completion
         let endedSession = session
         self.completion = nil
+        onDidEnd?()
         completion?(outcome)
         if session == endedSession {
             currentSelfTimerDelay = nil
@@ -1331,12 +1351,13 @@ public final class OverlayController {
 
 extension OverlayController {
     /// A fresh selection for a drag that begins on `display`: free to cross onto every display, at the
-    /// sharpest one's pixels, except in place, where it stays on its own display.
+    /// sharpest intersected display's pixels, except in place, where it stays on its own display.
     private func startSelection(on display: DisplayInfo) {
         let displays = purpose.selectsOnOneDisplay || isAllInOne ? [display] : currentLayout.displays
         selection = SelectionModel(
             bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
-            pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
+            pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint,
+            displays: displays.map { .init(frame: $0.frame, pixelsPerPoint: $0.pixelsPerPoint) }
         )
         selection.shape = keptShape?.value ?? 1
         dragDisplay = display
@@ -1674,6 +1695,7 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.movePointer(to: next)
         }
         focusDisplay(at: next)
+        updateCursorVisibility(at: next)
         updateHover(at: next)
         if let under = layout.display(at: next) { entries[under.id]?.view.announceValue() }
     }
@@ -1739,7 +1761,7 @@ extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) {
         measureUnit = unit
         for entry in entries.values {
-            entry.view.setMeasureUnit(unit)
+            entry.view.setMeasureUnit(unit, announce: entry.view === view)
         }
         onMeasureUnitChange?(unit)
     }
@@ -1748,7 +1770,7 @@ extension OverlayController: OverlayViewDelegate {
         guard isActive, purpose == .measure else { return }
         measureTolerance = tolerance
         for entry in entries.values {
-            entry.view.setMeasureTolerance(tolerance)
+            entry.view.setMeasureTolerance(tolerance, announce: entry.view === view)
         }
         onMeasureToleranceChange?(tolerance)
     }
@@ -1971,6 +1993,8 @@ extension OverlayController: OverlayViewDelegate {
             recordingChoices = choices
             onRecordingSetupChange?(.window(target), display, choices)
         }
+        picker.onCameraCommand = { [weak self] command in self?.onRecordingCameraCommand?(command) }
+        picker.cameraFills = { [weak self] in self?.recordingCameraFills() ?? false }
         picker.onChoose = { [weak self] target, choices, modifiers in
             guard let self, isActive else { return }
             if let choices, let display = target.display(in: currentLayout) {
@@ -1999,7 +2023,11 @@ extension OverlayController: OverlayViewDelegate {
         if isAllInOne, let mode = allInOneMode {
             switch mode {
             case .record: setUpRecording(on: targetDisplay, target: .window(target))
-            case .scroll, .text, .screenshot: endAllInOne(mode, target.frame.intersection(view.display.frame), on: view.display)
+            case .scroll, .text, .screenshot:
+                let area = target.frame.intersection(targetDisplay.frame)
+                if !area.isNull, area.width >= 1, area.height >= 1 {
+                    endAllInOne(mode, area, on: targetDisplay)
+                }
             }
             return
         }
@@ -2008,11 +2036,11 @@ extension OverlayController: OverlayViewDelegate {
             startRecordingSetup(on: targetDisplay, target: .window(target))
         case .scroll:
             // A window's frame where it is on screen: its title bar and toolbar stay put, as a header does.
-            startScrollingSetup(on: view.display, area: target.frame)
+            startScrollingSetup(on: targetDisplay, area: target.frame)
         case .annotate:
             // A window is annotated where it is on the frozen screen.
-            let area = target.frame.intersection(view.display.frame)
-            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: view.display.id, area: area) }
+            let area = target.frame.intersection(targetDisplay.frame)
+            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: targetDisplay.id, area: area) }
         case .screenshot, .text, .color, .measure:
             end(.window(target, modifiers: modifiers))
         }
@@ -2037,30 +2065,41 @@ extension OverlayController: OverlayViewDelegate {
             return
         }
         if isAllInOne, let mode = allInOneMode {
+            let targetDisplay = Self.displayForSetup(targets: targets, in: currentLayout) ?? view.display
             switch mode {
             case .record:
-                let targetDisplay = AreaFrame.fitted(unionFrame, in: view.display.frame) != nil
+                let recordDisplay = AreaFrame.fitted(unionFrame, in: view.display.frame) != nil
                     ? view.display
-                    : (startDisplay(of: unionFrame) ?? view.display)
-                if let fitted = AreaFrame.fitted(unionFrame, in: targetDisplay.frame) {
-                    setUpRecording(on: targetDisplay, target: fitted == targetDisplay.frame ? .display : .area(fitted))
+                    : (startDisplay(of: unionFrame) ?? targetDisplay)
+                if let fitted = AreaFrame.fitted(unionFrame, in: recordDisplay.frame) {
+                    setUpRecording(on: recordDisplay, target: fitted == recordDisplay.frame ? .display : .area(fitted))
                 } else {
-                    setUpRecording(on: targetDisplay, target: .display)
+                    setUpRecording(on: recordDisplay, target: .display)
                 }
             case .scroll, .text, .screenshot:
-                let area = unionFrame.intersection(view.display.frame)
+                let area = unionFrame.intersection(targetDisplay.frame)
                 if !area.isNull, area.width >= 1, area.height >= 1 {
-                    endAllInOne(mode, area, on: view.display)
+                    endAllInOne(mode, area, on: targetDisplay)
                 }
             }
             return
         }
         if purpose == .annotate {
-            let area = unionFrame.intersection(view.display.frame)
-            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: view.display.id, area: area) }
+            let targetDisplay = Self.displayForSetup(targets: targets, in: currentLayout) ?? view.display
+            let area = unionFrame.intersection(targetDisplay.frame)
+            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: targetDisplay.id, area: area) }
             return
         }
         end(.windows(targets, modifiers: modifiers))
+    }
+
+    func overlayView(_ view: OverlayView, didCycleWindow target: WindowTarget?) {
+        for entry in entries.values where entry.view !== view {
+            entry.view.setHoveredWindow(target)
+        }
+        if let targetDisplay = target?.display(in: currentLayout), targetDisplay.id != view.display.id {
+            giveKeyboard(to: targetDisplay)
+        }
     }
 
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {
@@ -2077,7 +2116,12 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.switchMode(to: mode, windows: windows)
         }
-        updateHover(at: pointer ?? NSEvent.mouseLocation)
+        let point = pointer ?? NSEvent.mouseLocation
+        if presentsPanels {
+            if mode == .window { NSCursor.arrow.set() }
+            cursorVisibility.begin(drawsPointer: purpose != .text && mode == .area, overControls: wantsSystemCursor(at: point))
+        }
+        updateHover(at: point)
     }
 
     func overlayViewDidToggleKeys(_ view: OverlayView) {

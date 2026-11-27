@@ -276,10 +276,22 @@ nonisolated public enum AnnotationRenderer {
                 item, in: context, scale: document.scale, coverage: coverage, ground: ground,
                 underlay: surface == nil && matte == nil ? nil : underlay, lens: lens
             )
+            // Filtered redactions composite with `.copy` blend mode, which overwrites Spotlight dimming beneath them;
+            // re-apply Spotlight inside the redaction bounds when spots exist so redacted regions outside spots stay dimmed.
+            if !document.spots.isEmpty, case .redaction(let redaction) = item.shape, redaction.method != .solid {
+                context.saveGState()
+                if let layout, !layout.isBare {
+                    context.addPath(CGPath(roundedRect: layout.card, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
+                    context.clip()
+                }
+                context.clip(to: redaction.rect.standardized)
+                drawSpotlight(document.spots, canvas: layout?.card ?? canvas, in: context)
+                context.restoreGState()
+            }
         }
-        // Over every mark, across the canvas, inside the card's corners on a background.
+        // Over every mark, across the card on a background or the canvas without one.
         if let watermark = document.watermark {
-            WatermarkPainter.paint(watermark, in: canvas, cornerRadius: layout?.cornerRadius ?? 0, context: context)
+            WatermarkPainter.paint(watermark, in: layout?.card ?? canvas, cornerRadius: layout?.cornerRadius ?? 0, context: context)
         }
         return context.makeImage()
     }

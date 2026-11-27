@@ -44,6 +44,7 @@ final class AutomationController {
     private var deniedCallers: Set<String> = []
     /// Guards against nested `NSAlert.runModal()` when another URL arrives while an approval prompt is open.
     private var isAskingApproval = false
+    private let notice = CopiedHUD()
 
     init(
         scheme: String,
@@ -87,6 +88,7 @@ final class AutomationController {
             command = parsed
         case .failure(let error):
             Log.automation.error("Rejected URL from \(caller?.identifier ?? "unknown", privacy: .public) (pid \(senderPID.map(String.init) ?? "none", privacy: .public)): \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
+            NSSound.beep()
             return
         }
         let decision = AutomationGate.evaluate(
@@ -121,6 +123,10 @@ final class AutomationController {
             }
         case .deny(let reason):
             Log.automation.notice("Denied URL command: \(reason, privacy: .public)")
+            NSSound.beep()
+            if !settings.automationEnabled {
+                notice.show(String(localized: "URL commands are turned off in Settings › Automation."), near: NSEvent.mouseLocation)
+            }
         }
     }
 
@@ -156,10 +162,10 @@ final class AutomationController {
             alert.messageText = String(localized: "“\(caller.displayName)” wants to control OhMyShot")
             alert.informativeText = String(localized: "Command: \(preview)\n\nIt will be able to take screenshots and open files in OhMyShot. You can remove its access later in Settings › Automation.")
         }
-        alert.addButton(withTitle: String(localized: "Allow"))
         alert.addButton(withTitle: String(localized: "Don’t Allow"))
+        alert.addButton(withTitle: String(localized: "Allow"))
         NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn
+        return alert.runModal() == .alertSecondButtonReturn
     }
 }
 

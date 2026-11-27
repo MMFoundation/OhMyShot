@@ -106,7 +106,12 @@ final class CompositionRoot {
     var pictureUpdates: Task<Void, Never>?
     /// Reads the text in the history's screenshots for its search, in the text reader beside the app.
     lazy var textReader: HistoryTextReader = {
-        let reader = HistoryTextReader(store: history, helper: readerPacks.helper) { [weak self] in self?.readerPacks.secondReading }
+        let reader = HistoryTextReader(
+            store: history,
+            helper: readerPacks.helper,
+            pack: { [weak self] in self?.readerPacks.secondReading },
+            languages: { [weak self] in self?.settings.ocrLanguages ?? [] }
+        )
         reader.onRead = { [weak self] id in self?.historyWindow?.textRead(id) }
         return reader
     }()
@@ -116,6 +121,10 @@ final class CompositionRoot {
     /// Draw on Screen: its canvases are in captures and recordings, as pins are.
     lazy var sketch: ScreenSketchController = {
         let sketch = ScreenSketchController()
+        sketch.onChange = { [weak self] in
+            guard let self else { return }
+            self.recordings.setDrawing(self.sketch.isActive)
+        }
         sketch.onCanvasesShown = { [weak self] in
             guard let self else { return }
             shareableContent.refresh()
@@ -123,7 +132,16 @@ final class CompositionRoot {
             Task { await self.recordings.includeWindowsShownSince() }
         }
         sketch.onCapture = { [weak self] in
-            self?.captures.captureFullscreen()
+            guard let self else { return }
+            self.permissions.refresh([.screenRecording])
+            guard self.permissions.status(of: .screenRecording) == .granted else {
+                self.usageTelemetry?.record(.permissionBlocked)
+                self.showOnboarding()
+                return
+            }
+            // Let clicks pass through after capturing so Quick Access cards and editors aren't trapped beneath SketchPanel.
+            self.captures.captureFullscreen()
+            self.sketch.setClicksThrough(true)
         }
         return sketch
     }()
@@ -245,6 +263,7 @@ final class CompositionRoot {
         })
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
+        overlay.onDidEnd = { [weak self] in self?.clearActiveOverlayShortcut() }
         if #available(macOS 27, *) {
             let coordinator = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
             coordinator.onStateChange = { [weak self] active in
@@ -343,12 +362,16 @@ final class CompositionRoot {
         }
         // Card or not, a screenshot or a recording kept counts toward the community invitation.
         captures.onKept = { [weak self] entry in
+            self?.historyWindow?.reload()
             self?.readTextSoon(entry)
             self?.usageTelemetry?.record(.screenshot)
             self?.communityInvite.captureKept()
         }
         recordings.onRecordingCompleted = { [weak self] in self?.usageTelemetry?.record(.recording) }
-        recordings.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
+        recordings.onKept = { [weak self] _ in
+            self?.historyWindow?.reload()
+            self?.communityInvite.captureKept()
+        }
         recordings.copiedToClipboard = { [weak self] id in self?.retention.recordingCopied(id) }
         // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
         files.recordingCopied = { [weak self] id in self?.retention.recordingCopied(id) }
@@ -371,9 +394,12 @@ final class CompositionRoot {
                     paused: paused,
                     actions: .init(
                         togglePause: { [weak self] in self?.recordings.togglePause() },
+                        toggleMicrophone: self.recordings.recordsMicrophone ? { [weak self] in self?.recordings.toggleMicrophoneMute() } : nil,
+                        microphoneMuted: self.recordings.isMicrophoneMuted,
                         drawOnScreen: { [weak self] in self?.handle(.drawOnScreen, from: .menu) },
+                        isDrawing: self.sketch.isActive,
                         stop: { [weak self] in self?.recordings.stop() },
-                        delete: { [weak self] in self?.recordings.delete() }
+                        delete: { [weak self] in self?.recordings.confirmAndDelete() }
                     )
                 )
             case .makingGIF(let progress):
@@ -640,7 +666,13 @@ final class CompositionRoot {
     /// The guide's button and Capture Area's real shortcut share this path, including cancellation and retry.
     @discardableResult
     func beginOnboardingCaptureIfReady() -> Bool {
-        if onboardingCapture != nil { return true }
+        if onboardingCapture != nil {
+            if overlay.isActive {
+                onboardingCancelledByUser = true
+                overlay.cancel()
+            }
+            return true
+        }
         guard onboardingWindow?.isTour == true, onboardingWindow?.currentStep == .capture else { return false }
         beginOnboardingCapture()
         return true

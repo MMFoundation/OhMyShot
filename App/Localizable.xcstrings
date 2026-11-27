@@ -2600,6 +2600,40 @@
         }
       }
     },
+    "Copy Marks" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar marcas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier les annotations"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マークをコピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝标注"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝標註"
+          }
+        }
+      }
+    },
     "Couldn’t delete from %@" : {
       "localizations" : {
         "es" : {
@@ -2800,6 +2834,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除"
+          }
+        }
+      }
+    },
+    "Delete Recording?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar la grabación?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer l’enregistrement ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録を削除しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要删除录制内容吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要刪除錄製內容嗎？"
           }
         }
       }
@@ -5005,6 +5073,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "還沒有完成截圖。可以重試或略過導覽；如果剛開啟權限，請重新啟動 OhMyShot。"
+          }
+        }
+      }
+    },
+    "No readable pictures were found in the shared items." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontraron imágenes legibles en los elementos compartidos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune image lisible n’a été trouvée dans les éléments partagés."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有された項目に読み取れる画像が見つかりませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在共享的项目中未找到可读取的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在分享的項目中找不到可讀取的圖片。"
           }
         }
       }
@@ -7610,6 +7712,40 @@
         }
       }
     },
+    "Replay requires macOS 27 or later." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repetición requiere macOS 27 o posterior."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le replay nécessite macOS 27 ou une version ultérieure."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リプレイにはmacOS 27以降が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回放需要 macOS 27 或更高版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重播需要 macOS 27 或以上版本。"
+          }
+        }
+      }
+    },
     "Restore Closed Pin" : {
       "localizations" : {
         "es" : {
@@ -9209,6 +9345,40 @@
         }
       }
     },
+    "The current recording will be permanently discarded." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La grabación actual se descartará de forma permanente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’enregistrement en cours sera définitivement supprimé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在の収録は完全に破棄されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前录制内容将被永久丢弃。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前的錄製內容將被永久捨棄。"
+          }
+        }
+      }
+    },
     "The file is removed from the storage, and its link stops working. This can’t be undone." : {
       "localizations" : {
         "es" : {
@@ -9682,6 +9852,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻譯區域"
+          }
+        }
+      }
+    },
+    "URL commands are turned off in Settings › Automation." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los comandos de URL están desactivados en Ajustes › Automatización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les commandes d’URL sont désactivées dans Réglages › Automatisation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URLコマンドは「設定」›「自動化」でオフになっています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL 命令已在“设置 › 自动化”中关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL 指令已在「設定」›「自動化」中關閉。"
           }
         }
       }

@@ -53,18 +53,25 @@ nonisolated public enum AutoZoom {
             return result
         }
 
-        func scale(in telemetry: StudioTelemetry) -> Double {
-            min(telemetry.width / (maxX - minX + margin * 2), telemetry.height / (maxY - minY + margin * 2))
+        func scale(in telemetry: StudioTelemetry, crop: CGRect? = nil) -> Double {
+            let viewWidth = telemetry.width * Double(crop?.width ?? 1)
+            let viewHeight = telemetry.height * Double(crop?.height ?? 1)
+            return min(viewWidth / (maxX - minX + margin * 2), viewHeight / (maxY - minY + margin * 2))
         }
     }
 
-    /// Every click, and every typing key inside the recording, in order. A drag (`Click.isDrag`) is its press,
+    /// Every click, and every typing key inside the recording (or its cropped region), in order. A drag (`Click.isDrag`) is its press,
     /// its release, and the pointer every `dragStep` in between; when `skipWideDrags` is set, a drag whose whole
     /// path is too wide to frame is left out so automatic zooms don't split it in two. Shortcuts are ignored, and
     /// typing that continues a recent click stays anchored to that click even if the pointer moves out of the way.
-    static func events(in telemetry: StudioTelemetry, skipWideDrags: Bool = false) -> [Event] {
+    static func events(in telemetry: StudioTelemetry, skipWideDrags: Bool = false, crop: CGRect? = nil) -> [Event] {
+        let activeCrop = crop.flatMap(StudioProject.normalizedCrop)
+        let minX = activeCrop.map { Double($0.minX) * telemetry.width } ?? 0
+        let maxX = activeCrop.map { Double($0.maxX) * telemetry.width } ?? telemetry.width
+        let minY = activeCrop.map { Double($0.minY) * telemetry.height } ?? 0
+        let maxY = activeCrop.map { Double($0.maxY) * telemetry.height } ?? telemetry.height
         func contains(_ event: Event) -> Bool {
-            event.x >= 0 && event.x <= telemetry.width && event.y >= 0 && event.y <= telemetry.height
+            event.x >= minX && event.x <= maxX && event.y >= minY && event.y <= maxY
         }
         var clicks: [Event] = []
         for click in telemetry.clicks {
@@ -84,7 +91,7 @@ nonisolated public enum AutoZoom {
             }
             along.append((time: release, x: releaseX, y: releaseY, isKey: false))
             for event in along { path = path.joined(Bounds(event)) }
-            if !skipWideDrags || path.scale(in: telemetry) >= gentlestScale {
+            if !skipWideDrags || path.scale(in: telemetry, crop: activeCrop) >= gentlestScale {
                 clicks.append(press)
                 clicks += along
             }
@@ -116,13 +123,16 @@ nonisolated public enum AutoZoom {
     }
 
     /// Whether the recording holds a click or a key to follow at all, whether or not it places a zoom.
-    public static func hasEvents(in telemetry: StudioTelemetry) -> Bool {
-        !events(in: telemetry).isEmpty
+    public static func hasEvents(in telemetry: StudioTelemetry, crop: CGRect? = nil) -> Bool {
+        !events(in: telemetry, crop: crop).isEmpty
     }
 
-    public static func zooms(for telemetry: StudioTelemetry, duration: Double, around fixed: [StudioProject.Zoom] = []) -> [StudioProject.Zoom] {
+    public static func zooms(
+        for telemetry: StudioTelemetry, duration: Double, around fixed: [StudioProject.Zoom] = [], crop: CGRect? = nil
+    ) -> [StudioProject.Zoom] {
         guard duration > 0 else { return [] }
-        let allEvents = events(in: telemetry, skipWideDrags: true).filter { $0.time >= 0 && $0.time <= duration }
+        let activeCrop = crop.flatMap(StudioProject.normalizedCrop)
+        let allEvents = events(in: telemetry, skipWideDrags: true, crop: activeCrop).filter { $0.time >= 0 && $0.time <= duration }
         guard !allEvents.isEmpty else { return [] }
 
         // Split the timeline by hand-placed zooms first so each free stretch is grouped and joined on its own,
@@ -135,7 +145,7 @@ nonisolated public enum AutoZoom {
                     && !fixed.contains { $0.start <= event.time && event.time <= $0.end }
             }
             guard !spanEvents.isEmpty else { continue }
-            result += zooms(in: spanEvents, telemetry: telemetry, spanStart: span.start, spanEnd: span.end)
+            result += zooms(in: spanEvents, telemetry: telemetry, crop: activeCrop, spanStart: span.start, spanEnd: span.end)
         }
         return result
     }
@@ -157,14 +167,14 @@ nonisolated public enum AutoZoom {
     }
 
     private static func zooms(
-        in events: [Event], telemetry: StudioTelemetry, spanStart: Double, spanEnd: Double
+        in events: [Event], telemetry: StudioTelemetry, crop: CGRect?, spanStart: Double, spanEnd: Double
     ) -> [StudioProject.Zoom] {
         var groups: [[Event]] = []
         var bounds: [Bounds] = []
         for event in events {
             let area = Bounds(event)
             if let last = groups.last?.last, let previous = bounds.last,
-               event.time - last.time < gap, previous.joined(area).scale(in: telemetry) >= gentlestScale {
+               event.time - last.time < gap, previous.joined(area).scale(in: telemetry, crop: crop) >= gentlestScale {
                 groups[groups.count - 1].append(event)
                 bounds[bounds.count - 1] = previous.joined(area)
             } else {
@@ -183,7 +193,7 @@ nonisolated public enum AutoZoom {
             guard group.count >= fewestEvents, group.contains(where: { !$0.isKey }) else { continue }
             let area = bounds[index]
             let busy = group.count >= busyEvents || group.contains { $0.isKey }
-            let scale = min(busy ? standardScale : lightScale, area.scale(in: telemetry))
+            let scale = min(busy ? standardScale : lightScale, area.scale(in: telemetry, crop: crop))
             guard scale >= gentlestScale else { continue }
             var start = max(spanStart, (group.first?.time ?? spanStart) - leadIn)
             var end = min(spanEnd, (group.last?.time ?? spanEnd) + hold)
@@ -195,10 +205,10 @@ nonisolated public enum AutoZoom {
             // Tenths, so a zoom's scale reads as a round number in the inspector.
             let rounded = (scale * 10).rounded(.down) / 10
             if let last = candidates.last, start - last.zoom.end <= joinGap,
-               last.bounds.joined(area).scale(in: telemetry) >= gentlestScale {
+               last.bounds.joined(area).scale(in: telemetry, crop: crop) >= gentlestScale {
                 let combined = last.bounds.joined(area)
                 candidates[candidates.count - 1].zoom.end = max(last.zoom.end, end)
-                candidates[candidates.count - 1].zoom.scale = min(last.zoom.scale, rounded, (combined.scale(in: telemetry) * 10).rounded(.down) / 10)
+                candidates[candidates.count - 1].zoom.scale = min(last.zoom.scale, rounded, (combined.scale(in: telemetry, crop: crop) * 10).rounded(.down) / 10)
                 candidates[candidates.count - 1].bounds = combined
                 candidates[candidates.count - 1].lastEvent = group.last!.time
             } else {

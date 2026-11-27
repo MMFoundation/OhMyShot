@@ -208,7 +208,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         shownPicture = session.picture
         imageLayer.zPosition = -1
         keptLayer.masksToBounds = true
+        keptLayer.zPosition = -1
         keptLayer.addSublayer(imageLayer)
+        spotlightLayer.zPosition = 100_000
         cardLayer.masksToBounds = true
         cardLayer.addSublayer(keptLayer)
         cardLayer.addSublayer(spotlightLayer)
@@ -632,7 +634,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
         let shown = frames.shown
-        let canvas = session.document.canvas.standardized
+        let canvas = frames.backdrop == nil ? session.document.canvas.standardized : frames.card
         let whole = CGRect(x: (canvas.minX - shown.minX) * zoom, y: (canvas.minY - shown.minY) * zoom, width: canvas.width * zoom, height: canvas.height * zoom)
         let part = whole.intersection(visibleCanvasRect)
         watermarkLayer.isHidden = part.isNull || part.isEmpty
@@ -654,7 +656,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             layer.underlay = nil
         }
         // The document point at the parent layer's corner.
-        let parent = layer.superlayer === keptLayer ? frames.picture.origin : frames.shown.origin
+        let parent = layer.superlayer === keptLayer ? frames.picture.origin
+            : layer.superlayer === cardLayer ? frames.card.origin
+            : frames.shown.origin
         let bounds = layer.documentDrawingBounds
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0 else {
             layer.frame = .zero
@@ -703,14 +707,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public func zoomIn() {
         let scale = session.document.scale
         let current = zoom * scale
-        let next = Self.zoomSteps.first { $0 > current + 0.001 } ?? Self.zoomSteps.last!
+        guard let next = Self.zoomSteps.first(where: { $0 > current + 0.001 }) else { return }
         setZoom(next / scale, around: nil)
     }
 
     public func zoomOut() {
         let scale = session.document.scale
         let current = zoom * scale
-        let previous = Self.zoomSteps.last { $0 < current - 0.001 } ?? Self.zoomSteps.first!
+        guard let previous = Self.zoomSteps.last(where: { $0 < current - 0.001 }) else { return }
         setZoom(previous / scale, around: nil)
     }
 
@@ -886,6 +890,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                     self.editing = nil
                     editing.view.delegate = nil
                     editing.view.removeFromSuperview()
+                    if session.isInLiveChange { session.discardLiveChange() }
                     onUndoStateChange?()
                 }
             }
@@ -1013,15 +1018,25 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 layer.scale = document.scale
                 layer.contentsScale = scale
                 markLayers[item.id] = layer
-                // Images are part of the picture: in the kept part of the capture, under the spotlight.
-                if case .image = item.shape { keptLayer.addSublayer(layer) } else { canvasLayer.addSublayer(layer) }
                 updateRedaction(layer)
                 updateGround(layer)
+            }
+            // Images lie inside the kept capture; picture-modifying redactions move under spotlightLayer only
+            // while spotlights exist so normal documents preserve exact z-order and unclipped rounded corners.
+            let targetSuperlayer: CALayer = switch item.shape {
+            case .image: keptLayer
+            case .redaction(let redaction) where redaction.method != .solid && !document.spots.isEmpty: cardLayer
+            default: canvasLayer
+            }
+            if layer.superlayer !== targetSuperlayer {
+                layer.removeFromSuperlayer()
+                targetSuperlayer.addSublayer(layer)
             }
             layer.zPosition = CGFloat(index)
             layer.isHidden = editing?.id == item.id
             position(layer, frames: frames)
         }
+        watermarkLayer.zPosition = CGFloat(document.items.count + 1)
         for (id, layer) in markLayers where !present.contains(id) {
             layer.removeFromSuperlayer()
             markLayers[id] = nil
@@ -1395,6 +1410,21 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// Whether an opaque mark drawn above `target` covers `point` (e.g., a redaction, filled shape, or combined image).
+    private func isCoveredByOpaqueMark(_ target: Annotation, at point: CGPoint) -> Bool {
+        guard let index = session.document.index(of: target.id) else { return false }
+        let scale = session.document.scale
+        for item in session.document.items[(index + 1)...] {
+            let opaque: Bool = switch item.shape {
+            case .redaction, .image, .magnifier: true
+            case .rectangle(let box), .ellipse(let box): box.filled
+            default: false
+            }
+            if opaque, item.contains(point, tolerance: tolerance, scale: scale, interior: true) { return true }
+        }
+        return false
+    }
+
     /// How far above a mark its rotation knob stands, in view points.
     static let knobReach: CGFloat = 22
 
@@ -1570,8 +1600,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
-        // Double-clicking any existing text mark from any tool enters inline editing immediately.
-        if event.clickCount == 2, let textItem = hitTextItem(at: point) {
+        // Double-clicking an existing text mark enters inline editing (except during rapid Counter placement),
+        // provided no opaque mark (such as a redaction or filled box) covers it at the clicked point.
+        if event.clickCount == 2, (session.tool != .counter || command),
+           let textItem = hitTextItem(at: point),
+           !isCoveredByOpaqueMark(textItem, at: point) {
             beginEditing(textItem.id, isNew: false)
             return
         }
@@ -1967,7 +2000,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             menu.addItem(item)
         }
         add(String(localized: "Cut", bundle: .module), #selector(cut(_:)), "scissors", key: "x", modifiers: .command)
-        add(String(localized: "Copy", bundle: .module), #selector(copy(_:)), "doc.on.doc", key: "c", modifiers: .command)
+        add(String(localized: "Copy Marks", bundle: .module), #selector(copyAnnotations(_:)), "doc.on.doc", key: "c", modifiers: [.option, .command])
         add(String(localized: "Duplicate", bundle: .module), #selector(duplicateSelection(_:)), "plus.square.on.square", key: "d", modifiers: .command)
         menu.addItem(.separator())
         add(String(localized: "Bring to Front", bundle: .module), #selector(bringToFront(_:)), "square.3.layers.3d.top.filled", key: "]", modifiers: [.command, .shift])
@@ -2015,6 +2048,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return (picture.name, size)
         }
         if session.tool.isPictureMode { session.leavePictureMode() }
+        session.putToolDownToSelect()
         session.addImages(sized, at: point)
         window?.makeFirstResponder(self)
     }
@@ -2041,6 +2075,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         guard let marks = AnnotationPasteboard.read(from: pasteboard) else { return false }
         endEditing()
         if session.tool.isPictureMode { session.leavePictureMode() }
+        session.putToolDownToSelect()
         let changeCount = pasteboard.changeCount
         if lastPasteChangeCount == changeCount {
             pasteRepeatCount += 1
@@ -2244,6 +2279,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func handleKey(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let step: CGFloat = flags.contains(.shift) ? 10 : 1
+        // While dragging or in an active live change, ignore editing keys other than Escape so
+        // mid-drag delete/nudge/tool/style keys cannot corrupt the Undo stack.
+        if (drag != nil || session.isInLiveChange) && event.keyCode != 53 {
+            return true
+        }
         switch event.keyCode {
         case 49 where editing == nil:
             isSpaceHeld = true
@@ -2395,6 +2435,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// none with neither, or for a kind that takes no color.
     var keyedColors: [RGBA] {
         guard !session.selection.isEmpty || session.tool != .select else { return [] }
+        if session.hasMixedSelection {
+            guard session.selectionSupportsColor else { return [] }
+            return StyleCapsule.keyedColors(for: .arrow, settings: session.currentSettings, saved: SavedColors.shared.colors)
+        }
         return StyleCapsule.keyedColors(for: session.currentKind, settings: session.currentSettings, saved: SavedColors.shared.colors)
     }
 
@@ -2413,10 +2457,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// size applies.
     func stepSize(by step: Int) -> Bool {
         guard !session.selection.isEmpty || session.tool != .select, session.sizeApplies else { return false }
-        let kind = session.currentKind
+        let mixed = session.hasMixedSelection
+        if mixed, !session.selectionSupportsLineWidth { return false }
+        let kind: AnnotationTool = mixed ? .arrow : session.currentKind
         let sizes = StyleCapsule.sizes(for: kind)
         guard !sizes.isEmpty else { return false }
-        let isText = kind == .text
+        let isText = !mixed && kind == .text
         let current = isText ? session.currentSettings.fontSize : session.currentSettings.lineWidth
         let index = sizes.firstIndex(of: StyleCapsule.nearest(current, in: sizes)) ?? 0
         let next = min(max(index + step, 0), sizes.count - 1)
@@ -2462,7 +2508,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             return true
         }
-        guard isCanvas else { return super.performKeyEquivalent(with: event) }
+        guard isCanvas, drag == nil, !session.isInLiveChange else { return super.performKeyEquivalent(with: event) }
         switch key {
         case "d" where flags == .command:
             session.duplicateSelection()
@@ -2542,16 +2588,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// ⌘C always copies the rendered capture without closing, matching the toolbar tooltip and macOS screenshot
+    /// muscle memory even when a newly drawn mark is still selected. Use ⌥⌘C (`copyAnnotations:`) to copy marks.
     @objc public func copy(_ sender: Any?) {
-        if !session.selection.isEmpty, !isEditingText {
-            if copySelectedAnnotations(to: .general) {
-                VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
-            } else {
-                NSSound.beep()
-            }
+        onCopy?()
+    }
+
+    /// ⌥⌘C copies selected annotation marks for pasting within or across editor windows.
+    @objc public func copyAnnotations(_ sender: Any?) {
+        guard !session.selection.isEmpty, !isEditingText else {
+            NSSound.beep()
             return
         }
-        onCopy?()
+        if copySelectedAnnotations(to: .general) {
+            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
+        } else {
+            NSSound.beep()
+        }
     }
 
     @objc public func save(_ sender: Any?) {
@@ -2667,6 +2720,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     @objc public override func selectAll(_ sender: Any?) {
+        guard !session.document.items.isEmpty else { return }
+        if session.tool.isPictureMode { session.leavePictureMode() }
+        session.putToolDownToSelect()
         session.selectAll()
     }
 
@@ -2706,7 +2762,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
              #selector(bringToFront(_:)), #selector(bringForward(_:)), #selector(sendBackward(_:)), #selector(sendToBack(_:)):
             return !session.selection.isEmpty
         case #selector(copy(_:)):
-            return !session.selection.isEmpty || onCopy != nil
+            return onCopy != nil
+        case #selector(copyAnnotations(_:)):
+            return !session.selection.isEmpty && !isEditingText
         case #selector(selectAll(_:)):
             return !session.document.items.isEmpty
         case #selector(paste(_:)):
@@ -2896,6 +2954,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public func textDidEndEditing(_ notification: Notification) {
         endEditing()
+    }
+
+    /// Commits any in-progress inline text edit or uncommitted crop draft before exporting, copying, or closing.
+    public func commitPendingEdits() {
+        endEditing()
+        if session.tool == .crop {
+            commitCrop()
+            session.leavePictureMode()
+        }
     }
 
     /// Finishes editing text: an empty text mark goes away, and a new one leaves no undo step. Text that

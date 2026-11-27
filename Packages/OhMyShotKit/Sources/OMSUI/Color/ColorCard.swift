@@ -77,6 +77,9 @@ public final class ColorCardHUD {
     /// Holds the card while a second color is picked, or lets it go on as before.
     public func setPickingContrast(_ picking: Bool) {
         self.picking = picking
+        if !picking, let panel, panel.takesKeys {
+            panel.makeKey()
+        }
         updateEscapeKey()
         scheduleDismissal()
     }
@@ -87,6 +90,10 @@ public final class ColorCardHUD {
         guard let card, let panel else { return }
         card.showContrast(with: other)
         place(panel)
+        if panel.takesKeys {
+            panel.makeKey()
+            panel.makeFirstResponder(card.firstControl)
+        }
         updateEscapeKey()
         announce(card.contrastSummary ?? "")
         scheduleDismissal()

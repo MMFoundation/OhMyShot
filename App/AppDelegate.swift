@@ -68,13 +68,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         decidingQuit = true
         let requester = Self.quitRequester()
         if let requester { Log.app.notice("Quit requested by \(requester, privacy: .public)") }
-        let reopens = requester.map { $0.hasPrefix("com.apple.systempreferences") || $0.hasPrefix("com.apple.settings.") } ?? false
+        let reopens = Relauncher.isRelaunchRequested
+            || (requester.map { $0.hasPrefix("com.apple.systempreferences") || $0.hasPrefix("com.apple.settings.") } ?? false)
         let quit = { [self] (mayQuit: Bool) in
             guard mayQuit else {
+                Relauncher.isRelaunchRequested = false
                 decidingQuit = false
                 return sender.reply(toApplicationShouldTerminate: false)
             }
             guard reopens else { return sender.reply(toApplicationShouldTerminate: true) }
+            Relauncher.isRelaunchRequested = false
             Relauncher.startNewCopy { _ in sender.reply(toApplicationShouldTerminate: true) }
         }
         if let root {
@@ -109,6 +112,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         root?.prepareForTermination()
+    }
+
+    /// About OhMyShot from the app menu.
+    @objc func showAbout(_ sender: Any?) {
+        root?.showSettings(.about)
     }
 
     /// ⌘, while one of the app's windows is in front.

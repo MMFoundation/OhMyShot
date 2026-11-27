@@ -46,11 +46,13 @@ public enum TextReaderWire {
         /// What to take the system's memory pressure to be, rather than ask the kernel: for checking what happens when
         /// it is pressed.
         public var pressure: MemoryPressure?
+        /// Explicit BCP-47 OCR recognition languages from Settings; nil or empty uses automatic preferred languages.
+        public var languages: [String]?
 
         public init(
             id: String, path: String? = nil, joinsWrappedLines: Bool? = nil, pack: String? = nil, lines: Bool? = nil, warm: Bool? = nil,
             formula: String? = nil, formulas: String? = nil, tidy: Bool? = nil, vlm: String? = nil, task: String? = nil, seconds: Double? = nil,
-            pressure: MemoryPressure? = nil
+            pressure: MemoryPressure? = nil, languages: [String]? = nil
         ) {
             self.id = id
             self.path = path
@@ -65,6 +67,7 @@ public enum TextReaderWire {
             self.task = task
             self.seconds = seconds
             self.pressure = pressure
+            self.languages = languages
         }
 
         /// What a job asks for, told by the fields it names. A job naming more than one of these is the first that
@@ -200,7 +203,8 @@ extension TextReaderWire.Job {
             vlm: try container.decodeIfPresent(String.self, forKey: .vlm),
             task: try container.decodeIfPresent(String.self, forKey: .task),
             seconds: try container.decodeIfPresent(Double.self, forKey: .seconds),
-            pressure: try? container.decodeIfPresent(MemoryPressure.self, forKey: .pressure)
+            pressure: try? container.decodeIfPresent(MemoryPressure.self, forKey: .pressure),
+            languages: try container.decodeIfPresent([String].self, forKey: .languages)
         )
     }
 }

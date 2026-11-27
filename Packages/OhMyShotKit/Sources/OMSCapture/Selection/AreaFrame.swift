@@ -304,12 +304,13 @@ enum AreaFrame {
     static func barFrame(size: CGSize, for frame: CGRect, in bounds: CGRect) -> CGRect {
         let drawn = SelectionChromeView.drawnFrame(for: frame, in: bounds)
         let room = bounds.insetBy(dx: 8, dy: 8)
-        let below = CGRect(x: drawn.midX - size.width / 2, y: drawn.maxY + 12, width: size.width, height: size.height)
-        let above = CGRect(x: below.minX, y: drawn.minY - 12 - size.height, width: size.width, height: size.height)
-        let inside = CGRect(x: below.minX, y: drawn.maxY - 40 - size.height, width: size.width, height: size.height)
-        var placed = [below, above].first { room.contains($0) } ?? inside
-        placed.origin.x = min(max(placed.minX, room.minX), room.maxX - size.width)
-        placed.origin.y = min(max(placed.minY, room.minY), room.maxY - size.height)
+        let x = min(max(drawn.midX - size.width / 2, room.minX), max(room.minX, room.maxX - size.width))
+        let below = CGRect(x: x, y: drawn.maxY + 12, width: size.width, height: size.height)
+        let above = CGRect(x: x, y: drawn.minY - 12 - size.height, width: size.width, height: size.height)
+        let inside = CGRect(x: x, y: drawn.maxY - 40 - size.height, width: size.width, height: size.height)
+        var placed = [below, above].first { $0.minY >= room.minY && $0.maxY <= room.maxY } ?? inside
+        placed.origin.x = min(max(placed.minX, room.minX), max(room.minX, room.maxX - size.width))
+        placed.origin.y = min(max(placed.minY, room.minY), max(room.minY, room.maxY - size.height))
         return placed.integral
     }
 

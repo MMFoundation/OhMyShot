@@ -8,23 +8,23 @@ nonisolated public enum StudioWaveform {
     /// Target mono sample rate used by `AVAssetReader` when computing timeline peaks.
     private static let analysisSampleRate = 8_000.0
 
-    /// Extracts `binCount` normalized peak amplitude bins (`0...1`) across the duration of `url`.
+    /// Extracts `binCount` normalized peak amplitude bins (`0...1`) across the duration of `url` (or `duration` when specified).
     /// Returns an empty array when `url` has no audio tracks, cannot be read, or the task is cancelled.
     @concurrent
-    public static func extract(from url: URL, binCount: Int = 200) async -> [Float] {
-        guard let raw = await rawPeaks(from: url, binCount: binCount) else { return [] }
+    public static func extract(from url: URL, binCount: Int = 200, duration: Double? = nil) async -> [Float] {
+        guard let raw = await rawPeaks(from: url, binCount: binCount, referenceDuration: duration) else { return [] }
         return normalize(peaks: raw)
     }
 
     /// Extracts `binCount` normalized peak amplitude bins (`0...1`) combined across all readable audio assets in `urls`
     /// (for example, Studio's separate system audio and microphone `.m4a` tracks).
     @concurrent
-    public static func extract(from urls: [URL], binCount: Int = 200) async -> [Float] {
+    public static func extract(from urls: [URL], binCount: Int = 200, duration: Double? = nil) async -> [Float] {
         guard binCount > 0, !urls.isEmpty, !Task.isCancelled else { return [] }
         var combined: [Float]?
         for url in urls {
             guard !Task.isCancelled else { return [] }
-            guard let peaks = await rawPeaks(from: url, binCount: binCount) else { continue }
+            guard let peaks = await rawPeaks(from: url, binCount: binCount, referenceDuration: duration) else { continue }
             if var current = combined {
                 for index in 0..<min(current.count, peaks.count) {
                     current[index] = max(current[index], peaks[index])
@@ -38,15 +38,16 @@ nonisolated public enum StudioWaveform {
         return normalize(peaks: combined)
     }
 
-    private static func rawPeaks(from url: URL, binCount: Int) async -> [Float]? {
+    private static func rawPeaks(from url: URL, binCount: Int, referenceDuration: Double?) async -> [Float]? {
         guard binCount > 0, !Task.isCancelled else { return nil }
         let asset = AVURLAsset(url: url)
         guard
             let tracks = try? await asset.loadTracks(withMediaType: .audio),
             !tracks.isEmpty,
-            let duration = try? await asset.load(.duration).seconds,
-            duration.isFinite, duration > 0
+            let assetDuration = try? await asset.load(.duration).seconds,
+            assetDuration.isFinite, assetDuration > 0
         else { return nil }
+        let duration = referenceDuration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? assetDuration
         guard !Task.isCancelled else { return nil }
 
         guard let reader = try? AVAssetReader(asset: asset) else { return nil }

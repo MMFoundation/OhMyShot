@@ -16,7 +16,7 @@ struct CloudToggle: View {
     var body: some View {
         Toggle(isOn: $model.readsInCloud) {
             Label {
-                Text("Read with \(cloud.name)", bundle: .module)
+                Text("Read with \(cloud.displayName)", bundle: .module)
             } icon: {
                 Image(systemName: Self.symbol(for: cloud))
             }
@@ -33,15 +33,22 @@ struct CloudToggle: View {
     private var help: Text {
         if model.readsInCloud { return Text("Show the text read on this Mac (⇧⌘R)", bundle: .module) }
         let host = cloud.host ?? cloud.address
-        let sends = Text("Read with \(cloud.name): sends this picture to \(host) (⇧⌘R)", bundle: .module)
-        guard let image = model.image else { return sends }
+        let sends = String(localized: "Read with \(cloud.displayName): sends this picture to \(host) (⇧⌘R)", bundle: .module)
+        guard let image = model.image else { return Text(verbatim: sends) }
         let plan = CloudPicture.plan(width: image.width, height: image.height, limits: .of(cloud.kind))
         let percent = Int((plan.scale * 100).rounded())
         switch (plan.pieces.count > 1, plan.scale < 1) {
-        case (true, true): return sends + Text(verbatim: "\n") + Text("It goes in \(plan.pieces.count) pieces, at \(percent)% of its size.", bundle: .module)
-        case (true, false): return sends + Text(verbatim: "\n") + Text("It goes in \(plan.pieces.count) pieces.", bundle: .module)
-        case (false, true): return sends + Text(verbatim: "\n") + Text("It goes at \(percent)% of its size.", bundle: .module)
-        case (false, false): return sends
+        case (true, true):
+            let detail = String(localized: "It goes in \(plan.pieces.count) pieces, at \(percent)% of its size.", bundle: .module)
+            return Text(verbatim: "\(sends)\n\(detail)")
+        case (true, false):
+            let detail = String(localized: "It goes in \(plan.pieces.count) pieces.", bundle: .module)
+            return Text(verbatim: "\(sends)\n\(detail)")
+        case (false, true):
+            let detail = String(localized: "It goes at \(percent)% of its size.", bundle: .module)
+            return Text(verbatim: "\(sends)\n\(detail)")
+        case (false, false):
+            return Text(verbatim: sends)
         }
     }
 }
@@ -74,7 +81,7 @@ struct CloudStatus: View {
             Button { model.readsInCloud = false } label: { Text("Cancel", bundle: .module) }
                 .controlSize(.small)
         case .read(let result) where result.reading.text.isEmpty:
-            Text("\(cloud.name) found no text", bundle: .module)
+            Text("\(cloud.displayName) found no text", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -86,7 +93,7 @@ struct CloudStatus: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
                 .accessibilityHidden(true)
-            Text("\(cloud.name) stopped before the end of the text", bundle: .module)
+            Text("\(cloud.displayName) stopped before the end of the text", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -97,7 +104,7 @@ struct CloudStatus: View {
             Button { model.retryCloudReading() } label: { Text("Re-read", bundle: .module) }
                 .controlSize(.small)
         case .read(let result):
-            Text("Read by \(cloud.name)", bundle: .module)
+            Text("Read by \(cloud.displayName)", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -110,7 +117,7 @@ struct CloudStatus: View {
                 .foregroundStyle(.orange)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Couldn’t read with \(cloud.name)", bundle: .module)
+                Text("Couldn’t read with \(cloud.displayName)", bundle: .module)
                     .font(.callout)
                     .lineLimit(1)
                 Text(verbatim: message)
@@ -167,10 +174,10 @@ struct CloudEmptyState: View {
             PanelPlaceholder(
                 symbol: "text.magnifyingglass",
                 title: Text("No text found", bundle: .module),
-                message: Text("Try an image with larger text or more contrast, or read it with \(cloud.name).", bundle: .module)
+                message: Text("Try an image with larger text or more contrast, or read it with \(cloud.displayName).", bundle: .module)
             ) {
                 Button { model.readsInCloud = true } label: {
-                    Label { Text("Read with \(cloud.name)", bundle: .module) } icon: { Image(systemName: CloudToggle.symbol(for: cloud)) }
+                    Label { Text("Read with \(cloud.displayName)", bundle: .module) } icon: { Image(systemName: CloudToggle.symbol(for: cloud)) }
                 }
                 .padding(.top, 6)
                 .help(Text("Sends this picture to \(cloud.host ?? cloud.address)", bundle: .module))
@@ -186,7 +193,7 @@ struct CloudEmptyState: View {
             PanelPlaceholder(
                 symbol: "text.magnifyingglass",
                 title: Text("No text found", bundle: .module),
-                message: Text("Neither this Mac nor \(cloud.name) found text in it.", bundle: .module)
+                message: Text("Neither this Mac nor \(cloud.displayName) found text in it.", bundle: .module)
             ) {
                 Button { model.retryCloudReading() } label: { Text("Re-read", bundle: .module) }
                     .padding(.top, 6)
@@ -194,7 +201,7 @@ struct CloudEmptyState: View {
         case .failed(let message, let canRetry):
             PanelPlaceholder(
                 symbol: "exclamationmark.triangle",
-                title: Text("Couldn’t read with \(cloud.name)", bundle: .module),
+                title: Text("Couldn’t read with \(cloud.displayName)", bundle: .module),
                 message: Text(verbatim: message)
             ) {
                 if canRetry {
@@ -217,7 +224,7 @@ private struct CloudProgress: View {
             ProgressView().controlSize(.small)
             Group {
                 if characters > 0 {
-                    Text("Reading with \(cloud.name)… \(characters.formatted()) characters", bundle: .module)
+                    Text("Reading with \(cloud.displayName)… \(characters.formatted()) characters", bundle: .module)
                 } else {
                     Text("Sending to \(cloud.host ?? cloud.address)…", bundle: .module)
                 }

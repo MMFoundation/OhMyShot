@@ -246,8 +246,11 @@ extension ScreenshotsSettingsView {
     fileprivate var exportPath: String {
         var path = settings.exportDirectory.path(percentEncoded: false)
         if path.count > 1, path.hasSuffix("/") { path.removeLast() }
-        let home = NSHomeDirectory()
-        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+        var home = NSHomeDirectory()
+        if home.count > 1, home.hasSuffix("/") { home.removeLast() }
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
+        return path
     }
 
     fileprivate func chooseExportDirectory() {

@@ -185,7 +185,10 @@ public final class ScreenSketchController {
         let screens = NSScreen.screens
         let kept = screens.map { screen in
             guard let board = boards.first(where: { $0.display == screen.displayID }) else {
-                return SketchBoard(screen: screen, controller: self)
+                let board = SketchBoard(screen: screen, controller: self)
+                board.panel.ignoresMouseEvents = clicksThrough
+                board.panel.allowsKey = !clicksThrough
+                return board
             }
             board.fit(to: screen)
             return board
@@ -248,10 +251,17 @@ public final class ScreenSketchController {
         choose(all[target])
     }
 
-    func setClicksThrough(_ on: Bool) {
+    public func setClicksThrough(_ on: Bool) {
         if on { commitActiveText() }
         clicksThrough = on
-        for board in boards { board.panel.ignoresMouseEvents = on }
+        for board in boards {
+            board.panel.allowsKey = !on
+            board.panel.ignoresMouseEvents = on
+            if on, board.panel.isKeyWindow {
+                board.panel.orderOut(nil)
+                board.panel.orderFrontRegardless()
+            }
+        }
         // Drawing again, the canvas under the pointer takes the keys back; clicking through, the app clicked takes them.
         if !on { board(at: NSEvent.mouseLocation)?.takeKeyboard() }
         toolbar?.refresh()
@@ -483,7 +493,8 @@ final class SketchPanel: NSPanel {
         setAccessibilityLabel(String(localized: "Drawing Canvas", bundle: .module))
     }
 
-    override var canBecomeKey: Bool { true }
+    var allowsKey = true
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
 }
 
@@ -591,10 +602,10 @@ final class SketchView: NSView, NSTextFieldDelegate {
         guard let controller else { return }
         window?.makeKey()
         let point = convert(event.locationInWindow, from: nil)
-        if activeTextField != nil {
-            let hadText = !(activeTextField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-            commitTextEditing()
-            if controller.tool == .text && hadText { return }
+        if controller.isEditingText {
+            let hadLocalText = !(activeTextField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            controller.commitActiveText()
+            if controller.tool == .text && hadLocalText { return }
         }
         Self.cursor(for: controller.tool).set()
         let width = controller.strokeWidth
@@ -704,6 +715,7 @@ final class SketchView: NSView, NSTextFieldDelegate {
         guard controller != nil else { return }
         cancelTextEditing()
         let field = NSTextField()
+        field.cell = SketchTextFieldCell()
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -730,6 +742,9 @@ final class SketchView: NSView, NSTextFieldDelegate {
         field.layer?.backgroundColor = controller.color.cgColor
         field.layer?.cornerRadius = fontSize * 0.32
         field.layer?.cornerCurve = .continuous
+        if let cell = field.cell as? SketchTextFieldCell {
+            cell.textInset = CGSize(width: (fontSize * 0.4).rounded(), height: (fontSize * 0.16).rounded())
+        }
         resizeActiveTextField()
     }
 
@@ -740,7 +755,7 @@ final class SketchView: NSView, NSTextFieldDelegate {
         let font = TextLayout.font(pointSize: fontSize)
         let measured = (sample as NSString).size(withAttributes: [.font: font])
         let padX = (fontSize * 0.4).rounded()
-        let padY = (fontSize * 0.2).rounded()
+        let padY = (fontSize * 0.16).rounded()
         let width = min(max(ceil(measured.width) + padX * 2 + 12, 84), max(bounds.width - origin.x - 16, 84))
         let height = ceil(max(measured.height, fontSize * TextLayout.lineSpacing)) + padY * 2
         let x = min(max(origin.x - padX, 8), max(8, bounds.width - width - 8))
@@ -753,6 +768,7 @@ final class SketchView: NSView, NSTextFieldDelegate {
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard !textView.hasMarkedText() else { return false }
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
             commitTextEditing()
             return true
@@ -1165,7 +1181,7 @@ final class SketchToolbarView: NSView {
             throughChip.layer?.borderColor = controller.clicksThrough ? accent : nil
             let throughTitle = String(localized: "Click Through", bundle: .module)
             throughChip.toolTip = controller.clicksThrough
-                ? String(localized: "Click here or press T to resume drawing", bundle: .module)
+                ? String(localized: "Click here to resume drawing", bundle: .module)
                 : "\(throughTitle) (T)"
             throughChip.setAccessibilityValue(controller.clicksThrough ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module))
         }
@@ -1313,4 +1329,24 @@ final class SketchToolbarView: NSView {
         actionChips[.clickThrough]?.toolTip
     }
     #endif
+}
+
+private final class SketchTextFieldCell: NSTextFieldCell {
+    var textInset = CGSize.zero
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        super.drawingRect(forBounds: rect.insetBy(dx: textInset.width, dy: textInset.height))
+    }
+
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        super.titleRect(forBounds: rect.insetBy(dx: textInset.width, dy: textInset.height))
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: rect.insetBy(dx: textInset.width, dy: textInset.height), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: rect.insetBy(dx: textInset.width, dy: textInset.height), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+    }
 }

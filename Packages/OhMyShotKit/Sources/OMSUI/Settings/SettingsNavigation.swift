@@ -601,7 +601,14 @@ private struct SettingsSidebar: View {
             } else {
                 List(selection: selection) {
                     ForEach(results, id: \.tab) { tab, rows in
-                        SettingsSidebarRow(tab: tab, found: rows).tag(tab)
+                        SettingsSidebarRow(tab: tab, found: rows)
+                            .tag(tab)
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(TapGesture().onEnded {
+                                if navigator.tab == tab {
+                                    navigator.open(tab, searchedFor: query)
+                                }
+                            })
                     }
                 }
             }

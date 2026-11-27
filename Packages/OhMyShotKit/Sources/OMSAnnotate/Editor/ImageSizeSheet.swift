@@ -47,16 +47,28 @@ final class ImageSizeModel {
     func setPercent(_ value: Double) {
         sizing.setPercent(value)
         hasValidInput = true
-        refresh()
+        let factor = value / 100
+        let rawWidth = (Double(sizing.current.width) * factor).rounded()
+        let rawHeight = (Double(sizing.current.height) * factor).rounded()
+        allowed = rawWidth.isFinite && rawHeight.isFinite
+            && rawWidth <= Double(AnnotationDocument.maxPictureSide)
+            && rawHeight <= Double(AnnotationDocument.maxPictureSide)
+            && document.allowsCanvas(of: sizing.size)
         syncAllText()
     }
 
     func setKeepsProportions(_ value: Bool) {
         sizing.keepsProportions = value
         // Turned on, the height follows the width it is set against.
-        if value { sizing.setWidth(sizing.width) }
-        hasValidInput = true
-        refresh()
+        if value {
+            let rawHeight = (Double(sizing.width) * Double(sizing.current.height) / Double(sizing.current.width)).rounded()
+            sizing.setWidth(sizing.width)
+            hasValidInput = true
+            allowed = rawHeight <= Double(AnnotationDocument.maxPictureSide) && document.allowsCanvas(of: sizing.size)
+        } else {
+            hasValidInput = true
+            refresh()
+        }
         syncAllText()
     }
 
@@ -71,7 +83,12 @@ final class ImageSizeModel {
         }
         sizing.setWidth(value)
         hasValidInput = true
-        allowed = value <= AnnotationDocument.maxPictureSide && document.allowsCanvas(of: sizing.size)
+        let rawHeight = sizing.keepsProportions
+            ? (Double(value) * Double(sizing.current.height) / Double(sizing.current.width)).rounded()
+            : Double(sizing.height)
+        allowed = value <= AnnotationDocument.maxPictureSide
+            && rawHeight <= Double(AnnotationDocument.maxPictureSide)
+            && document.allowsCanvas(of: sizing.size)
         heightText = "\(sizing.height)"
         scaleText = ImageSizing.formatPercent(sizing.percent)
     }
@@ -87,7 +104,12 @@ final class ImageSizeModel {
         }
         sizing.setHeight(value)
         hasValidInput = true
-        allowed = value <= AnnotationDocument.maxPictureSide && document.allowsCanvas(of: sizing.size)
+        let rawWidth = sizing.keepsProportions
+            ? (Double(value) * Double(sizing.current.width) / Double(sizing.current.height)).rounded()
+            : Double(sizing.width)
+        allowed = value <= AnnotationDocument.maxPictureSide
+            && rawWidth <= Double(AnnotationDocument.maxPictureSide)
+            && document.allowsCanvas(of: sizing.size)
         widthText = "\(sizing.width)"
         scaleText = ImageSizing.formatPercent(sizing.percent)
     }
@@ -103,9 +125,10 @@ final class ImageSizeModel {
         sizing.setPercent(value)
         hasValidInput = true
         let factor = value / 100
-        let rawWidth = Double(sizing.current.width) * factor
-        let rawHeight = Double(sizing.current.height) * factor
-        allowed = rawWidth <= Double(AnnotationDocument.maxPictureSide)
+        let rawWidth = (Double(sizing.current.width) * factor).rounded()
+        let rawHeight = (Double(sizing.current.height) * factor).rounded()
+        allowed = rawWidth.isFinite && rawHeight.isFinite
+            && rawWidth <= Double(AnnotationDocument.maxPictureSide)
             && rawHeight <= Double(AnnotationDocument.maxPictureSide)
             && document.allowsCanvas(of: sizing.size)
         widthText = "\(sizing.width)"

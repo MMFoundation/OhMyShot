@@ -430,6 +430,30 @@ struct StudioAdvancedEditingTests {
                 to: root.appending(path: "blocked.omsstudio")
             )
         }
+
+        // Reserved package filenames (project.json, video.mov) in `.picture` background are refused.
+        for reserved in [StudioFiles.project, StudioPackage.movieFileName] {
+            let reservedProject = StudioProject(background: .picture(reserved))
+            let pkg = root.appending(path: "reserved-\(reserved).omsstudio")
+            try FileManager.default.createDirectory(at: pkg, withIntermediateDirectories: true)
+            try Data("movie".utf8).write(to: pkg.appending(path: StudioPackage.movieFileName))
+            try JSONEncoder().encode(validTelemetry).write(to: pkg.appending(path: StudioFiles.telemetry))
+            try JSONEncoder().encode(reservedProject).write(to: pkg.appending(path: StudioFiles.project))
+            #expect(throws: StudioPackage.PackageError.invalidFileName) {
+                _ = try StudioPackage.importPackage(at: pkg, toMovieURL: outMovie, studioFolder: outFolder)
+            }
+        }
+
+        // Symlinked movie inside a package is refused to prevent arbitrary local file disclosure.
+        let secretFile = root.appending(path: "secret.txt")
+        try Data("secret".utf8).write(to: secretFile)
+        let symlinkPkg = root.appending(path: "symlink.omsstudio")
+        try FileManager.default.createDirectory(at: symlinkPkg, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: symlinkPkg.appending(path: StudioPackage.movieFileName), withDestinationURL: secretFile)
+        try JSONEncoder().encode(validTelemetry).write(to: symlinkPkg.appending(path: StudioFiles.telemetry))
+        #expect(throws: StudioPackage.PackageError.missingMovie) {
+            _ = try StudioPackage.importPackage(at: symlinkPkg, toMovieURL: outMovie, studioFolder: outFolder)
+        }
     }
 
     // MARK: Helpers

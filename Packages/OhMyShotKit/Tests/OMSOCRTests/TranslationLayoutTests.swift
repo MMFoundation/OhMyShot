@@ -170,4 +170,15 @@ struct TranslationLayoutTests {
             #expect(abs(stopped - (52 - 40 - 20.0 / 3)) <= 1)
         }
     }
+
+    @Test func zeroAndTinyHeightLinesProduceFiniteLayout() {
+        let zeroBox = CGRect(x: 10, y: 10, width: 120, height: 0)
+        let member = [OCRLine(text: "Hi", box: zeroBox, confidence: 1)]
+        let layout = TranslationOverlay.layout(
+            "Hello world", box: zeroBox, room: 120, members: member, size: 0,
+            language: Locale.Language(identifier: "en"), color: CGColor(gray: 0, alpha: 1)
+        )
+        #expect(layout.scale.isFinite && layout.scale > 0)
+        #expect(layout.origins.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+    }
 }

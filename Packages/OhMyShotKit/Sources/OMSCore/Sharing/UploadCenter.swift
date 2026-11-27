@@ -112,8 +112,8 @@ public final class UploadCenter {
         switch job.state {
         case .finished(let result):
             Log.upload.notice("Upload finished")
-            onChange?(captureID, .finished(link: result.link), job.destination.name)
             entry.request.finished(result, job.destination)
+            onChange?(captureID, .finished(link: result.link), job.destination.name)
         case .failed(let error):
             // What the server said is the person's to read on the card, not for the log.
             Log.upload.error("Upload failed")

@@ -154,6 +154,10 @@ final class AllInOneBar: NSView {
         addCursorRect(bounds, cursor: .arrow)
     }
 
+    /// Swallow clicks on padding and dividers inside the capsule so they never start a drag or clear a selection underneath.
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+
     override func layout() {
         super.layout()
         // A full capsule; the buttons inside are capsules too, so the corners stay concentric.

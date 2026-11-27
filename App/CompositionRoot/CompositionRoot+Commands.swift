@@ -81,9 +81,14 @@ extension CompositionRoot {
         let trackerKey = ObjectIdentifier(self)
         if overlay.isActive {
             let previous = OverlayShortcutTracker.active[trackerKey]
+            // Preserve unsaved marks when another capture hotkey fires during in-place annotation.
+            if overlay.annotationDisplay != nil {
+                captures.inPlaceView?.openInEditorIfMarked()
+            }
             overlay.cancel()
             OverlayShortcutTracker.active[trackerKey] = nil
             if previous == shortcut {
+                if keepsLauncherOpen { statusItem?.dismissLauncher() }
                 return
             }
         }
@@ -361,6 +366,10 @@ extension CompositionRoot {
             Log.automation.error("Could not add \(url.lastPathComponent, privacy: .private) to Quick Access: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
         }
+    }
+
+    func clearActiveOverlayShortcut() {
+        OverlayShortcutTracker.active[ObjectIdentifier(self)] = nil
     }
 
     private static func opensOverlay(_ shortcut: CaptureShortcut) -> Bool {

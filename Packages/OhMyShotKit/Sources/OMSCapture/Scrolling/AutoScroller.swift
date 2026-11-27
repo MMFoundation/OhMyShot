@@ -73,6 +73,10 @@ public final class AutoScroller {
         axis = direction.isVertical ? .vertical : .horizontal
     }
 
+    isolated deinit {
+        stop()
+    }
+
     @discardableResult
     public func start() -> Bool {
         guard !isRunning, Self.isAllowed else { return false }
@@ -227,6 +231,10 @@ final class AutoScrollWheelMonitor {
     init(observesPointer: Bool = false, onWheel: @escaping (NSEvent) -> Void) {
         self.observesPointer = observesPointer
         self.onWheel = onWheel
+    }
+
+    isolated deinit {
+        stop()
     }
 
     func start() -> Bool {

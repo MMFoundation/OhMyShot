@@ -46,7 +46,10 @@ extension OCRTable {
     }
 
     private static func markdownCell(_ cell: String) -> String {
-        cell.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ")
+        cell.replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
     }
 
     private static func csvField(_ field: String) -> String {
@@ -60,6 +63,8 @@ extension OCRTable {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "\r\n", with: "<br>")
+            .replacingOccurrences(of: "\r", with: "<br>")
             .replacingOccurrences(of: "\n", with: "<br>")
     }
 }

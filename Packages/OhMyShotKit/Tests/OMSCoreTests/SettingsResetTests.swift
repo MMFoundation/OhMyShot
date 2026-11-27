@@ -21,6 +21,7 @@ struct SettingsResetTests {
         settings.approvedAutomationCallers = ["com.example.app"]
         settings.hidesDesktopIcons = true
         settings.nextFileNumber = 7
+        settings.historyRetention = .oneMonth
 
         settings.resetToDefaults()
 
@@ -36,6 +37,7 @@ struct SettingsResetTests {
             #expect(store.approvedAutomationCallers == ["com.example.app"])
             #expect(store.hidesDesktopIcons)
             #expect(store.nextFileNumber == 7)
+            #expect(store.historyRetention == .oneMonth)
         }
     }
 

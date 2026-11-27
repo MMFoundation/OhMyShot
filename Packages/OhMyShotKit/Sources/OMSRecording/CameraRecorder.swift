@@ -58,11 +58,15 @@ public final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBuffe
     }
 
     public func pause(at time: CMTime) {
-        Task { await writer.pause(at: time) }
+        queue.async { [writer] in
+            writer.assumeIsolated { $0.pause(at: time) }
+        }
     }
 
     public func resume(at time: CMTime) {
-        Task { await writer.resume(at: time) }
+        queue.async { [writer] in
+            writer.assumeIsolated { $0.resume(at: time) }
+        }
     }
 
     /// Ends the movie at `time` (host clock) and closes it. Throws `RecordingWriter.WriterError.noFrames`

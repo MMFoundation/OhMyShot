@@ -21,6 +21,8 @@ public final class StatusItemController {
         public let title: String
         /// The SF Symbol the capture launcher shows beside the title.
         public let systemImage: String?
+        /// Asked each time the launcher opens, for an entry whose icon reflects live state (such as Hide/Show toggles).
+        public let currentSystemImage: (() -> String)?
         public let keyEquivalent: String
         /// A global shortcut to show beside the title.
         public let shortcut: CaptureShortcut?
@@ -42,6 +44,7 @@ public final class StatusItemController {
         public init(
             title: String,
             systemImage: String? = nil,
+            currentSystemImage: (() -> String)? = nil,
             keyEquivalent: String = "",
             shortcut: CaptureShortcut? = nil,
             isEnabled: (() -> Bool)? = nil,
@@ -54,6 +57,7 @@ public final class StatusItemController {
             kind = .item
             self.title = title
             self.systemImage = systemImage
+            self.currentSystemImage = currentSystemImage
             self.keyEquivalent = keyEquivalent
             self.shortcut = shortcut
             self.isEnabled = isEnabled
@@ -70,6 +74,7 @@ public final class StatusItemController {
             kind = .item
             self.title = title
             self.systemImage = systemImage
+            currentSystemImage = nil
             keyEquivalent = ""
             shortcut = nil
             isEnabled = nil
@@ -85,6 +90,7 @@ public final class StatusItemController {
             self.kind = kind
             self.title = title
             systemImage = nil
+            currentSystemImage = nil
             keyEquivalent = ""
             shortcut = nil
             isEnabled = nil
@@ -112,6 +118,7 @@ public final class StatusItemController {
         public var toggleMicrophone: (() -> Void)?
         public var microphoneMuted: Bool
         public var drawOnScreen: (() -> Void)?
+        public var isDrawing: Bool
         public var stop: () -> Void
         public var delete: (() -> Void)?
 
@@ -120,6 +127,7 @@ public final class StatusItemController {
             toggleMicrophone: (() -> Void)? = nil,
             microphoneMuted: Bool = false,
             drawOnScreen: (() -> Void)? = nil,
+            isDrawing: Bool = false,
             stop: @escaping () -> Void,
             delete: (() -> Void)? = nil
         ) {
@@ -127,6 +135,7 @@ public final class StatusItemController {
             self.toggleMicrophone = toggleMicrophone
             self.microphoneMuted = microphoneMuted
             self.drawOnScreen = drawOnScreen
+            self.isDrawing = isDrawing
             self.stop = stop
             self.delete = delete
         }
@@ -426,7 +435,9 @@ public final class StatusItemController {
         }
         if let drawOnScreen = actions.drawOnScreen {
             let item = menuTarget.item(for: Entry(
-                title: String(localized: "Draw on Screen", bundle: .module),
+                title: actions.isDrawing
+                    ? String(localized: "Stop Drawing on Screen", bundle: .module)
+                    : String(localized: "Draw on Screen", bundle: .module),
                 perform: drawOnScreen
             ))
             item.image = NSImage(systemSymbolName: "pencil.and.scribble", accessibilityDescription: nil)
@@ -441,6 +452,7 @@ public final class StatusItemController {
         stopItem.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
         menu.addItem(stopItem)
         if let delete = actions.delete {
+            menu.addItem(.separator())
             let deleteItem = menuTarget.item(for: Entry(
                 title: String(localized: "Delete Recording", bundle: .module),
                 perform: delete
@@ -506,7 +518,9 @@ public final class StatusItemController {
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             ])
         }
-        button.setAccessibilityLabel(progress.accessibilityLabel(percent: percent))
+        let label = progress.accessibilityLabel(percent: percent)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
     }
 
     /// The recording ended, or its GIF is made: the icon and its menu come back, or the item goes if
@@ -667,7 +681,7 @@ public final class StatusItemController {
         let menu = NSMenu()
         for child in children() {
             let item = launcherMenuTarget.item(for: child)
-            if let shortcut = child.shortcut { item.setShortcut(for: shortcut.name) }
+            if let shortcut = child.shortcut { item.setShortcut(KeyboardShortcuts.getShortcut(for: shortcut.name)) }
             menu.addItem(item)
         }
         let y = view.isFlipped ? anchor.maxY + 2 : view.bounds.height - anchor.maxY - 2
@@ -677,17 +691,22 @@ public final class StatusItemController {
     private func makeMenu() -> NSMenu {
         menuTarget.removeAll()
         let menu = NSMenu()
+        var addedPriority = false
         for entry in priorityEntries {
             let item = menuTarget.item(for: entry)
             item.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)
             menu.addItem(item)
+            if entry.isHidden?() != true { addedPriority = true }
+        }
+        if addedPriority {
+            menu.addItem(.separator())
         }
         let tools = toolEntries.isEmpty ? [] : [Entry(title: String(localized: "Tools", bundle: .module)) { [toolEntries] in toolEntries }]
         for group in [captureEntries + tools, imageEntries, historyEntries] where !group.isEmpty {
             for entry in group {
                 let item = menuTarget.item(for: entry)
                 if let shortcut = entry.shortcut {
-                    item.setShortcut(for: shortcut.name)
+                    item.setShortcut(KeyboardShortcuts.getShortcut(for: shortcut.name))
                 }
                 menu.addItem(item)
             }
@@ -822,7 +841,7 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
             item.target = self
             item.representedObject = Held(entry)
             if let shortcut = entry.shortcut {
-                item.setShortcut(for: shortcut.name)
+                item.setShortcut(KeyboardShortcuts.getShortcut(for: shortcut.name))
             }
             menu.addItem(item)
         }

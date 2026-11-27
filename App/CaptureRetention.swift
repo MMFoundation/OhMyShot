@@ -50,7 +50,7 @@ final class CaptureRetention {
             .union(editors())
             .union(recordingWindows())
             .union(uploads())
-            .union(clipboard.heldID.map { [$0] } ?? [])
+            .union(clipboard.heldIDs)
             .union(shortcutHolds.heldIDs)
     }
 
@@ -67,6 +67,12 @@ final class CaptureRetention {
     /// With history off, the file stays until the clipboard holds something else, or until the next launch.
     func recordingCopied(_ id: UUID) {
         clipboard.copied(id, retention: settings.historyRetention)
+    }
+
+    /// Several recordings went to the clipboard together as file references (History multi-selection Copy).
+    func recordingsCopied(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        clipboard.copied(ids, retention: settings.historyRetention)
     }
 
     /// Takes away the captures older than Settings keep them, but those something holds. The history is listed off the

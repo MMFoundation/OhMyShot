@@ -8,8 +8,12 @@ import SwiftUI
 public struct HistoryActions {
     public var restore: (HistoryItem) -> Void
     public var copy: (HistoryItem) -> Void
+    /// Async copy hook reporting whether copying actually succeeded before showing UI confirmation.
+    public var copyAsync: ((HistoryItem) async -> Bool)?
     /// Puts several captures' files on the clipboard, as Finder's Copy does with a selection.
     public var copyFiles: ([HistoryItem]) -> Void = { _ in }
+    /// Async multi-file copy hook reporting whether copying succeeded.
+    public var copyFilesAsync: (([HistoryItem]) async -> Bool)?
     public var save: (HistoryItem) -> Void
     /// Asks where and how to save a copy of the capture.
     public var saveAs: (HistoryItem) -> Void = { _ in }

@@ -102,10 +102,10 @@ public enum ImagePrinter {
 
     /// Prints from a Quick Access card and reports completion, including cancellation of the panel.
     public static func printAndWait(_ image: CGImage, pixelsPerPoint: CGFloat, title: String) async -> Bool {
-        nonisolated(unsafe) let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
-        return await withCheckedContinuation { continuation in
+        await withCheckedContinuation { continuation in
             RunLoop.main.perform {
                 MainActor.assumeIsolated {
+                    let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
                     NSApp.activate()
                     continuation.resume(returning: operation.run())
                 }
@@ -115,15 +115,15 @@ public enum ImagePrinter {
 
     /// Shows the print panel for `image`: as a sheet on `window`, else on its own with the app brought forward.
     public static func print(_ image: CGImage, pixelsPerPoint: CGFloat, title: String, from window: NSWindow? = nil) {
-        let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
         if let window, window.isVisible {
+            let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
             operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         } else {
             // On its own the panel runs modally: from the run loop, as an event's action would, since inside a task
             // it would hold every other task on the main actor until it closed.
-            nonisolated(unsafe) let operation = operation
             RunLoop.main.perform {
                 MainActor.assumeIsolated {
+                    let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
                     NSApp.activate()
                     operation.run()
                 }

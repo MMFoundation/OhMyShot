@@ -53,8 +53,10 @@ struct PermissionsSettingsView: View {
         .onAppear {
             permissions.refresh()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            permissions.refresh()
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            if (note.object as? NSWindow)?.frameAutosaveName == "Settings" {
+                permissions.refresh()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissions.refresh()

@@ -417,14 +417,29 @@ extension CompositionRoot {
             return handedOverOrSaidWhy(await files.filesToHandOver(captures))
         }
         // Each in the format Settings choose, as one dragged out would be; none when one of them cannot be.
+        historyActions.copyAsync = { [weak self] entry in
+            guard let self else { return false }
+            return await files.copyToClipboard(fileAt: history.fileURL(for: entry))
+        }
         historyActions.copyFiles = { [weak self] entries in
             guard let self else { return }
             let captures = entries.map { (url: history.fileURL(for: $0), scale: $0.pixelsPerPoint) }
+            let recordingIDs = Set(entries.filter { $0.kind == .recording }.map(\.id))
             Task {
                 if let urls = self.handedOverOrSaidWhy(await self.files.filesToHandOver(captures)) {
                     PasteboardWriter.write(fileURLs: urls)
+                    self.retention.recordingsCopied(recordingIDs)
                 }
             }
+        }
+        historyActions.copyFilesAsync = { [weak self] entries in
+            guard let self else { return false }
+            let captures = entries.map { (url: history.fileURL(for: $0), scale: $0.pixelsPerPoint) }
+            let recordingIDs = Set(entries.filter { $0.kind == .recording }.map(\.id))
+            guard let urls = handedOverOrSaidWhy(await files.filesToHandOver(captures)) else { return false }
+            PasteboardWriter.write(fileURLs: urls)
+            retention.recordingsCopied(recordingIDs)
+            return true
         }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }
@@ -442,7 +457,7 @@ extension CompositionRoot {
 
     /// A recording was edited or put back as it was made: its card shows it as it is now.
     func recordingChanged(_ entry: HistoryItem) {
-        historyWindow?.reload()
+        historyWindow?.reload(changed: [entry.id])
         let url = history.fileURL(for: entry)
         quickAccess.pictureChanged(entry, savedCopyIsStale: true) {
             await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels)

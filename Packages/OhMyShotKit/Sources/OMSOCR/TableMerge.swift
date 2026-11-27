@@ -199,7 +199,7 @@ public enum TableMerge {
         guard rows.count >= 2, rows.contains(where: { $0.count >= 2 }) else { return .small }
         guard !lines.isEmpty else { return .unseen }
         guard !TextAssembler.isCodeListing(lines) else { return .code }
-        guard lines.count { $0.isExact } * 2 < lines.count else { return .appText }
+        guard lines.count(where: { $0.isExact }) * 2 < lines.count else { return .appText }
         let seen = lines.map(\.text).joined(separator: " ")
         let read = rows.flatMap { $0 }.joined(separator: " ")
         // A chart's data holds what its labels say, while Vision also read its axis's steps; a table holds what Vision

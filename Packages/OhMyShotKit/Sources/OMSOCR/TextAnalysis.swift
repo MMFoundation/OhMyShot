@@ -69,7 +69,7 @@ extension VisionPipeline {
         return TextAnalysis(result: result, tables: foundTables, codes: foundCodes)
     }
 
-    private func detectCodes(in image: CGImage) async throws -> [OCRCode] {
+    func detectCodes(in image: CGImage) async throws -> [OCRCode] {
         try await Self.codes(in: image, request: DetectBarcodesRequest(), timeout: options.timeout)
     }
 
@@ -105,7 +105,7 @@ extension VisionPipeline {
         }
     }
 
-    private func documentTables(in image: CGImage) async throws -> [OCRTable] {
+    func documentTables(in image: CGImage) async throws -> [OCRTable] {
         var request = RecognizeDocumentsRequest()
         request.textRecognitionOptions.recognitionLanguages = options.primaryLanguages
         request.textRecognitionOptions.useLanguageCorrection = false

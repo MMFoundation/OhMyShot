@@ -1,4 +1,5 @@
 import AppKit
+@testable import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -51,5 +52,22 @@ struct EscapeHotKeyTests {
         // Its registration is gone with it, so Escape can be taken again.
         #expect(next.arm())
         next.disarm()
+    }
+
+    @Test func sharedHardwarePressDispatchesLIFOAndFallsBackOnDisarm() throws {
+        var first = 0, second = 0
+        let bottom = EscapeHotKey { first += 1 }
+        let top = EscapeHotKey { second += 1 }
+        defer {
+            top.disarm()
+            bottom.disarm()
+        }
+        try #require(bottom.arm())
+        try #require(top.arm())
+        #expect(EscapeHotKey.simulateHardwarePress())
+        #expect(second == 1 && first == 0)
+        top.disarm()
+        #expect(EscapeHotKey.simulateHardwarePress())
+        #expect(second == 1 && first == 1)
     }
 }

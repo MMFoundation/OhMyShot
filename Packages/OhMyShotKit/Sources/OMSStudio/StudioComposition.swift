@@ -289,10 +289,12 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
             // bubble is there from the first frame to the last.
             var cursor = CMTime.zero
             func hold(_ cameraTime: CMTime, until end: CMTime) throws {
-                guard end > cursor else { return }
-                let held = min(max(cameraTime, .zero), cameraEnd - frame)
-                try track.insertTimeRange(CMTimeRange(start: held, duration: frame), of: cameraVideo, at: cursor)
-                track.scaleTimeRange(CMTimeRange(start: cursor, duration: frame), toDuration: end - cursor)
+                guard end > cursor, cameraEnd > .zero else { return }
+                let availableFrame = min(frame, cameraEnd)
+                guard availableFrame > .zero else { return }
+                let held = min(max(cameraTime, .zero), max(.zero, cameraEnd - availableFrame))
+                try track.insertTimeRange(CMTimeRange(start: held, duration: availableFrame), of: cameraVideo, at: cursor)
+                track.scaleTimeRange(CMTimeRange(start: cursor, duration: availableFrame), toDuration: end - cursor)
                 cursor = end
             }
             for range in ranges {

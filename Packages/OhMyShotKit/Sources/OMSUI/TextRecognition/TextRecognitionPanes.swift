@@ -31,7 +31,7 @@ struct RecognizedImagePane: View {
                 let area = geometry.size
                 let actualFactor = 1 / max(model.scale, 1)
                 let fitFactor = max(min((area.width - 48) / size.width, (area.height - 48) / size.height, actualFactor), 0.01)
-                let minFactor = min(fitFactor, actualFactor * 0.25)
+                let minFactor = max(min(fitFactor * 0.5, actualFactor * 0.25), 0.01)
                 let maxFactor = max(actualFactor * 4, fitFactor * 8)
                 let effectiveFactor = min(max(customFactor ?? fitFactor, minFactor), maxFactor)
                 let isFit = customFactor == nil
@@ -122,8 +122,9 @@ struct RecognizedImagePane: View {
                     .accessibilityLabel(translated == nil
                         ? Text("The image being read", bundle: .module)
                         : Text("The image, with the translation over its text", bundle: .module))
-                    .accessibilityValue(model.phase == .ready ? Text("\(model.lines.count) lines of text", bundle: .module) : Text(verbatim: ""))
+                    .accessibilityValue(model.phase == .ready ? Text("\(model.displayedLineCount) lines of text", bundle: .module) : Text(verbatim: ""))
                 }
+                .pointerStyle(selectingArea ? .rectSelection : .default)
                 .gesture(
                     MagnifyGesture()
                         .onChanged { value in
@@ -151,10 +152,19 @@ struct RecognizedImagePane: View {
                         canZoomIn: effectiveFactor < maxFactor * 0.98,
                         zoomOut: {
                             let next = effectiveFactor / 1.25
-                            customFactor = (next <= fitFactor * 1.02 && fitFactor >= minFactor) ? nil : max(next, minFactor)
+                            if effectiveFactor > fitFactor * 1.02, next <= fitFactor * 1.02 {
+                                customFactor = nil
+                            } else {
+                                customFactor = max(next, minFactor)
+                            }
                         },
                         zoomIn: {
-                            customFactor = min(effectiveFactor * 1.25, maxFactor)
+                            let next = effectiveFactor * 1.25
+                            if effectiveFactor < fitFactor * 0.98, next >= fitFactor * 0.98 {
+                                customFactor = nil
+                            } else {
+                                customFactor = min(next, maxFactor)
+                            }
                         },
                         zoomFit: {
                             customFactor = nil
@@ -165,9 +175,31 @@ struct RecognizedImagePane: View {
                     )
                     .padding(12)
                 }
+                .background {
+                    if selectingArea {
+                        Button {
+                            selectingArea = false
+                            dragStart = nil
+                            selectionRect = nil
+                        } label: {
+                            EmptyView()
+                        }
+                        .keyboardShortcut(.cancelAction)
+                        .opacity(0)
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
+                    }
+                }
             }
         }
         .background(.background.secondary)
+        .onChange(of: model.translates) { _, translating in
+            if translating {
+                selectingArea = false
+                dragStart = nil
+                selectionRect = nil
+            }
+        }
         .onChange(of: model.image.map(ObjectIdentifier.init)) { _, _ in
             customFactor = nil
             gestureStartFactor = nil
@@ -363,6 +395,14 @@ struct RecognizedImagePane: View {
             .keyboardShortcut("+", modifiers: .command)
             .accessibilityLabel(Text("Zoom In", bundle: .module))
             .help(Text("Zoom In (⌘+)", bundle: .module))
+            .background {
+                Button(action: zoomIn) { EmptyView() }
+                    .disabled(!canZoomIn)
+                    .keyboardShortcut("=", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 6)

@@ -94,6 +94,12 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         set { model.freshAnalyzer = newValue }
     }
 
+    /// Optional hook wired by the app to build a fresh L2 refiner (without stale screen coordinates) after rotating or cropping.
+    public var freshSecondReadingRefiner: (() -> (@Sendable (CGImage, [OCRLine]) async -> [OCRLine])?)? {
+        get { model.freshSecondReadingRefiner }
+        set { model.freshSecondReadingRefiner = newValue }
+    }
+
     /// Returns the delimiter used to wrap copied LaTeX formulas.
     public var formulaDelimiter: () -> FormulaDelimiter {
         get { model.formulaDelimiter }
@@ -142,11 +148,19 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
     /// the image come into its text as LaTeX once they are read, and its tables and charts as rows.
     public func show(
         image: CGImage, scale: CGFloat, source: String, translating: Bool = false, elements: Elements? = nil,
+        secondReadingRefiner: (@Sendable (CGImage, [OCRLine]) async -> [OCRLine])? = nil,
         analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis
     ) {
-        model.load(image: image, scale: scale, analyze: analyze, elements: elements)
-        if translating { model.translates = true }
-        present(source: source)
+        if model.load(
+            image: image, scale: scale, analyze: analyze, elements: elements,
+            secondReadingRefiner: secondReadingRefiner
+        ) {
+            if translating { model.translates = true }
+            present(source: source)
+        } else {
+            showWindow(nil)
+            AppActivation.bringForward(window)
+        }
     }
 
     /// Whether the translation is shown; it stays on from image to image until turned off.

@@ -20,7 +20,7 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Richer annotation, OCR, and translation
 
 - **Faster markup and copy workflows.** Double-click any tool to lock it, keep Redact in hand across repeated redactions, copy and paste annotations across editors, pick colors from the composited canvas, choose `Copy & Close` or `Copy Without Closing (⌘C)`, cancel Crop cleanly, adjust box corner radius and redaction strength, and run Recognize Text or Print directly from the editor.
-- **Zoomable OCR panel, inline table editing, and instant lens language switching.** Zoom and pan images inside the OCR panel, edit recognized table cells inline and export RFC-4180 CSV or TSV, wrap captured formulas with configurable LaTeX delimiters (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`), switch Translation Lens target languages right inside the lens, and copy, save, or pin translated overlays.
+- **Zoomable OCR panel, inline table editing, and instant lens language switching.** Zoom and pan images inside the OCR panel, edit recognized table cells inline and export RFC-4180 CSV or TSV, wrap captured formulas with configurable LaTeX delimiters (`$...$`, `$$...$$`, `\(...\)`), switch Translation Lens target languages right inside the lens, and copy, save, or pin translated overlays.
 - **Configurable OCR languages and custom model mirrors.** Choose preferred Vision recognition languages, toggle installed model packs individually, and configure custom model-pack download mirrors in Settings.
 
 ### Capture History, Pins, Quick Access, and Automation

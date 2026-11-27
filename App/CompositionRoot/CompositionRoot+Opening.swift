@@ -68,6 +68,13 @@ extension CompositionRoot {
         let pictures: [URL]
         do {
             pictures = try inbox.pictures(inBatch: handoff.batch)
+        } catch ShareInbox.Failure.noPictures {
+            inbox.discard(batch: handoff.batch)
+            inbox.removeStaleBatches()
+            Log.automation.error("Share hand-over refused: no readable pictures")
+            NSSound.beep()
+            openingNotice.show(String(localized: "No readable pictures were found in the shared items."), near: NSEvent.mouseLocation)
+            return
         } catch {
             Log.automation.error("Share hand-over refused: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return NSSound.beep()
@@ -86,13 +93,19 @@ extension CompositionRoot {
                 case .annotate: await annotate(picture, name: url.deletingPathExtension().lastPathComponent)
                 case .pin: pins.pin(picture.image, scale: picture.scale, origin: .clipboard)
                 case .recognizeText:
-                    textCapture.openPanel(image: picture.image, scale: picture.scale, source: url.deletingPathExtension().lastPathComponent)
+                    textCapture.openPanel(
+                        image: picture.image, scale: picture.scale, source: url.deletingPathExtension().lastPathComponent,
+                        newWindow: opened > 0
+                    )
                 }
                 opened += 1
             }
             inbox.discard(batch: handoff.batch)
             inbox.removeStaleBatches()
-            if opened == 0 { NSSound.beep() }
+            if opened == 0 {
+                NSSound.beep()
+                openingNotice.show(String(localized: "No readable pictures were found in the shared items."), near: NSEvent.mouseLocation)
+            }
         }
     }
 

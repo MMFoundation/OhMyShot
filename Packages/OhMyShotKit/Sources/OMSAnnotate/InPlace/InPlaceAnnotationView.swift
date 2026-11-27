@@ -58,6 +58,9 @@ public final class InPlaceAnnotationView: NSView {
     private var finished = false
     private var discard = InPlaceDiscardConfirmation()
     private var discardHint: Task<Void, Never>?
+    private var isArmingDiscard = false
+    /// Tracks a locked tool unlocked by the first click of a double-click so click 2 does not re-lock it.
+    private var unlockedOnFirstClick: (tool: AnnotationTool, at: ContinuousClock.Instant)?
     enum PlacementZone: Equatable {
         case below
         case above
@@ -275,20 +278,19 @@ public final class InPlaceAnnotationView: NSView {
         if fitsBelow {
             newZone = .below
             barY = selection.maxY + gap
-            capsuleY = barY + bar.height + between
         } else if fitsAbove {
             newZone = .above
             barY = selection.minY - gap - bar.height
-            capsuleY = barY - between - pill.height
         } else {
             newZone = .inside
             // Inside the selection: 10 pt clear of the frame as drawn, which steps in at the display's edge.
             let drawn = SelectionChromeView.drawnFrame(for: selection, in: bounds)
             barY = drawn.maxY - gap - bar.height
-            capsuleY = barY - between - pill.height
             barX = min(max(drawn.maxX - gap - bar.width, margin), bounds.maxX - margin - bar.width)
         }
         barY = min(max(barY, margin), bounds.maxY - margin - bar.height)
+        capsuleY = newZone == .below ? barY + bar.height + between : barY - between - pill.height
+        capsuleY = min(max(capsuleY, margin), bounds.maxY - margin - pill.height)
         let targetToolbarFrame = CGRect(x: barX, y: barY, width: bar.width, height: bar.height).integral
         // Against the toolbar's right edge, wherever the toolbar went.
         let capsuleX = min(max(targetToolbarFrame.maxX - pill.width, margin), bounds.maxX - margin - pill.width)
@@ -334,7 +336,8 @@ public final class InPlaceAnnotationView: NSView {
 
     private func sessionChanged(_ event: AnnotationSession.Event) {
         switch event {
-        case .document, .selection, .settings, .tool: clearDiscardHint()
+        case .document, .selection, .settings, .tool:
+            if !isArmingDiscard { clearDiscardHint() }
         case .history, .suggestions, .textLines: break
         }
         switch event {
@@ -372,10 +375,16 @@ public final class InPlaceAnnotationView: NSView {
     /// The chip of the tool in hand puts it down again: the selection itself or its marks are adjusted then.
     private func choose(_ tool: AnnotationTool) {
         clearDiscardHint()
-        if tool == .select {
-            session.tool = .select
+        if session.tool == tool, session.isToolLocked {
+            session.isToolLocked = false
+            unlockedOnFirstClick = (tool, .now)
         } else {
-            session.tool = session.tool == tool ? .select : tool
+            unlockedOnFirstClick = nil
+            if tool == .select {
+                session.tool = .select
+            } else {
+                session.tool = session.tool == tool ? .select : tool
+            }
         }
         window?.makeFirstResponder(canvas)
     }
@@ -383,6 +392,14 @@ public final class InPlaceAnnotationView: NSView {
     private func lock(_ tool: AnnotationTool) {
         guard tool.isPutDownAfterMark else { return }
         clearDiscardHint()
+        if let recent = unlockedOnFirstClick, recent.tool == tool,
+           recent.at.duration(to: .now) <= .seconds(NSEvent.doubleClickInterval) {
+            unlockedOnFirstClick = nil
+            VoiceOver.announce(String(localized: "\(tool.name) unlocked", bundle: .module), from: toolbar)
+            window?.makeFirstResponder(canvas)
+            return
+        }
+        unlockedOnFirstClick = nil
         if session.tool == tool, session.isToolLocked {
             session.isToolLocked = false
             VoiceOver.announce(String(localized: "\(tool.name) unlocked", bundle: .module), from: toolbar)
@@ -405,6 +422,11 @@ public final class InPlaceAnnotationView: NSView {
             if discard.mayDiscard(hasMarks: hasMarks) {
                 finish { $0.cancel() }
             } else if let deadline = discard.deadline {
+                // Put down any active tool or selection so the confirmation Escape discards immediately.
+                isArmingDiscard = true
+                if !session.selection.isEmpty { session.select([]) }
+                if session.tool != .select { session.tool = .select }
+                isArmingDiscard = false
                 let hint = String(localized: "Press Esc again or click Cancel to discard your marks.", bundle: .module)
                 chrome.reading = hint
                 VoiceOver.announce(hint, from: self)

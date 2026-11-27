@@ -430,25 +430,14 @@ final class CountdownDisc: NSView {
 }
 
 /// Ephemeral Escape key monitor active only while a countdown runs (zero idle wakeups).
-/// Uses a Carbon hot key so Escape cancels even when another app is frontmost, with a local NSEvent fallback.
+/// Shares `EscapeHotKey`'s single Carbon hot key stack so Escape cancels even when another app is frontmost,
+/// with a local NSEvent fallback if another app owns global Escape.
 private final class CountdownEscapeMonitor {
-    private nonisolated static let signature: OSType = 0x4F_4D_53_43 // OMSC
-    private static var handler: EventHandlerRef?
-    private static var armed: [UInt32: Weak] = [:]
-    private static var lastID: UInt32 = 0
-
-    private struct Weak {
-        weak var monitor: CountdownEscapeMonitor?
-    }
-
-    private let id: UInt32
     private let onEscape: () -> Void
-    private var hotKey: EventHotKeyRef?
+    private var escapeHotKey: EscapeHotKey?
     private var localMonitor: Any?
 
     init(onEscape: @escaping () -> Void) {
-        Self.lastID += 1
-        id = Self.lastID
         self.onEscape = onEscape
     }
 
@@ -457,19 +446,13 @@ private final class CountdownEscapeMonitor {
     }
 
     func arm() {
-        guard hotKey == nil, localMonitor == nil else { return }
-        if Self.installHandler() {
-            var ref: EventHotKeyRef?
-            let status = RegisterEventHotKey(
-                UInt32(kVK_Escape), 0, EventHotKeyID(signature: Self.signature, id: id), GetEventDispatcherTarget(), 0, &ref
-            )
-            if status == noErr, let ref {
-                hotKey = ref
-                Self.armed[id] = Weak(monitor: self)
-                return
-            }
+        guard escapeHotKey == nil, localMonitor == nil else { return }
+        let hotKey = EscapeHotKey(pressed: onEscape)
+        if hotKey.arm() {
+            escapeHotKey = hotKey
+            return
         }
-        // Fallback when another global Escape hot key is already registered: catch Escape while OhMyShot is active.
+        // Fallback when another app already owns Escape globally: catch Escape while OhMyShot is active.
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == UInt16(kVK_Escape),
                   event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return event }
@@ -479,44 +462,11 @@ private final class CountdownEscapeMonitor {
     }
 
     func disarm() {
-        if let hotKey {
-            UnregisterEventHotKey(hotKey)
-            self.hotKey = nil
-            Self.armed[id] = nil
-        }
+        escapeHotKey?.disarm()
+        escapeHotKey = nil
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
     }
-
-    private static func installHandler() -> Bool {
-        guard handler == nil else { return true }
-        var types = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))]
-        let status = InstallEventHandler(GetEventDispatcherTarget(), countdownEscapeHandler, types.count, &types, nil, &handler)
-        if status != noErr {
-            Log.capture.error("Countdown Escape handler couldn't be installed: \(status, privacy: .public)")
-            return false
-        }
-        return true
-    }
-
-    fileprivate nonisolated static func handle(_ event: EventRef?) -> OSStatus {
-        guard let event else { return OSStatus(eventNotHandledErr) }
-        var hotKeyID = EventHotKeyID()
-        let status = GetEventParameter(
-            event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
-            MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID
-        )
-        guard status == noErr, hotKeyID.signature == signature else { return OSStatus(eventNotHandledErr) }
-        let id = hotKeyID.id
-        MainActor.assumeIsolated {
-            armed[id]?.monitor?.onEscape()
-        }
-        return noErr
-    }
-}
-
-private let countdownEscapeHandler: EventHandlerUPP = { _, event, _ in
-    CountdownEscapeMonitor.handle(event)
 }

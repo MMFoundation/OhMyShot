@@ -635,9 +635,15 @@ final class RecordingCoordinator {
         session?.plan.choices.recordsMicrophone ?? false
     }
 
-    /// Updates the Draw on Screen button's active appearance in the floating recording control bar.
+    private var isDrawing = false
+
+    /// Updates the Draw on Screen button's active appearance in the floating recording control bar and status menu.
     func setDrawing(_ active: Bool) {
+        isDrawing = active
         controls.update(drawing: active)
+        if let session {
+            report(.recording(time: RecordingControlBar.format(session.recorder.elapsed), paused: session.recorder.state == .paused))
+        }
     }
 
     /// Pauses or resumes the active recording.
@@ -695,6 +701,7 @@ final class RecordingCoordinator {
         switch drafts.restartDecision() {
         case .restart:
             phase = .idle
+            detachCameraNow(session.camera)
             endChrome()
             discard(session)
             prepare(session.plan)
@@ -703,20 +710,43 @@ final class RecordingCoordinator {
         }
     }
 
+    /// Confirms before discarding the active recording from the status bar menu (prevents accidental single-click loss).
+    func confirmAndDelete() {
+        guard session != nil else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Delete Recording?")
+        alert.informativeText = String(localized: "The current recording will be permanently discarded.")
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.addButton(withTitle: String(localized: "Delete"))
+        alert.buttons.last?.hasDestructiveAction = true
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertSecondButtonReturn {
+            delete()
+        }
+    }
+
     /// Stops and throws the recording away.
     func delete() {
         guard let session else { return }
         phase = .idle
+        detachCameraNow(session.camera)
         endChrome()
         discard(session)
         VoiceOver.announce(String(localized: "Recording deleted."))
+    }
+
+    private func detachCameraNow(_ recorder: CameraRecorder?) {
+        guard let recorder else { return }
+        camera.onFillChange = nil
+        camera.detach(recorder.output)
     }
 
     private func discard(_ session: Session) {
         session.telemetry?.stop()
         Task {
             await session.checkpointer?.cancel()
-            await endCameraRecording(session.camera)
+            await session.camera?.cancel()
             await session.recorder.cancel()
             drafts.remove(session.draft)
         }
@@ -1312,13 +1342,13 @@ final class RecordingCoordinator {
         case .starting, .recording: stop()
         case .idle: break
         }
-        // Edits in an open recording window are kept as its closing keeps them.
-        for window in windows.values where window.hasUnkeptEdits {
+        // Edits in an open recording window are kept (and any in-flight GIF export is stopped) as its closing runs.
+        for window in windows.values where window.hasUnkeptEdits || window.isMakingGIF {
             finishing += 1
             window.close { [weak self] in self?.finished() }
         }
         // A GIF being made in Studio is stopped as its window closes, and its files removed before the app quits.
-        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave || window.isMakingGIF {
+        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave || window.isMakingGIF || window.isExportingPackage {
             finishing += 1
             window.closeIfSaved { [weak self] saved in self?.finished(permitsQuit: saved) }
         }
@@ -1368,6 +1398,8 @@ final class RecordingCoordinator {
 
     /// Open Studio windows, by the recording's place in the history.
     private var studioWindows: [UUID: StudioWindowController] = [:]
+    /// Studio recordings currently loading assets asynchronously, preventing duplicate competing windows on double-click.
+    private var openingStudio: Set<UUID> = []
     /// The display each Studio recording was made on, for the card its first movie brings.
     private var studioDisplays: [UUID: CGDirectDisplayID] = [:]
 
@@ -1379,6 +1411,9 @@ final class RecordingCoordinator {
             if shows { window.show() }
             return
         }
+        guard !openingStudio.contains(entry.id) else { return }
+        openingStudio.insert(entry.id)
+        defer { openingStudio.remove(entry.id) }
         let folder = history.studioURL(for: entry)
         guard
             let data = try? Data(contentsOf: folder.appending(path: StudioFiles.telemetry)),
@@ -1500,7 +1535,14 @@ final class RecordingCoordinator {
             let imported = try await Self.stageStudioPackageImport(from: packageURL, movieURL: stagedMovie, studioFolder: stagedStudio)
             let asset = AVURLAsset(url: stagedMovie)
             let duration = try await asset.load(.duration).seconds
-            let size = try await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize) ?? .zero
+            guard duration.isFinite, duration > 0,
+                  let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
+                throw StudioPackage.PackageError.missingMovie
+            }
+            let size = try await videoTrack.load(.naturalSize)
+            guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
+                throw StudioPackage.PackageError.missingMovie
+            }
             let pixelWidth = max(2, Int(size.width.rounded()))
             let pixelHeight = max(2, Int(size.height.rounded()))
             let name = packageURL.deletingPathExtension().lastPathComponent
@@ -1772,6 +1814,7 @@ final class RecordingCoordinator {
                 by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight,
                 microphone: plan.choices.recordsMicrophone ? .metered : microphoneDenied ? .denied : .none
             )
+            controls.update(drawing: isDrawing)
         }
         if plan.choices.recordsMicrophone || plan.choices.recordsSystemAudio { startMeter() }
         startTicking()

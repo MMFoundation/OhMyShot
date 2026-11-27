@@ -329,7 +329,7 @@ struct UploadDestinationEditor: View {
         }
         return SettingsTestRow(
             state: test, title: Text("Test Upload", bundle: .module),
-            help: help, succeedsWithLink: true,
+            help: help, succeedsWithLink: draft.kind == .customHTTP,
             cancel: cancelTest,
             run: runTest
         )
@@ -347,12 +347,18 @@ struct UploadDestinationEditor: View {
             return
         }
         test = .running
+        let kind = draft.kind
         let uploader = Uploader(secrets: draft.secretStore(over: destinations.secrets))
         testTask?.cancel()
         testTask = Task {
             do {
                 let result = try await uploader.testUpload(to: built.destination)
-                if !Task.isCancelled { test = .succeeded(result.link.absoluteString) }
+                guard !Task.isCancelled else { return }
+                if kind == .customHTTP {
+                    test = .succeeded(result.link.absoluteString)
+                } else {
+                    test = .succeeded(String(localized: "Test image uploaded and removed.", bundle: .module))
+                }
             } catch is CancellationError {
                 test = .idle
             } catch {
@@ -403,14 +409,24 @@ private struct ValueRows: View {
                         TextField(text: $row.value, prompt: prompt) { Text("Value", bundle: .module) }
                             .labelsHidden()
                     }
+                    let storedUnedited = row.isStored && row.value.isEmpty
                     Button {
                         revealedOverrides[row.id] = masked
                     } label: {
-                        Image(systemName: masked ? "eye" : "eye.slash")
+                        Image(systemName: storedUnedited ? "lock.fill" : (masked ? "eye" : "eye.slash"))
                     }
                     .buttonStyle(.borderless)
-                    .help(masked ? Text("Show value", bundle: .module) : Text("Hide value", bundle: .module))
-                    .accessibilityLabel(masked ? Text("Show value", bundle: .module) : Text("Hide value", bundle: .module))
+                    .disabled(storedUnedited)
+                    .help(
+                        storedUnedited
+                            ? Text("Saved in the Keychain. Type a new value to replace it.", bundle: .module)
+                            : (masked ? Text("Show value", bundle: .module) : Text("Hide value", bundle: .module))
+                    )
+                    .accessibilityLabel(
+                        storedUnedited
+                            ? Text("Saved in Keychain", bundle: .module)
+                            : (masked ? Text("Show value", bundle: .module) : Text("Hide value", bundle: .module))
+                    )
                     Button {
                         revealedOverrides.removeValue(forKey: row.id)
                         rows.removeAll { $0.id == row.id }

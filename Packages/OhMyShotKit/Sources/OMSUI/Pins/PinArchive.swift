@@ -81,7 +81,11 @@ nonisolated final class PinArchive: Sendable {
     private func writePicture(_ image: CGImage, onBackground: Data?, id: UUID) {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            if let onBackground { writeBackground(onBackground, id: id) }
+            if let onBackground {
+                writeBackground(onBackground, id: id)
+            } else {
+                try? FileManager.default.removeItem(at: backgroundURL(id))
+            }
             try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: pictureURL(id))
         } catch {
             Log.app.error("Could not keep a pin's picture: \(error.localizedDescription, privacy: .public)")

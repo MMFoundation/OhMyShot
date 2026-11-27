@@ -49,7 +49,7 @@ final class CaptureCoordinator {
     /// Ephemeral desktop icon cover used when "Hide desktop icons while capturing" is turned on.
     var desktopIcons: DesktopCover?
 
-    private final class TemporaryDesktopHide {
+    final class TemporaryDesktopHide {
         private weak var cover: DesktopCover?
 
         init(_ cover: DesktopCover) {
@@ -67,15 +67,24 @@ final class CaptureCoordinator {
         }
     }
 
+    /// Guards against overlapping overlay starts while awaiting an ephemeral desktop cover refresh.
+    private var preparingOverlay = false
+
     /// Runs `action` synchronously when ephemeral desktop hiding is off, or after the cover has refreshed when on.
     private func runWithTemporaryDesktopCover(_ action: @escaping (TemporaryDesktopHide?) -> Void) {
-        guard settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons, !cover.isShown else {
+        guard settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons else {
             action(nil)
             return
         }
+        guard !preparingOverlay else {
+            action(nil)
+            return
+        }
+        preparingOverlay = true
         let token = TemporaryDesktopHide(cover)
-        Task {
+        Task { [weak self] in
             await cover.waitForRefresh()
+            self?.preparingOverlay = false
             action(token)
         }
     }
@@ -283,8 +292,10 @@ final class CaptureCoordinator {
                 Task { await deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
             } else {
                 Task {
-                    defer { desktopHide?.release() }
-                    await captureArea(area, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp)
+                    await captureArea(
+                        area, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard,
+                        followUp: followUp, desktopHide: desktopHide
+                    )
                 }
             }
         case .text:
@@ -462,6 +473,12 @@ final class CaptureCoordinator {
         finishCancelledSelfTimer()
     }
 
+    /// Cancels an active capture overlay or running Self-Timer countdown (e.g. when a Shortcuts intent is cancelled).
+    func cancelInteractiveCapture() {
+        if overlay.isActive { overlay.cancel() }
+        cancelSelfTimer()
+    }
+
     private func finishCancelledSelfTimer() {
         timerFollowUp?.finish(nil)
         timerFollowUp = nil
@@ -536,7 +553,7 @@ final class CaptureCoordinator {
         let title = frontWindowTitle()
         Task {
             let desktopHide: TemporaryDesktopHide?
-            if settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons, !cover.isShown {
+            if settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons {
                 let token = TemporaryDesktopHide(cover)
                 await cover.waitForRefresh()
                 desktopHide = token
@@ -588,10 +605,13 @@ final class CaptureCoordinator {
     ///   scripted test captures never replace what the user copied.
     func captureArea(
         _ rect: CGRect, appName: String?, windowTitle: String? = nil, copiesToClipboard: Bool = true,
-        followUp: CaptureFollowUp = .none, transientSnapshots: [TransientCaptureSnapshot] = []
+        followUp: CaptureFollowUp = .none, transientSnapshots: [TransientCaptureSnapshot] = [],
+        desktopHide existingDesktopHide: TemporaryDesktopHide? = nil
     ) async {
         let desktopHide: TemporaryDesktopHide?
-        if settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons, !cover.isShown {
+        if let existingDesktopHide {
+            desktopHide = existingDesktopHide
+        } else if settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons {
             let token = TemporaryDesktopHide(cover)
             await cover.waitForRefresh()
             desktopHide = token
@@ -662,13 +682,13 @@ final class CaptureCoordinator {
         mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil, area: CGRect? = nil,
         followUp: CaptureFollowUp = .none, includingLauncherWindowID: CGWindowID? = nil
     ) {
-        guard !overlay.isActive else { return followUp.finish(nil) }
+        guard !overlay.isActive, !preparingOverlay else { return followUp.finish(nil) }
         // A new capture replaces a Self-Timer still counting down, rather than leaving it under the overlay.
         cancelSelfTimer()
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        runWithTemporaryDesktopCover { [weak self] desktopHide in
+        let startOverlay: (TemporaryDesktopHide?) -> Void = { [weak self] desktopHide in
             guard let self, !overlay.isActive else { desktopHide?.release(); followUp.finish(nil); return }
             configureCaptureOverlay()
             overlay.begin(
@@ -686,10 +706,9 @@ final class CaptureCoordinator {
                 case .region(let rect, _, _, nil):
                     previousArea = rect
                     Task {
-                        defer { desktopHide?.release() }
                         await self.captureArea(
                             rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard,
-                            followUp: followUp, transientSnapshots: transientSnapshots
+                            followUp: followUp, transientSnapshots: transientSnapshots, desktopHide: desktopHide
                         )
                     }
                 case .window(let target, let modifiers):
@@ -709,6 +728,12 @@ final class CaptureCoordinator {
                     followUp.finish(nil)
                 }
             }
+        }
+        // Capture Window uses the Window Picker and captures desktop-independent windows, so skip temporary desktop cover.
+        if mode == .windowPicker {
+            startOverlay(nil)
+        } else {
+            runWithTemporaryDesktopCover(startOverlay)
         }
     }
 

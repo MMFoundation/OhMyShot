@@ -71,9 +71,17 @@ struct RecognizedTextEditor: NSViewRepresentable {
             textView.typingAttributes[.font] = font
             coordinator.styleTables(force: true)
         }
+        var preservedScroll = false
         if coordinator.appliedRevision != model.revision {
-            coordinator.apply(model.text, undoable: coordinator.appliedRevision != nil)
+            let preserve = model.preserveViewStateRevision == model.revision
+            let savedOrigin = scrollView.contentView.bounds.origin
+            coordinator.apply(model.text, undoable: coordinator.appliedRevision != nil && !preserve)
             coordinator.appliedRevision = model.revision
+            if preserve {
+                scrollView.contentView.scroll(to: savedOrigin)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                preservedScroll = true
+            }
         }
         coordinator.styleLinks(model.items)
         let length = (textView.string as NSString).length
@@ -82,7 +90,9 @@ struct RecognizedTextEditor: NSViewRepresentable {
         if textView.selectedRange() != selection, !coordinator.isReportingSelection {
             coordinator.isApplyingSelection = true
             textView.setSelectedRange(selection)
-            OCRTextWrapping.reveal(selection, in: textView)
+            if !preservedScroll {
+                OCRTextWrapping.reveal(selection, in: textView)
+            }
             coordinator.isApplyingSelection = false
         }
         // A line picked on the image: the text takes focus, so its selection is live and ⌘C copies it.

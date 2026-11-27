@@ -44,7 +44,14 @@ public final class ModelPackCenter {
     @ObservationIgnored private let store: ModelPackStore
     @ObservationIgnored private let downloader: ModelPackDownloader
     @ObservationIgnored private var downloads: [String: Download] = [:]
-    @ObservationIgnored private var preparing: Set<String> = []
+    @ObservationIgnored private var preparingTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var stateGeneration: [String: UInt64] = [:]
+
+    private func bumpGeneration(_ id: String) -> UInt64 {
+        let next = (stateGeneration[id] ?? 0) &+ 1
+        stateGeneration[id] = next
+        return next
+    }
 
     private final class Download {
         var task: Task<Void, Never>?
@@ -88,7 +95,7 @@ public final class ModelPackCenter {
         let store = store, packs = packs
         let (found, removed) = await Self.read(packs, in: store)
         if removed { onRemoved?() }
-        for pack in packs where downloads[pack.id] == nil && !preparing.contains(pack.id) {
+        for pack in packs where downloads[pack.id] == nil && preparingTasks[pack.id] == nil {
             let state = found[pack.id] ?? .available
             if case .failed(let message, _) = states[pack.id] {
                 switch state {
@@ -163,11 +170,12 @@ public final class ModelPackCenter {
 
     /// Downloads the pack, or goes on with a download paused, update-available, or failed. Asking for one under way does nothing.
     public func download(_ pack: ModelPack, customMirror overrideMirror: String? = nil) {
-        guard packs.contains(pack), downloads[pack.id] == nil, !preparing.contains(pack.id) else { return }
+        guard packs.contains(pack), downloads[pack.id] == nil, preparingTasks[pack.id] == nil else { return }
         switch state(of: pack) {
         case .installed, .preparing: return
         default: break
         }
+        _ = bumpGeneration(pack.id)
         let download = Download()
         downloads[pack.id] = download
         states[pack.id] = .downloading(done: done(of: pack))
@@ -198,23 +206,27 @@ public final class ModelPackCenter {
         if downloads[pack.id] != nil {
             stop(pack, .cancel)
         } else {
+            let gen = bumpGeneration(pack.id)
             let store = store
-            Task {
+            Task { [weak self] in
                 await Self.removing { try store.removeDownload(of: pack) }
+                guard let self, stateGeneration[pack.id] == gen, downloads[pack.id] == nil, preparingTasks[pack.id] == nil else { return }
                 states[pack.id] = .available
             }
         }
     }
 
-    /// Removes the pack from this Mac, a download under way included.
+    /// Removes the pack from this Mac, a download or preparation under way included.
     public func remove(_ pack: ModelPack) {
-        preparing.remove(pack.id)
+        let gen = bumpGeneration(pack.id)
+        preparingTasks.removeValue(forKey: pack.id)?.cancel()
         if downloads[pack.id] != nil {
             stop(pack, .remove)
         } else {
             let store = store
-            Task {
+            Task { [weak self] in
                 await Self.removing { try store.remove(pack) }
+                guard let self, stateGeneration[pack.id] == gen, downloads[pack.id] == nil, preparingTasks[pack.id] == nil else { return }
                 states[pack.id] = .available
                 onRemoved?()
             }
@@ -248,14 +260,19 @@ public final class ModelPackCenter {
             downloads[pack.id] = nil
             let folder = store.folder(of: pack)
             if let prepareInstalled {
-                preparing.insert(pack.id)
+                let gen = bumpGeneration(pack.id)
                 states[pack.id] = .preparing(receipt)
-                await prepareInstalled(pack, folder)
-                let stillPreparing = preparing.remove(pack.id) != nil
-                if stillPreparing, states[pack.id] == .preparing(receipt) {
-                    states[pack.id] = .installed(receipt)
-                    onInstalled?(pack, folder)
+                let task = Task { @MainActor [weak self] in
+                    await prepareInstalled(pack, folder)
+                    guard let self, !Task.isCancelled, stateGeneration[pack.id] == gen else { return }
+                    preparingTasks[pack.id] = nil
+                    if states[pack.id] == .preparing(receipt) {
+                        states[pack.id] = .installed(receipt)
+                        onInstalled?(pack, folder)
+                    }
                 }
+                preparingTasks[pack.id] = task
+                await task.value
             } else {
                 states[pack.id] = .installed(receipt)
                 onInstalled?(pack, folder)

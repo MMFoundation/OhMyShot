@@ -35,7 +35,7 @@ extension CompositionRoot {
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
             annotate: { [weak self] pin in
                 guard let self, case .image(let image, let scale) = pin.content else { return }
-                if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
+                if let entry = unchangedCapture(of: pin) {
                     annotations.annotate(entry, scale: scale)
                 } else {
                     Task { await self.annotate(image: image, scale: scale, pixelsPerPoint: Double(scale), name: String(localized: "Pin")) }
@@ -54,11 +54,11 @@ extension CompositionRoot {
                 if let entry = unchangedCapture(of: pin) {
                     return handedOverOrSaidWhy(files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint))
                 }
-                if case .file = pin.origin {
+                if case .file = pin.origin, pin.pinnedAt != .distantPast {
                     return pin.ownFile()
                 }
-                // A capture's or clipboard pin hands over what it shows as Settings write it; a file pin goes as it came.
-                return handedOverOrSaidWhy(files.fileToHandOver(pin: pin.id, scale: Double(scale)) {
+                // A capture's, clipboard, or transformed pin hands over what it shows as Settings write it; an untouched file pin goes as it came.
+                return handedOverOrSaidWhy(files.fileToHandOver(pin: pin.id, revision: pin.imageRevision, scale: Double(scale)) {
                     try PinController.Pin.pictureForHandOver(
                         image, onBackground: pin.onBackground, requiresBackground: pin.requiresBackground
                     )

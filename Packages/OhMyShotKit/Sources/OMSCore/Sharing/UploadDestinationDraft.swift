@@ -99,7 +99,8 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
         stored = storedSecrets
         switch destination.configuration {
         case .s3(let settings):
-            let isAWS = !settings.usesPathStyle && settings.endpoint == S3Settings.aws(region: settings.region, bucket: settings.bucket).endpoint
+            let isAWS = !settings.usesPathStyle
+                && S3Settings.awsEndpoint(region: settings.region)?.absoluteString.caseInsensitiveCompare(settings.endpoint.absoluteString) == .orderedSame
             kind = isAWS ? .amazonS3 : .s3Compatible
             endpoint = settings.endpoint.absoluteString
             region = settings.region
@@ -175,11 +176,19 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
         if kind == .s3Compatible, Self.httpURL(endpoint) == nil {
             return String(localized: "Enter the endpoint, such as https://s3.example.com.", bundle: .module)
         }
-        if region.trimmed.isEmpty { return String(localized: "Enter the region.", bundle: .module) }
+        let trimmedRegion = region.trimmed
+        if trimmedRegion.isEmpty { return String(localized: "Enter the region.", bundle: .module) }
+        if kind == .amazonS3 {
+            if S3Settings.awsEndpoint(region: trimmedRegion) == nil {
+                return String(localized: "Enter the region.", bundle: .module)
+            }
+        } else if trimmedRegion.rangeOfCharacter(from: .whitespacesAndNewlines) != nil || trimmedRegion.contains("/") {
+            return String(localized: "Enter the region.", bundle: .module)
+        }
         if bucket.trimmed.isEmpty { return String(localized: "Enter the bucket name.", bundle: .module) }
         if accessKeyID.trimmed.isEmpty, !isStored(SecretField.s3AccessKeyID) { return String(localized: "Enter the access key ID.", bundle: .module) }
         if secretAccessKey.isEmpty, !isStored(SecretField.s3SecretAccessKey) { return String(localized: "Enter the secret access key.", bundle: .module) }
-        if !publicBaseURL.trimmed.isEmpty, Self.httpURL(publicBaseURL) == nil {
+        if linkStyle == .publicURL, !publicBaseURL.trimmed.isEmpty, Self.httpURL(publicBaseURL) == nil {
             return String(localized: "The public address must start with http:// or https://.", bundle: .module)
         }
         return nil
@@ -206,7 +215,8 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
             return error.localizedDescription
         }
         if fileFormName.trimmed.isEmpty, bodyType == .multipartFormData { return String(localized: "Enter the name of the form field the file goes in.", bundle: .module) }
-        for rows in [parameters, headers, arguments] {
+        let rowGroups = bodyType == .multipartFormData ? [parameters, headers, arguments] : [parameters, headers]
+        for rows in rowGroups {
             let names = rows.map { $0.name.trimmed }
             if names.contains("") { return String(localized: "Fill in or remove the empty row.", bundle: .module) }
             if Set(names).count != names.count { return String(localized: "Two rows have the same name.", bundle: .module) }
@@ -254,15 +264,21 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
         let prefix = keyPrefix.trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         switch kind {
         case .amazonS3, .s3Compatible:
-            let aws = S3Settings.aws(region: region.trimmed, bucket: bucket.trimmed)
+            let resolvedEndpoint: URL? = kind == .amazonS3
+                ? S3Settings.awsEndpoint(region: region.trimmed)
+                : Self.httpURL(endpoint)
+            guard let resolvedEndpoint else { return nil }
+            let resolvedPublicBaseURL: URL? = linkStyle == .publicURL && !publicBaseURL.trimmed.isEmpty
+                ? Self.httpURL(publicBaseURL)
+                : nil
             var settings = S3Settings(
-                endpoint: kind == .amazonS3 ? aws.endpoint : Self.httpURL(endpoint)!,
+                endpoint: resolvedEndpoint,
                 region: region.trimmed,
                 bucket: bucket.trimmed,
                 usesPathStyle: kind == .amazonS3 ? false : usesPathStyle,
                 keyPrefix: prefix,
                 acl: acl.trimmed.isEmpty ? nil : acl.trimmed,
-                publicBaseURL: publicBaseURL.trimmed.isEmpty ? nil : Self.httpURL(publicBaseURL),
+                publicBaseURL: resolvedPublicBaseURL,
                 linkStyle: linkStyle
             )
             settings.presignedDays = presignedDays
@@ -280,6 +296,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
             let secrets = password.isEmpty ? [:] : [SecretField.webDAVPassword: password]
             return (UploadDestination(id: id, name: title, fileNaming: fileNaming, configuration: .webDAV(settings)), secrets)
         case .customHTTP:
+            let activeArguments = bodyType == .multipartFormData ? arguments : []
             let settings = CustomHTTPSettings(
                 method: method,
                 requestURL: requestURL.trimmed,
@@ -287,7 +304,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
                 headerNames: headers.map { $0.name.trimmed },
                 bodyType: bodyType,
                 fileFormName: fileFormName.trimmed,
-                argumentNames: arguments.map { $0.name.trimmed },
+                argumentNames: activeArguments.map { $0.name.trimmed },
                 urlTemplate: urlTemplate.trimmed,
                 deletionURLTemplate: deletionURLTemplate.trimmed,
                 thumbnailURLTemplate: thumbnailURLTemplate.trimmed,
@@ -296,7 +313,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
             var secrets: [String: String] = [:]
             for row in parameters where !row.value.isEmpty { secrets[SecretField.parameter(row.name.trimmed)] = row.value }
             for row in headers where !row.value.isEmpty { secrets[SecretField.header(row.name.trimmed)] = row.value }
-            for row in arguments where !row.value.isEmpty { secrets[SecretField.argument(row.name.trimmed)] = row.value }
+            for row in activeArguments where !row.value.isEmpty { secrets[SecretField.argument(row.name.trimmed)] = row.value }
             return (UploadDestination(id: id, name: title, fileNaming: fileNaming, configuration: .customHTTP(settings)), secrets)
         }
     }

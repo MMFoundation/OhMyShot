@@ -43,12 +43,24 @@ final class RetentionSelection: HistoryRetentionProposal {
         settings.replaceRetentionProposal(with: self)
         counting = retention
         scan = Task { [weak self, preview] in
-            guard !Task.isCancelled else { return }
-            let counts = await preview(retention)
+            var resolved: RetentionPreviewCounts?
+            for attempt in 0..<3 {
+                guard !Task.isCancelled else { return }
+                if let counts = await preview(retention) {
+                    resolved = counts
+                    break
+                }
+                if attempt < 2 {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+            }
             guard let self, !Task.isCancelled else { return }
             scan = nil
             counting = nil
-            guard let counts else { return }
+            guard let counts = resolved else {
+                settings.replaceRetentionProposal(with: nil)
+                return
+            }
             if counts.count > 0 || previewOnly {
                 request = RetentionChangeRequest(retention: retention, count: counts.count, favorites: counts.favorites)
             } else {

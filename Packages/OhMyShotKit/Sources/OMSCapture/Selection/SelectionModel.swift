@@ -19,9 +19,26 @@ public struct SelectionModel: Equatable, Sendable {
         public static let unsnapped = Modifiers(rawValue: 1 << 2)
     }
 
+    public struct DisplayBounds: Equatable, Sendable {
+        public let frame: CGRect
+        public let pixelsPerPoint: CGFloat
+
+        public init(frame: CGRect, pixelsPerPoint: CGFloat) {
+            self.frame = frame
+            self.pixelsPerPoint = max(pixelsPerPoint, 1)
+        }
+    }
+
     /// The display's frame, or the box around every display; the selection never leaves it.
     public let bounds: CGRect
-    public let pixelsPerPoint: CGFloat
+    private let basePixelsPerPoint: CGFloat
+    /// Individual display frames and pixel densities when spanning multiple displays; empty for single-bounds usage.
+    public let displays: [DisplayBounds]
+    /// The active framebuffer scale for the current selection (the sharpest display intersected by `rect`, or the
+    /// display under `anchor`/`pointer`, falling back to the initializer scale).
+    public var pixelsPerPoint: CGFloat {
+        scale(for: rect, fallbackPoint: anchor ?? pointer)
+    }
     /// The shape `.square` keeps, width over height; 1, a square, unless set.
     public var shape: CGFloat = 1
 
@@ -37,9 +54,10 @@ public struct SelectionModel: Equatable, Sendable {
     /// Unsnapped was asked for during this drag: its edges stay where the pointer puts them until the next one.
     private var placedFreely = false
 
-    public init(bounds: CGRect, pixelsPerPoint: CGFloat) {
+    public init(bounds: CGRect, pixelsPerPoint: CGFloat, displays: [DisplayBounds] = []) {
         self.bounds = bounds
-        self.pixelsPerPoint = max(pixelsPerPoint, 1)
+        self.basePixelsPerPoint = max(pixelsPerPoint, 1)
+        self.displays = displays
     }
 
     public mutating func begin(at point: CGPoint) {
@@ -150,6 +168,32 @@ public struct SelectionModel: Equatable, Sendable {
         var moved = rect.offsetBy(dx: delta.dx, dy: delta.dy)
         moved.origin.x = min(max(moved.minX, bounds.minX), bounds.maxX - moved.width)
         moved.origin.y = min(max(moved.minY, bounds.minY), bounds.maxY - moved.height)
+        if displays.count > 1 {
+            let xSpan = displays.filter { $0.frame.maxX > moved.minX && $0.frame.minX < moved.maxX }
+            if !xSpan.isEmpty {
+                let minY = xSpan.map(\.frame.minY).max() ?? bounds.minY
+                let maxY = xSpan.map(\.frame.maxY).min() ?? bounds.maxY
+                if maxY - minY >= moved.height {
+                    moved.origin.y = min(max(moved.minY, minY), maxY - moved.height)
+                } else {
+                    let unionMinY = xSpan.map(\.frame.minY).min() ?? bounds.minY
+                    let unionMaxY = xSpan.map(\.frame.maxY).max() ?? bounds.maxY
+                    moved.origin.y = min(max(moved.minY, unionMinY), max(unionMinY, unionMaxY - moved.height))
+                }
+            }
+            let ySpan = displays.filter { $0.frame.maxY > moved.minY && $0.frame.minY < moved.maxY }
+            if !ySpan.isEmpty {
+                let minX = ySpan.map(\.frame.minX).max() ?? bounds.minX
+                let maxX = ySpan.map(\.frame.maxX).min() ?? bounds.maxX
+                if maxX - minX >= moved.width {
+                    moved.origin.x = min(max(moved.minX, minX), maxX - moved.width)
+                } else {
+                    let unionMinX = ySpan.map(\.frame.minX).min() ?? bounds.minX
+                    let unionMaxX = ySpan.map(\.frame.maxX).max() ?? bounds.maxX
+                    moved.origin.x = min(max(moved.minX, unionMinX), max(unionMinX, unionMaxX - moved.width))
+                }
+            }
+        }
         self.rect = snapped(moved)
         snappedEdges = []
         anchor = anchor.map { CGPoint(x: $0.x + (moved.minX - rect.minX), y: $0.y + (moved.minY - rect.minY)) }
@@ -176,8 +220,21 @@ public struct SelectionModel: Equatable, Sendable {
         Self.isClick(pixelSize)
     }
 
+    private func scale(for rect: CGRect?, fallbackPoint: CGPoint? = nil) -> CGFloat {
+        guard !displays.isEmpty else { return basePixelsPerPoint }
+        if let rect, !rect.isNull, !rect.isEmpty {
+            let hit = displays.filter { !$0.frame.intersection(rect).isEmpty }
+            if let maxScale = hit.map(\.pixelsPerPoint).max() { return maxScale }
+        }
+        if let point = fallbackPoint, let display = displays.first(where: { $0.frame.contains(point) }) {
+            return display.pixelsPerPoint
+        }
+        return basePixelsPerPoint
+    }
+
     private func pixels(of rect: CGRect) -> (width: Int, height: Int) {
-        (Int((rect.width * pixelsPerPoint).rounded()), Int((rect.height * pixelsPerPoint).rounded()))
+        let s = scale(for: rect, fallbackPoint: anchor ?? pointer)
+        return (Int((rect.width * s).rounded()), Int((rect.height * s).rounded()))
     }
 
     private static func isClick(_ size: (width: Int, height: Int)) -> Bool {
@@ -185,20 +242,37 @@ public struct SelectionModel: Equatable, Sendable {
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {
-        CGPoint(x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY))
+        if displays.count > 1 {
+            if displays.contains(where: { $0.frame.contains(point) }) { return point }
+            var best = CGPoint(x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY))
+            var bestDist = CGFloat.greatestFiniteMagnitude
+            for d in displays {
+                let candidate = CGPoint(x: min(max(point.x, d.frame.minX), d.frame.maxX), y: min(max(point.y, d.frame.minY), d.frame.maxY))
+                let dx = candidate.x - point.x, dy = candidate.y - point.y
+                let dist = dx * dx + dy * dy
+                if dist < bestDist {
+                    bestDist = dist
+                    best = candidate
+                }
+            }
+            return best
+        }
+        return CGPoint(x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY))
     }
 
     private func snapped(_ point: CGPoint) -> CGPoint {
-        CGPoint(x: snap(point.x, origin: bounds.minX), y: snap(point.y, origin: bounds.minY))
+        let s = scale(for: nil, fallbackPoint: point)
+        return CGPoint(x: snap(point.x, origin: bounds.minX, scale: s), y: snap(point.y, origin: bounds.minY, scale: s))
     }
 
     private func snapped(_ rect: CGRect) -> CGRect {
-        let minX = snap(rect.minX, origin: bounds.minX), maxX = snap(rect.maxX, origin: bounds.minX)
-        let minY = snap(rect.minY, origin: bounds.minY), maxY = snap(rect.maxY, origin: bounds.minY)
+        let s = scale(for: rect, fallbackPoint: anchor ?? pointer)
+        let minX = snap(rect.minX, origin: bounds.minX, scale: s), maxX = snap(rect.maxX, origin: bounds.minX, scale: s)
+        let minY = snap(rect.minY, origin: bounds.minY, scale: s), maxY = snap(rect.maxY, origin: bounds.minY, scale: s)
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    private func snap(_ value: CGFloat, origin: CGFloat) -> CGFloat {
-        origin + ((value - origin) * pixelsPerPoint).rounded() / pixelsPerPoint
+    private func snap(_ value: CGFloat, origin: CGFloat, scale: CGFloat) -> CGFloat {
+        origin + ((value - origin) * scale).rounded() / scale
     }
 }

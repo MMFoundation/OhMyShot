@@ -273,7 +273,8 @@ final class PinView: NSView, NSDraggingSource {
             let insetBounds = bounds.insetBy(dx: PinText.padding.width * zoom, dy: PinText.padding.height * zoom)
             textScrollView.frame = insetBounds
             let docWidth = max(insetBounds.width, 1)
-            let docHeight = max(insetBounds.height, ceil(textView.contentHeight * zoom))
+            let scaledContentHeight = textView.contentHeight * zoom
+            let docHeight = scaledContentHeight > insetBounds.height + 1.0 ? ceil(scaledContentHeight) : insetBounds.height
             textView.zoom = zoom
             textView.frame = CGRect(x: 0, y: 0, width: docWidth, height: docHeight)
         }
@@ -353,9 +354,10 @@ final class PinView: NSView, NSDraggingSource {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
         var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect]
-        if window?.frame.contains(NSEvent.mouseLocation) == true {
+        if window?.isVisible == true, window?.frame.contains(NSEvent.mouseLocation) == true {
             options.insert(.assumeInside)
             // A pin that opens under the pointer gets no mouseEntered.
+            if !controlsShown { setControlsVisible(true) }
             readTextIfNeeded()
         }
         let area = NSTrackingArea(rect: bounds, options: options, owner: self)
@@ -466,6 +468,7 @@ final class PinView: NSView, NSDraggingSource {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         if isLocked, !lockMark.isHidden, lockMark.frame.contains(local) { return lockMark }
+        if resizeCorner(at: local) != nil { return self }
         let hit = super.hitTest(point)
         if !controlsShown, let hit, hit === closeButton || hit === moreButton { return self }
         if let textScrollView, let textView, let hit, hit === textScrollView || hit.isDescendant(of: textScrollView) {
@@ -837,7 +840,12 @@ final class PinView: NSView, NSDraggingSource {
         let lock = item(String(localized: "Lock", bundle: .module), "lock", key: "l") { pin.setLocked(true) }
         lock.toolTip = String(localized: "Clicks go through the pin to what is under it. Click the lock icon on the pin or unlock it from the menu bar.", bundle: .module)
         menu.addItem(lock)
-        let dragHint = NSMenuItem(title: String(localized: "⌘ + Drag to Move · ⌥ + Scroll for Opacity", bundle: .module), action: nil, keyEquivalent: "")
+        let dragHintTitle: String = if case .text = content {
+            String(localized: "⌘ + Drag to Move · ⌘ + Scroll to Zoom · ⌥ + Scroll for Opacity", bundle: .module)
+        } else {
+            String(localized: "⌘ + Drag to Move · ⌥ + Scroll for Opacity", bundle: .module)
+        }
+        let dragHint = NSMenuItem(title: dragHintTitle, action: nil, keyEquivalent: "")
         dragHint.isEnabled = false
         menu.addItem(dragHint)
         menu.addItem(.separator())

@@ -93,8 +93,17 @@ nonisolated public enum StudioPackage {
             do {
                 _ = try fm.replaceItemAt(destinationURL, withItemAt: staging)
             } catch {
-                try fm.removeItem(at: destinationURL)
-                try fm.moveItem(at: staging, to: destinationURL)
+                // Cross-volume fallback: rename existing destination to a backup before moving so a failed move
+                // (e.g. out of disk space) restores the original package intact.
+                let backup = parent.appending(path: ".\(UUID().uuidString).\(fileExtension).bak")
+                try fm.moveItem(at: destinationURL, to: backup)
+                do {
+                    try fm.moveItem(at: staging, to: destinationURL)
+                    try? fm.removeItem(at: backup)
+                } catch {
+                    try? fm.moveItem(at: backup, to: destinationURL)
+                    throw error
+                }
             }
         } else {
             try fm.moveItem(at: staging, to: destinationURL)
@@ -108,9 +117,7 @@ nonisolated public enum StudioPackage {
         at packageURL: URL, toMovieURL movieURL: URL, studioFolder: URL
     ) throws -> (telemetry: StudioTelemetry, project: StudioProject) {
         let fm = FileManager.default
-        var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: packageURL.path(percentEncoded: false), isDirectory: &isDirectory),
-              isDirectory.boolValue else {
+        guard isRegularDirectory(at: packageURL) else {
             throw PackageError.invalidPackage
         }
 
@@ -174,9 +181,14 @@ nonisolated public enum StudioPackage {
         return (telemetry, project)
     }
 
+    private static func isRegularDirectory(at url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey]) else { return false }
+        return values.isSymbolicLink == false && values.isDirectory == true
+    }
+
     private static func isRegularFile(at url: URL, fm: FileManager) -> Bool {
-        var isDirectory: ObjCBool = false
-        return fm.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory) && !isDirectory.boolValue
+        guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey]) else { return false }
+        return values.isSymbolicLink == false && values.isRegularFile == true
     }
 
     private static func copyReplacing(from source: URL, to destination: URL, fm: FileManager) throws {

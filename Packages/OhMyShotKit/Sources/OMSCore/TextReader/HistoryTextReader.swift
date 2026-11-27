@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 import OSLog
@@ -26,6 +27,7 @@ public final class HistoryTextReader {
     @ObservationIgnored private let store: HistoryStore
     @ObservationIgnored private let helper: URL?
     @ObservationIgnored private let pack: () -> TextReaderPack?
+    @ObservationIgnored private let languages: () -> [String]
     @ObservationIgnored private var run: Run?
     /// While the screenshots waiting are being found, before a run starts.
     @ObservationIgnored private(set) var starting = false
@@ -45,6 +47,9 @@ public final class HistoryTextReader {
     /// How long `readSoon()` waits, so captures taken one after another are read in one run.
     static let delay: Duration = .seconds(3)
 
+    /// Maximum silence per item before the helper is assumed hung and terminated.
+    static var itemTimeout: Duration = .seconds(90)
+
     /// How many readings a screenshot is sent to before it waits for History to open.
     static let maxAttempts = 3
 
@@ -59,6 +64,7 @@ public final class HistoryTextReader {
         /// The ids in the order they were sent, which the reader reads and answers them in.
         let order: [String]
         var stopped = false
+        var watchdog: Task<Void, Never>?
 
         init(
             process: Process, priority: QualityOfService, lease: ActiveResources.Lease, reading: String?,
@@ -76,10 +82,15 @@ public final class HistoryTextReader {
     /// - Parameters:
     ///   - helper: the text reader; nil reads nothing (a build without it).
     ///   - pack: the model pack to read beside Vision, asked as each run starts; nil while none is installed.
-    public init(store: HistoryStore, helper: URL?, pack: @escaping () -> TextReaderPack? = { nil }) {
+    ///   - languages: explicit OCR recognition languages from Settings; empty uses automatic preferred languages.
+    public init(
+        store: HistoryStore, helper: URL?, pack: @escaping () -> TextReaderPack? = { nil },
+        languages: @escaping () -> [String] = { [] }
+    ) {
         self.store = store
         self.helper = helper
         self.pack = pack
+        self.languages = languages
     }
 
     public func enqueue(_ item: HistoryItem, immediately: Bool) {
@@ -127,7 +138,9 @@ public final class HistoryTextReader {
         stopped = true
         if let run {
             run.stopped = true
-            run.process.terminate()
+            run.watchdog?.cancel()
+            run.watchdog = nil
+            Self.terminate(run.process)
         }
     }
 
@@ -139,12 +152,15 @@ public final class HistoryTextReader {
             // History waits on the rest. Reading on the efficiency cores takes three times as long.
             if let run, !run.stopped, run.priority.rawValue < priority.rawValue {
                 run.stopped = true
-                run.process.terminate()
+                run.watchdog?.cancel()
+                run.watchdog = nil
+                Self.terminate(run.process)
             }
             return
         }
         guard let helper, !stopped else { return }
         let store = store, failed = Set(attempts.filter { $0.value >= Self.maxAttempts }.keys), pack = pack()
+        let configuredLanguages = languages()
         let scan = needsScan || scannedReading != pack?.reading
         let due = pending.filter { !failed.contains($0.key) }
         guard scan || !due.isEmpty else { return }
@@ -153,7 +169,10 @@ public final class HistoryTextReader {
         needsScan = false
         scannedReading = pack?.reading
         Task {
-            let waiting = try? await Self.waiting(in: store, candidates: scan ? nil : Array(due.values), except: failed, pack: pack)
+            let waiting = try? await Self.waiting(
+                in: store, candidates: scan ? nil : Array(due.values), except: failed, pack: pack,
+                languages: configuredLanguages.isEmpty ? nil : configuredLanguages
+            )
             starting = false
             guard !stopped else { return }
             guard let waiting else {
@@ -167,7 +186,8 @@ public final class HistoryTextReader {
     /// The screenshots waiting to be read, with their files as they are now, and the reader's input for them.
     @concurrent
     private static func waiting(
-        in store: HistoryStore, candidates: [HistoryItem]?, except failed: Set<UUID>, pack: TextReaderPack?
+        in store: HistoryStore, candidates: [HistoryItem]?, except failed: Set<UUID>, pack: TextReaderPack?,
+        languages: [String]?
     ) async throws -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], order: [String], jobs: Data) {
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)] = [:]
         var order: [String] = []
@@ -180,7 +200,8 @@ public final class HistoryTextReader {
         }
         for item in store.needingText(items, reading: pack?.reading) {
             let job = TextReaderWire.Job(
-                id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false), pack: pack?.folder.path(percentEncoded: false)
+                id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false),
+                pack: pack?.folder.path(percentEncoded: false), languages: languages
             )
             guard let stamp = store.stamp(of: item), var line = try? JSONEncoder().encode(job) else { continue }
             line.append(0x0A)
@@ -225,6 +246,7 @@ public final class HistoryTextReader {
         )
         self.run = run
         reading = sent.count
+        armWatchdog(for: run)
         Log.history.notice("Reading the text in \(sent.count, privacy: .public) capture(s)\(pack.map { " with \($0.reading)" } ?? "", privacy: .public)")
 
         // Written off the main actor: the pipe holds 64 KB, and the reader takes a line only when it has read
@@ -250,11 +272,37 @@ public final class HistoryTextReader {
         }
     }
 
+    private func armWatchdog(for run: Run) {
+        run.watchdog?.cancel()
+        guard !run.sent.isEmpty else {
+            run.watchdog = nil
+            return
+        }
+        let timeout = Self.itemTimeout
+        run.watchdog = Task { [weak self, weak run] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled, let self, let run, self.run === run, !run.stopped else { return }
+            Log.history.error("The text reader made no progress for \(String(describing: timeout), privacy: .public); terminating hung helper")
+            Self.terminate(run.process)
+        }
+    }
+
+    private static func terminate(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let pid = process.processIdentifier
+        Task.detached {
+            try? await Task.sleep(for: .milliseconds(250))
+            if process.isRunning { _ = kill(pid, SIGKILL) }
+        }
+    }
+
     private func received(_ line: String, in run: Run) {
         guard let result = try? JSONDecoder().decode(TextReaderWire.Answer.self, from: Data(line.utf8)),
               let (item, stamp) = run.sent.removeValue(forKey: result.id)
         else { return }
         reading = run.sent.count
+        armWatchdog(for: run)
         guard store.item(fileName: item.fileName)?.id == item.id, let current = store.stamp(of: item) else {
             attempts[item.id] = nil
             return
@@ -281,6 +329,8 @@ public final class HistoryTextReader {
 
     private func finished(_ run: Run, status: Int32) {
         guard self.run === run else { return }
+        run.watchdog?.cancel()
+        run.watchdog = nil
         self.run = nil
         run.lease.end()
         Log.history.notice("The text reader finished with status \(status, privacy: .public)")

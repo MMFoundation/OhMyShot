@@ -73,12 +73,15 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     private let playerView: PlayerLayerView
     private var timeObserver: Any?
     private var itemStatus: NSKeyValueObservation?
+    private var playerRate: NSKeyValueObservation?
+    private var itemDidEnd: (any NSObjectProtocol)?
     private var observation: Task<Void, Never>?
     private var soundObservation: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
     /// The newest exported movie in the history, while the project hasn't changed since.
     private var exported: URL?
     private var exporting: Task<URL?, Never>?
+    private var exportingPackage: Task<Void, Never>?
     private var makingGIF: Task<Void, Never>?
     /// Set by Cancel: exporting stops, including the export after it that a change made meanwhile asks for.
     private var cancelled = false
@@ -130,6 +133,13 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         studio.undoManagerProvider = { [weak window] in window?.undoManager }
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.playerMoved(to: time.seconds) }
+        }
+        playerRate = player.observe(\.rate, options: [.new]) { [weak self] player, _ in
+            guard player.rate == 0 else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.studio.isPlaying, self.player.rate == 0 else { return }
+                self.pausePlayback()
+            }
         }
         observation = Task { [weak self] in
             guard let studio = self?.studio else { return }
@@ -227,12 +237,14 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
-    /// `,` / `.` single-frame step, pausing playback first.
+    /// `,` / `.` single-frame step, pausing playback first. Steps in output movie time so cuts are jumped cleanly
+    /// and speed stretches step by actual output frames.
     func stepFrame(forward: Bool) {
-        guard !studio.compositionFailed, studio.composition != nil else { return }
+        guard !studio.compositionFailed, let composition = studio.composition else { return }
         pausePlayback()
         let delta = 1.0 / Double(studio.project.resolvedFramesPerSecond)
-        seek(toRecordingTime: studio.time + (forward ? delta : -delta))
+        let targetMovie = min(max(loadedMovieTime(studio.time) + (forward ? delta : -delta), 0), max(0, composition.duration))
+        seek(toRecordingTime: loadedRecordingTime(targetMovie))
         model.reveal(studio.time)
     }
 
@@ -287,6 +299,21 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
                 self.studio.previewFailed(message)
             }
         }
+        if let itemDidEnd {
+            NotificationCenter.default.removeObserver(itemDidEnd)
+            self.itemDidEnd = nil
+        }
+        itemDidEnd = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let composition = self.studio.composition {
+                    self.studio.time = self.loadedRecordingTime(composition.duration)
+                }
+                self.pausePlayback()
+            }
+        }
         let previousRate = player.rate
         player.replaceCurrentItem(with: item)
         player.seek(to: CMTime(seconds: loadedMovieTime(studio.time), preferredTimescale: 6_000), toleranceBefore: .zero, toleranceAfter: .zero)
@@ -334,10 +361,15 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
                 return true
             }
             if modifiers.isEmpty || modifiers == .shift {
-                // Yield plain/Shift arrow keys to the zoom target overlay while it has keyboard focus.
-                guard !model.isAimingFocused else { return false }
+                // Yield plain/Shift arrow keys to the zoom target overlay or active inspector controls (sliders, segmented controls, steppers).
+                guard !model.isAimingFocused,
+                      !(window.firstResponder is NSSlider),
+                      !(window.firstResponder is NSSegmentedControl),
+                      !(window.firstResponder is NSStepper) else { return false }
                 let step = modifiers.contains(.shift) ? 1.0 : 0.1
-                seek(toRecordingTime: studio.time + (forward ? step : -step))
+                let maxMovie = studio.composition?.duration ?? studio.movieTime(studio.duration)
+                let targetMovie = min(max(loadedMovieTime(studio.time) + (forward ? step : -step), 0), max(0, maxMovie))
+                seek(toRecordingTime: loadedRecordingTime(targetMovie))
                 model.reveal(studio.time)
                 return true
             }
@@ -568,9 +600,14 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// Exports a self-contained `.omsstudio` project package containing the recorded movie, telemetry, project
     /// settings, and any sidecar assets so the project can be archived, shared, or reopened later.
     func exportProjectPackage() {
-        guard makingGIF == nil, exporting == nil else { return NSSound.beep() }
+        guard makingGIF == nil, exporting == nil, exportingPackage == nil else { return NSSound.beep() }
         guard let window else { return }
-        Task {
+        exportingPackage = Task {
+            defer {
+                exportingPackage = nil
+                model.exportLabel = nil
+                model.progress = nil
+            }
             do {
                 try await studio.flushSave()
             } catch {
@@ -584,6 +621,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             let sourceMovie = studio.source
             let studioFolder = studio.folder
             let project = studio.project
+            model.exportLabel = String(localized: "Exporting project package…", bundle: .module)
+            model.progress = 0
             do {
                 try await Task.detached(priority: .userInitiated) {
                     try StudioPackage.export(
@@ -668,6 +707,9 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// Whether a GIF is being made, which closing stops and waits for.
     public var isMakingGIF: Bool { makingGIF != nil }
 
+    /// Whether a `.omsstudio` package export is in progress, which closing and quitting wait for.
+    public var isExportingPackage: Bool { exportingPackage != nil }
+
     /// Whether a movie is being exported after the window closed (the menu bar shows how far along).
     public var isExportingAfterClosing: Bool {
         exporting != nil && window?.isVisible != true
@@ -732,6 +774,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         preparingToClose = Task {
             defer { preparingToClose = nil }
             await choosingPicture?.value
+            await exportingPackage?.value
             do {
                 try await studio.flushSave()
                 window?.close()
@@ -745,15 +788,17 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     public func windowWillClose(_ notification: Notification) {
         didClose = true
         let gif = makingGIF
+        let packageExport = exportingPackage
         gif?.cancel()
         pausePlayback()
         let shouldExport = studio.hasUnexportedChanges && !skipExportOnClose
-        guard gif != nil || shouldExport else { return finishClosing() }
+        guard gif != nil || packageExport != nil || shouldExport else { return finishClosing() }
         // A GIF being made stops and removes its files first, so closing (and quitting, which waits for it) leaves nothing
         // of it behind and its end doesn't touch the export's progress. The movie is exported after the window has gone, as
         // the editor keeps marks; the menu bar shows how far along.
         Task {
             await gif?.value
+            await packageExport?.value
             if studio.hasUnexportedChanges, !skipExportOnClose { _ = await exportIfNeeded() }
             finishClosing()
         }
@@ -764,6 +809,9 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         finishedClosing = true
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
+        playerRate = nil
+        if let itemDidEnd { NotificationCenter.default.removeObserver(itemDidEnd) }
+        itemDidEnd = nil
         observation?.cancel()
         soundObservation?.cancel()
         player.replaceCurrentItem(with: nil)

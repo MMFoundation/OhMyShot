@@ -123,7 +123,7 @@ final class UpdateController: NSObject {
         usingFallback = false
         userInitiated = false
         Log.updates.notice("updates.background checking")
-        updater.checkForUpdatesInBackground()
+        updater.checkForUpdateInformation()
     }
 
     private var currentBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
@@ -248,6 +248,32 @@ extension UpdateController: SPUUpdaterDelegate {
             }
         }
         Log.updates.notice("updates.found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public))")
+        if !userInitiated, !skipped {
+            Task { @MainActor [weak self] in
+                self?.presentReminderIfNeeded()
+            }
+        }
+    }
+
+    func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem, state: SPUUserUpdateState) {
+        switch choice {
+        case .skip:
+            if feedOverride == nil {
+                UserDefaults.standard.set(updateItem.displayVersionString, forKey: Self.skippedVersionKey)
+                UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+            }
+            if status.waiting == updateItem.displayVersionString {
+                status.waiting = nil
+            }
+        case .dismiss:
+            if feedOverride == nil {
+                UserDefaults.standard.set(Date.now, forKey: "updates.reminded." + updateItem.displayVersionString)
+            }
+        case .install:
+            break
+        @unknown default:
+            break
+        }
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
@@ -274,7 +300,7 @@ extension UpdateController: SPUUpdaterDelegate {
                     await Task.yield()
                     guard let self, !Task.isCancelled else { return }
                     if self.userInitiated { self.updater.checkForUpdates() }
-                    else { self.updater.checkForUpdatesInBackground() }
+                    else { self.updater.checkForUpdateInformation() }
                 }
             }
             Log.updates.error("updates.cycle ended: \(error.domain, privacy: .public) \(error.code, privacy: .public) \(error.localizedDescription, privacy: .public)")

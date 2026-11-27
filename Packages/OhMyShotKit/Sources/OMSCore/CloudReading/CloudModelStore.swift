@@ -102,6 +102,7 @@ public final class CloudModelStore {
     /// Switches to the saved or fresh model for `preset`, preserving the previous service's configuration and Keychain
     /// key. Passing nil turns cloud reading off without deleting saved keys.
     public func choose(_ preset: CloudModel.Preset?) {
+        let wasLocal = model?.isLocal == true
         if let old = model {
             savedModels[Self.presetKey(of: old)] = old
         }
@@ -111,6 +112,10 @@ public final class CloudModelStore {
             savedModels[preset.rawValue] = next
             model = next
             hasKey = secrets.secret(Self.keyField, of: next.id) != nil
+            if wasLocal && !next.isLocal {
+                readsInPanel = false
+                readsCaptureText = false
+            }
         } else {
             model = nil
             hasKey = false
@@ -123,6 +128,10 @@ public final class CloudModelStore {
     /// Keeps the model's name, protocol, address, and model as edited (the same model: its key stays).
     public func update(_ edited: CloudModel) {
         guard let model, edited.id == model.id, edited != model else { return }
+        if model.isLocal && !edited.isLocal {
+            readsInPanel = false
+            readsCaptureText = false
+        }
         self.model = edited
         savedModels[Self.presetKey(of: edited)] = edited
         persist()

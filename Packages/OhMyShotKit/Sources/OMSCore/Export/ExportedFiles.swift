@@ -102,7 +102,7 @@ public enum ExportedFiles {
     public static func handOver(
         pictureData data: Data, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
     ) async -> Result<URL, ExportFailure> {
-        guard let image = CGImageSourceCreateWithData(data as CFData, nil).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) else {
+        guard let image = CGImageSourceCreateWithData(data as CFData, nil).flatMap({ ImageLoader.orientedImage(from: $0) }) else {
             return .failure(.converting(ImageExporter.ExportError.cannotRead))
         }
         return Result { try file(forPicture: image, named: name, pixelsPerPoint: pixelsPerPoint, output: output, in: folder) }
@@ -130,12 +130,13 @@ public enum ExportedFiles {
     /// each way of writing it, and a second drag hands over the same file at once; `picture` is drawn only when there is
     /// none, and throws when it can't be, so nothing is written in its place.
     public static func file(
-        forPin id: UUID, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder,
+        forPin id: UUID, revision: UInt64 = 0, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder,
         picture: () throws -> CGImage
     ) throws -> URL {
+        let pinFolder = revision == 0 ? id.uuidString : "\(id.uuidString)-\(revision)"
         let directory = folder
             .appending(path: "\(output.cacheKey)-pin", directoryHint: .isDirectory)
-            .appending(path: id.uuidString, directoryHint: .isDirectory)
+            .appending(path: pinFolder, directoryHint: .isDirectory)
         let kept = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)))?
             .first { ($0 as NSString).pathExtension == output.format.fileExtension }
             .map { directory.appending(path: $0) }

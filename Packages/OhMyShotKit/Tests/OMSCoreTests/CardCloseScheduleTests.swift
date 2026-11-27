@@ -178,4 +178,22 @@ struct CardCloseScheduleTests {
         #expect(!schedule.isKept(second))
         #expect(schedule.timeUntilNextClose(at: 2) == nil)
     }
+
+    @Test func keepOpenClearsActiveCountdownAndSharingHoldIsIndependentOfAction() {
+        var schedule = CardCloseSchedule()
+        schedule.sync(cards: [first], interval: 10, at: 0)
+        #expect(schedule.isCounting(first))
+        schedule.keepOpen(first)
+        #expect(!schedule.isCounting(first))
+        #expect(schedule.timeUntilNextClose(at: 5) == nil)
+
+        schedule.sync(cards: [second], interval: 10, at: 0)
+        schedule.hold(.action, for: second, if: true, at: 8)
+        schedule.hold(.sharing, for: second, if: true, at: 8)
+        schedule.hold(.action, for: second, if: false, at: 9)
+        #expect(schedule.holds(on: second) == [.sharing])
+        #expect(schedule.timeUntilNextClose(at: 20) == nil)
+        schedule.hold(.sharing, for: second, if: false, at: 20)
+        #expect(schedule.timeUntilNextClose(at: 20) == CardCountdown.grace)
+    }
 }

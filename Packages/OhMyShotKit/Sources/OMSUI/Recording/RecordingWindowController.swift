@@ -14,7 +14,7 @@ public struct GIFExportOptions: Equatable, Sendable {
     public var scale: Double
 
     public init(framesPerSecond: Int = 15, scale: Double = 1.0) {
-        self.framesPerSecond = min(max(framesPerSecond, 5), 60)
+        self.framesPerSecond = min(max(framesPerSecond, 5), 50)
         self.scale = min(max(scale, 0.25), 1.0)
     }
 }
@@ -139,7 +139,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         self.actions = actions
         let isGIF = CaptureMedia(recordingAt: fileURL) == .gif
         // A GIF is made as large as things were on screen already.
-        let scale = isGIF ? 1 : max(pixelsPerPoint ?? 2, 1)
+        let scale = isGIF ? 1 : max(pixelsPerPoint ?? 1, 1)
         let minimumWidth = Self.minimumWidth(isGIF: isGIF)
         let size = Self.preferredSize(pixelWidth: pixelWidth, pixelHeight: pixelHeight, scale: scale, minimumWidth: minimumWidth)
         let window = NSWindow(
@@ -157,8 +157,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         model.isGIF = isGIF
         model.pixelWidth = pixelWidth
         model.pixelHeight = pixelHeight
-        model.pixelsPerPoint = max(pixelsPerPoint ?? 2, 1)
-        let clampedFPS = min(max(defaultGIFFrameRate, 5), 60)
+        model.pixelsPerPoint = max(pixelsPerPoint ?? 1, 1)
+        let clampedFPS = min(max(defaultGIFFrameRate, 5), 50)
         model.defaultGIFFrameRate = clampedFPS
         model.gifFrameRate = clampedFPS
         model.canRevert = hasOriginal
@@ -205,7 +205,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     /// movie), within most of the screen; no smaller than the toolbar needs.
     private static func preferredSize(pixelWidth: Int, pixelHeight: Int, scale: Double, minimumWidth: CGFloat) -> CGSize {
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-        let movie = CGSize(width: CGFloat(Double(pixelWidth) / scale), height: CGFloat(Double(pixelHeight) / scale))
+        let movie = CGSize(width: max(CGFloat(Double(pixelWidth) / scale), 1), height: max(CGFloat(Double(pixelHeight) / scale), 1))
         let fit = min(1, visible.width * 0.85 / movie.width, (visible.height * 0.85 - toolbarHeight) / movie.height)
         return CGSize(width: max((movie.width * fit).rounded(), minimumWidth), height: max((movie.height * fit).rounded(), 300) + toolbarHeight)
     }
@@ -239,6 +239,11 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         !model.isGIF && !edit.isNone
     }
 
+    /// Whether a GIF export is currently running, which closing cancels and waits to clean up.
+    public var isMakingGIF: Bool {
+        makingGIFTask != nil
+    }
+
     /// Closes the window, keeping its edits; `done` runs once they are kept.
     public func close(then done: @escaping () -> Void) {
         closed = done
@@ -248,11 +253,13 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     public func windowWillClose(_ notification: Notification) {
         model.showsGIFPopover = false
         playerView.player?.pause()
-        makingGIFTask?.cancel()
-        if hasUnkeptEdits {
+        let gif = makingGIFTask
+        gif?.cancel()
+        if gif != nil || hasUnkeptEdits {
             // Kept after the window has gone; this task holds the controller until then.
             Task {
-                _ = await self.keepEdits()
+                await gif?.value
+                if self.hasUnkeptEdits { _ = await self.keepEdits() }
                 self.finishClosing()
             }
         } else {
@@ -407,7 +414,12 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
 
     // MARK: Actions
 
+    private var isBusy: Bool {
+        makingGIFTask != nil || keeping != nil || model.busy != nil
+    }
+
     func copyRecording() {
+        guard !isBusy else { return NSSound.beep() }
         Task {
             guard let url = await keepEdits() else { return }
             actions.copy(url)
@@ -417,6 +429,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     func saveRecording() {
+        guard !isBusy else { return NSSound.beep() }
         Task {
             guard let url = await keepEdits() else { return }
             guard saveCopy(url) != nil else { return NSSound.beep() }
@@ -433,7 +446,10 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     func saveAs() {
-        guard let window else { return }
+        guard !isBusy, let window else {
+            if isBusy { NSSound.beep() }
+            return
+        }
         Task {
             guard let url = await keepEdits() else { return }
             let panel = NSSavePanel()
@@ -527,6 +543,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
 
     /// Forgets the edits not kept yet and puts the recording back as it was made.
     func revert() {
+        guard !isBusy else { return NSSound.beep() }
         Task {
             guard model.canRevert else { return reload(fileURL) }
             model.busy = String(localized: "Reverting…", bundle: .module)
@@ -549,6 +566,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     /// Opens the recording in the app the Save menu names, QuickTime Player, or Preview for a GIF: asked for by name, as
     /// OhMyShot may be the app that opens movies and pictures, and would only take it in again.
     func openInViewer() {
+        guard !isBusy else { return NSSound.beep() }
         Task {
             guard let url = await keepEdits() else { return }
             let identifier = model.isGIF ? "com.apple.Preview" : "com.apple.QuickTimePlayerX"
@@ -709,12 +727,19 @@ final class RecordingWindowModel {
         return "\(width - width % 2) × \(height - height % 2)"
     }
 
-    /// Resulting even pixel dimensions for a GIF exported at `gifScale` relative to the recording's on-screen 1× size
-    /// (matching `RecordingCoordinator.makeGIF` where a GIF is never larger than on-screen 1× or the chosen Size).
+    /// Resulting even pixel dimensions for a GIF exported at `gifScale` relative to the recording's on-screen 1× size,
+    /// honoring `GIFMaker.Options.maxPixelSide` (1920 px) as well as the chosen Size.
     func gifDimensions(scale gifScale: Double) -> String {
         let clampedGIFScale = min(max(gifScale, 0.25), 1.0)
         let effectiveScale = min(scale, 1.0 / max(pixelsPerPoint, 1.0)) * clampedGIFScale
-        return dimensions(effectiveScale)
+        let maxSide = 1920.0
+        let rawWidth = Double(pixelWidth) * effectiveScale
+        let rawHeight = Double(pixelHeight) * effectiveScale
+        let longest = max(rawWidth, rawHeight, 1)
+        let fit = longest > maxSide ? maxSide / longest : 1.0
+        let width = max(2, Int((rawWidth * fit).rounded()) & ~1)
+        let height = max(2, Int((rawHeight * fit).rounded()) & ~1)
+        return "\(width) × \(height)"
     }
 
     /// Current one-off GIF export overrides selected in the Make GIF popover.

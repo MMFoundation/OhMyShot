@@ -84,9 +84,25 @@ final class ShortcutActions {
     /// Runs a capture command, calling `hold` with its capture's ID as soon as it is kept; the capture's record once it is
     /// kept, or nil when it was cancelled or failed.
     private func kept(_ command: AutomationCommand, holding hold: @escaping (UUID) -> Void) async -> HistoryItem? {
-        await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            run(command, { hold($0.id) }) { answer.give($0) }
+        let cancellation = CancellationBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let answer = Answer(continuation)
+                cancellation.set { [weak self] in
+                    self?.captures.cancelInteractiveCapture()
+                    answer.give(nil)
+                }
+                guard !Task.isCancelled else {
+                    answer.give(nil)
+                    return
+                }
+                run(command, { hold($0.id) }) {
+                    cancellation.clear()
+                    answer.give($0)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in cancellation.trigger() }
         }
     }
 
@@ -95,9 +111,25 @@ final class ShortcutActions {
         used(keepsLineBreaks ? "captureText" : "captureTextJoined")
         try requireScreenRecording()
         captures.cancelSelfTimer()
-        return await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            textCapture.captureText(joinLines: !keepsLineBreaks, allowsCloud: false) { answer.give($0) }
+        let cancellation = CancellationBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let answer = Answer(continuation)
+                cancellation.set { [weak self] in
+                    self?.textCapture.cancelInteractiveCapture()
+                    answer.give(nil)
+                }
+                guard !Task.isCancelled else {
+                    answer.give(nil)
+                    return
+                }
+                textCapture.captureText(joinLines: !keepsLineBreaks, allowsCloud: false) {
+                    cancellation.clear()
+                    answer.give($0)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in cancellation.trigger() }
         }
     }
 
@@ -126,9 +158,25 @@ final class ShortcutActions {
         try requireScreenRecording()
         guard packs.formula != nil else { throw .needsFormulaPack }
         captures.cancelSelfTimer()
-        return await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            textCapture.captureFormula { answer.give($0) }
+        let cancellation = CancellationBox()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let answer = Answer(continuation)
+                cancellation.set { [weak self] in
+                    self?.textCapture.cancelInteractiveCapture()
+                    answer.give(nil)
+                }
+                guard !Task.isCancelled else {
+                    answer.give(nil)
+                    return
+                }
+                textCapture.captureFormula {
+                    cancellation.clear()
+                    answer.give($0)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in cancellation.trigger() }
         }
     }
 
@@ -182,10 +230,11 @@ final class ShortcutActions {
         let imageType = CGImageSourceGetType(source).flatMap { UTType($0 as String) } ?? type ?? .png
         let ext = imageType.preferredFilenameExtension ?? "png"
         let trimmedName = filename.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingExt = (trimmedName as NSString).pathExtension
         let originalName: String
         if trimmedName.isEmpty {
             originalName = "Shortcut.\(ext)"
-        } else if (trimmedName as NSString).pathExtension.isEmpty {
+        } else if existingExt.isEmpty || UTType(filenameExtension: existingExt)?.conforms(to: .image) != true {
             originalName = "\(trimmedName).\(ext)"
         } else {
             originalName = trimmedName
@@ -210,6 +259,31 @@ final class ShortcutActions {
     func perform(_ command: AutomationCommand) throws(ShortcutFailure) {
         if command.readsScreen { try requireScreenRecording(for: command) }
         run(command, nil, nil)
+    }
+
+    /// Coordinates task cancellation with an interactive main-actor continuation.
+    private final class CancellationBox {
+        private var action: (() -> Void)?
+        private var isCancelled = false
+
+        func set(_ action: @escaping () -> Void) {
+            if isCancelled {
+                action()
+            } else {
+                self.action = action
+            }
+        }
+
+        func clear() {
+            action = nil
+        }
+
+        func trigger() {
+            isCancelled = true
+            let pending = action
+            action = nil
+            pending?()
+        }
     }
 
     /// Hands a continuation its value once, however many times a follow-up says it is done.

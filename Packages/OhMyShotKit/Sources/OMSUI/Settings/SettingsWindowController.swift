@@ -317,6 +317,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
         let hasDestination = !dependencies.destinations.destinations.isEmpty
         let hasFormulaPack = dependencies.modelPacks?.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL) != nil
+            && dependencies.settings.isModelPackEnabled(ModelPackCatalog.ppFormulaNetPlusL.id)
         for shortcut in CaptureShortcut.allCases where shortcut.isAvailable {
             let shown = (!shortcut.needsUploadDestination || hasDestination || KeyboardShortcuts.getShortcut(for: shortcut.name) != nil)
                 && (!shortcut.needsFormulaPack || hasFormulaPack || KeyboardShortcuts.getShortcut(for: shortcut.name) != nil)
@@ -364,8 +365,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 records: dependencies.uploadRecords, actions: dependencies.recordActions
             ))
         case .shortcuts:
-            host(ShortcutsSettingsView(destinations: dependencies.destinations) { [modelPacks = dependencies.modelPacks] in
+            host(ShortcutsSettingsView(destinations: dependencies.destinations) { [modelPacks = dependencies.modelPacks, settings = dependencies.settings] in
                 modelPacks?.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL) != nil
+                    && settings.isModelPackEnabled(ModelPackCatalog.ppFormulaNetPlusL.id)
             })
         case .permissions:
             host(PermissionsSettingsView(permissions: dependencies.permissions, relaunch: dependencies.relaunch))

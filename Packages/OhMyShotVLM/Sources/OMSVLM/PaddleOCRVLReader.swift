@@ -64,7 +64,9 @@ public final class PaddleOCRVLReader {
     /// Whether a `width` × `height` region is read: one the model would shrink to less than half its size (more than four
     /// times its 1 MP), a tall spreadsheet, say, it couldn't read the text of; that stays as Vision reads it.
     public static func reads(width: CGFloat, height: CGFloat) -> Bool {
-        width >= 8 && height >= 8 && width * height <= CGFloat(PaddleOCRVLPicture.maximumPixels * 4)
+        guard width >= 8, height >= 8 else { return false }
+        let longest = max(width, height), shortest = min(width, height)
+        return longest <= shortest * 200 && width * height <= CGFloat(PaddleOCRVLPicture.maximumPixels * 4)
     }
 
     /// `region` of `image` (its pixels, top-left origin) read as `task`, with 8 pixels more on each side the image has:

@@ -8,6 +8,7 @@ struct HistoryCard: View {
     let item: HistoryItem
     let model: HistoryModel
     let isSelected: Bool
+    var onFocusGrid: () -> Void = {}
     @State private var hovering = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -64,8 +65,14 @@ struct HistoryCard: View {
             .dragConfiguration(DragConfiguration(operationsOutsideApp: .init(allowCopy: true, allowMove: false, allowDelete: false)))
             // Opens the capture in the annotation editor, a recording in the recording window, as in CleanShot;
             // Return and the hover button restore it to Quick Access.
-            .onTapGesture(count: 2) { model.actions.annotate(item) }
-            .simultaneousGesture(TapGesture().onEnded { model.click(item.id, modifiers: NSEvent.modifierFlags) })
+            .onTapGesture(count: 2) {
+                onFocusGrid()
+                model.actions.annotate(item)
+            }
+            .simultaneousGesture(TapGesture().onEnded {
+                onFocusGrid()
+                model.click(item.id, modifiers: NSEvent.modifierFlags)
+            })
             .task { await model.loadThumbnail(for: item) }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -155,7 +162,7 @@ struct HistoryCard: View {
     /// menu's Share… was chosen, else (for VoiceOver) in the middle, once the copies are made. Not a `ShareLink`, which
     /// needs its files before the menu opens, so every capture's copy would be made then.
     private func share(atPointer: Bool = false) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let view = window.contentView else { return }
+        guard let window = model.window ?? NSApp.keyWindow ?? NSApp.mainWindow, let view = window.contentView else { return }
         var anchor = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
         if atPointer {
             let pointer = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)

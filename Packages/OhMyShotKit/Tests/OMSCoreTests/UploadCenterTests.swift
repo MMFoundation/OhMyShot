@@ -175,6 +175,24 @@ struct UploadCenterTests {
         try await until { link != nil }
         #expect(link?.host() == "two.example.com")
     }
+
+    @Test func finishedCallbackRunsBeforeOnChangeNotifiesFinished() async throws {
+        let rig = try rig(host: "center-order.test")
+        defer { rig.cleanup() }
+        _ = try addDestination(rig, public: "https://order.example.com/")
+        StubURLProtocol.install(host: rig.host) { _ in (200, [:], "") }
+        let id = UUID()
+        var events: [String] = []
+        rig.center.onChange = { changedID, status, _ in
+            guard changedID == id, case .finished = status else { return }
+            events.append("onChange.finished")
+        }
+        rig.center.start(captureID: id, fileURL: rig.file, originalName: "a.png") { _, _ in
+            events.append("request.finished")
+        }
+        try await until { events.count == 2 }
+        #expect(events == ["request.finished", "onChange.finished"])
+    }
 }
 
 private final class Counter: @unchecked Sendable {
@@ -319,5 +337,18 @@ struct UploadDestinationDraftTests {
         #expect(layered.secret(SecretField.s3AccessKeyID, of: id) == "typed-key")
         #expect(layered.secret(SecretField.s3SecretAccessKey, of: id) == "saved-secret")
         #expect(base.secret(SecretField.s3AccessKeyID, of: id) == nil)
+    }
+
+    @Test func amazonS3RejectsInvalidRegionStrings() {
+        var draft = UploadDestinationDraft(kind: .amazonS3)
+        draft.bucket = "shots"
+        draft.accessKeyID = "AKID"
+        draft.secretAccessKey = "secret"
+        draft.region = "us-east-1/evil"
+        #expect(draft.firstIssue() != nil)
+        #expect(draft.build() == nil)
+        draft.region = "us-east-1"
+        #expect(draft.firstIssue() == nil)
+        #expect(draft.build() != nil)
     }
 }

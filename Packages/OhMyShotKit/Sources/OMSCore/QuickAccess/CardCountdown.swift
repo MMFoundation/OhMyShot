@@ -15,6 +15,8 @@ public struct CardCountdown: Equatable, Sendable {
         case drag
         /// A copy, save, or pin is still consuming the capture.
         case action
+        /// A Share sheet or email compose service is open for the capture.
+        case sharing
         /// Copy Text is reading the capture's text.
         case reading
         case preview

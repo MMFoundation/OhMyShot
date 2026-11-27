@@ -37,7 +37,7 @@ should happen after a capture:
 | `action`   | What happens                                                                                   |
 |------------|------------------------------------------------------------------------------------------------|
 | `copy`     | The capture is copied, even if Copy after capture is off.                                      |
-| `save`     | A copy is saved to the export folder, even if Save after capture is off. It is written in the format Settings › General chooses, and never asks for a name. |
+| `save`     | A copy is saved to the export folder, even if Save after capture is off. It is written in the format Settings › Screenshots chooses, and never asks for a name. |
 | `annotate` | The capture opens in the editor. No Quick Access card, nothing copied.                         |
 | `upload`   | The capture goes to the default upload destination. With none set up, nothing is captured.    |
 | `pin`      | The capture stays on screen as a pin where it was taken. No card, nothing copied.              |
@@ -55,7 +55,7 @@ should happen after a capture:
 | `scrolling-capture` | area, `start`, `autoscroll` | Opens Scrolling Capture. With an area, the scrolling bar comes up around it. `start=true` starts the capture without the bar, at once when there is an area. `autoscroll=true` lets the app scroll (needs Accessibility). While a scrolling capture runs, finishes it. |
 | `pin` | `filepath` | Pins the picture at `filepath`. Without one, asks for a file. |
 | `record-screen` | area | Opens Record Screen. With an area, the recording bar comes up around it. While recording, stops. |
-| `capture-text` | `filepath`, area, `linebreaks` | Opens Capture Text. With an area, reads that area at once. With `filepath`, reads the picture's text without showing it. The text is copied, each formula in it as LaTeX (`$…$`, or `$$…$$` on a line of its own) while the Math Formulas pack is installed, and each table and chart a row a line, cells apart by tabs, while the Tables and Charts pack is. `linebreaks=false` joins wrapped lines; `true` keeps detected line breaks. Omitted, it follows Settings → Tools → Image line breaks. |
+| `capture-text` | `filepath`, area, `linebreaks` | Opens Capture Text. With an area, reads that area at once. With `filepath`, reads the picture's text without showing it. The text is copied, each formula in it as LaTeX (`$…$`, or `$$…$$` on a line of its own) while the Math Formulas pack is installed, and each table and chart a row a line, cells apart by tabs, while the Tables and Charts pack is. `linebreaks=false` joins wrapped lines; `true` keeps detected line breaks. Omitted, it follows Settings › Text › Image line breaks. |
 | `capture-formula` | `filepath`, area | OhMyShot's own. Opens Capture Formula, which needs the Math Formulas pack (Settings › Text › Model packs); without it, OhMyShot beeps. With an area, reads that area at once. With `filepath`, reads the picture's formula without showing it. The formula's LaTeX is copied as it is, without `$` around it. |
 | `open-annotate` | `filepath` | Opens the picture or `.ohmyshot` project at `filepath` in the editor, or the MP4 or MOV in the recording window. Without one, asks for a file. Pictures and movies are added to Capture History first. |
 | `open-from-clipboard` | | Opens the clipboard's picture in the editor. |
@@ -96,7 +96,7 @@ The `share` command is not part of CleanShot's API, and nothing else should send
 extension (OhMyShot in other apps' Share menus) tells the app that pictures are waiting. It is answered without
 approval, and works with the URL scheme turned off, because choosing OhMyShot in a Share menu is the approval.
 It carries no path, only the name of a folder in the app's own Share Inbox (`~/Library/Application Support/<bundle
-identifier>/Share Inbox`) and what to do with it (`action=annotate` or `pin`). The app opens only the pictures it
+identifier>/Share Inbox`) and what to do with it (`action=annotate`, `pin`, or `recognize-text`). The app opens only the pictures it
 finds directly in that folder, and removes the folder afterwards.
 
 ## Shortcuts and Spotlight
@@ -105,7 +105,7 @@ These actions appear in the Shortcuts app under OhMyShot:
 
 | Action | Input | Output |
 |---|---|---|
-| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled. It is handed on whatever Keep Captures and Quick Access say; with Keep Captures at Never and Quick Access off, the capture is deleted once the shortcut has read it, unless the editor it opened in or its upload still holds it, and a pinned capture is left as Capture Area and Pin leaves it |
+| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › Screenshots chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled. It is handed on whatever Keep Captures and Quick Access say; with Keep Captures at Never and Quick Access off, the capture is deleted once the shortcut has read it, unless the editor it opened in or its upload still holds it, and a pinned capture is left as Capture Area and Pin leaves it |
 | Capture Text | Keep Line Breaks | The text copied, or nothing; formulas as LaTeX while the Math Formulas pack is installed, tables and charts a row a line while the Tables and Charts pack is |
 | Recognize Text in Image | An image, Keep Line Breaks | The image's text, formulas as LaTeX while the Math Formulas pack is installed, tables and charts a row a line while the Tables and Charts pack is. Nothing is copied or shown. |
 | Capture Formula | | The formula's LaTeX, copied as it is (without `$` around it), or nothing when no whole formula was read |

@@ -158,10 +158,25 @@ public struct S3Settings: Codable, Equatable, Sendable {
         self.presignedExpiry = presignedExpiry
     }
 
+    /// The regional AWS endpoint URL for `region`, or `nil` when `region` is not a valid DNS host label.
+    public static func awsEndpoint(region: String) -> URL? {
+        let trimmed = region.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 63,
+              trimmed.first != "-", trimmed.last != "-",
+              trimmed.unicodeScalars.allSatisfy({
+                  ($0.value >= 0x30 && $0.value <= 0x39)
+                      || ($0.value >= 0x41 && $0.value <= 0x5A)
+                      || ($0.value >= 0x61 && $0.value <= 0x7A)
+                      || $0 == "-"
+              })
+        else { return nil }
+        return URL(string: "https://s3.\(trimmed.lowercased()).amazonaws.com")
+    }
+
     /// The settings for a bucket on AWS itself: its regional endpoint and the host-name form of the address.
     public static func aws(region: String, bucket: String) -> S3Settings {
         S3Settings(
-            endpoint: URL(string: "https://s3.\(region).amazonaws.com")!,
+            endpoint: awsEndpoint(region: region) ?? URL(string: "https://s3.us-east-1.amazonaws.com")!,
             region: region,
             bucket: bucket,
             usesPathStyle: false

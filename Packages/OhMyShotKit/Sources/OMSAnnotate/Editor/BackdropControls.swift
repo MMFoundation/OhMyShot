@@ -173,13 +173,17 @@ final class BackdropAdjustments {
 
     func dragChanged(_ name: String, editing: Bool) {
         if editing {
-            guard dragging == nil else { return }
+            if let active = dragging {
+                guard active != name else { return }
+                dragging = nil
+                session.endLiveChange(actionName: active)
+            }
             dragging = name
             session.beginLiveChange()
         } else {
-            guard let name = dragging else { return }
+            guard let active = dragging, name.isEmpty || active == name else { return }
             dragging = nil
-            session.endLiveChange(actionName: name)
+            session.endLiveChange(actionName: active)
         }
     }
 
@@ -416,6 +420,8 @@ struct AlignmentGrid: View {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(place == selection && isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
                                 .frame(width: 16, height: 12)
+                                .frame(width: 22, height: 18)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(Self.name(of: place))

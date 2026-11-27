@@ -44,7 +44,7 @@ struct HistoryView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .bottom) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomOverlays
             }
 
@@ -102,7 +102,12 @@ struct HistoryView: View {
     }
 
     private var hasFloatingBottomBar: Bool {
-        model.selectedItems.count > 1 || model.pendingTrash != nil || model.reading > 0 || model.failedIndexingCount > 0
+        (!model.visibleItems.isEmpty && (model.isUpdatingSearch || model.isReloading))
+            || model.selectedItems.count > 1
+            || !model.pendingTrashes.isEmpty
+            || model.reading > 0
+            || model.failedIndexingCount > 0
+            || model.copyFeedback != nil
     }
 
     private var grid: some View {
@@ -110,18 +115,34 @@ struct HistoryView: View {
             ScrollView {
                 // Relative times ("2 minutes ago") are redrawn twice a minute while the window is open.
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
-                    LazyVGrid(columns: columns, spacing: 22) {
-                        ForEach(model.visibleItems) { item in
-                            HistoryCard(item: item, model: model, isSelected: model.selection.contains(item.id))
+                    ZStack(alignment: .topLeading) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                searchFocused = false
+                                gridFocused = true
+                                model.clearSelection()
+                            }
+                        LazyVGrid(columns: columns, spacing: 22) {
+                            ForEach(model.visibleItems) { item in
+                                HistoryCard(
+                                    item: item,
+                                    model: model,
+                                    isSelected: model.selection.contains(item.id),
+                                    onFocusGrid: {
+                                        searchFocused = false
+                                        gridFocused = true
+                                    }
+                                )
                                 .id(item.id)
+                            }
                         }
+                        // A card dragged out takes every selected capture when it is one of them, as in Finder, else
+                        // itself alone; nothing when one of their copies can't be made.
+                        .dragContainer(for: HandedOverFile.self) { (dragged: UUID) in model.filesToHandOver(from: dragged) }
+                        .padding(.horizontal, Self.inset)
+                        .padding(.vertical, 20)
                     }
-                    // A card dragged out takes every selected capture when it is one of them, as in Finder, else
-                    // itself alone; nothing when one of their copies can't be made.
-                    .dragContainer(for: HandedOverFile.self) { (dragged: UUID) in model.filesToHandOver(from: dragged) }
-                    .padding(.horizontal, Self.inset)
-                    .padding(.top, 20)
-                    .padding(.bottom, hasFloatingBottomBar ? 76 : 20)
                     // Measured inside the scroll view, so a visible scroller is not counted as room.
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
                 }
@@ -135,7 +156,6 @@ struct HistoryView: View {
             // ⌘C, ⌘S, ⇧⌘S, ⌘O, ⌘⌫ and ⌘A arrive from the main menu as commands; with nothing selected they are disabled.
             .onCommand(#selector(NSText.copy(_:)), perform: selectionCommand { model.copy($0) })
             .onCommand(#selector(NSDocument.save(_:)), perform: selectionCommand { $0.forEach(model.actions.save) })
-            .onCommand(Selector(("saveProject:")), perform: model.selectedItems.count == 1 ? { model.focusedItem.map(model.actions.saveAs) } : nil)
             .onCommand(Selector(("saveScreenshotAs:")), perform: model.selectedItems.count == 1 ? { model.focusedItem.map(model.actions.saveAs) } : nil)
             // ⌘O does what a double-click does: the editor, a recording's window, a GIF's player.
             .onCommand(Selector(("openInEditor:")), perform: selectionCommand { $0.forEach(model.actions.annotate) })
@@ -145,7 +165,7 @@ struct HistoryView: View {
             // Combine into Collage wants two screenshots or more, Export as PDF one or more; neither takes a recording.
             .onCommand(Selector(("combineIntoCollage:")), perform: model.collageItems(from: nil).isEmpty ? nil : { model.actions.combine(model.collageItems(from: nil)) })
             .onCommand(Selector(("exportPDF:")), perform: model.pdfItems(from: nil).isEmpty ? nil : { model.actions.exportPDF(model.pdfItems(from: nil), model.window) })
-            .onCommand(#selector(NSText.delete(_:)), perform: selectionCommand { _ in model.trashSelection() })
+            .onCommand(Selector(("moveToTrash:")), perform: selectionCommand { _ in model.trashSelection() })
             .onCommand(#selector(NSText.selectAll(_:)), perform: model.visibleItems.isEmpty ? nil : { model.selectAll() })
             .onChange(of: model.focus) { _, focus in
                 guard let focus else { return }
@@ -428,61 +448,64 @@ struct HistoryView: View {
 
     @ViewBuilder private var bottomOverlays: some View {
         let selected = model.selectedItems
-        VStack(spacing: 8) {
-            if !model.visibleItems.isEmpty && (model.isUpdatingSearch || model.isReloading) {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    if model.isUpdatingSearch { Text("Updating search results…", bundle: .module) }
-                    else { Text("Loading captures…", bundle: .module) }
-                }
-                .font(.callout)
-                .padding(10)
-                .windowNoticeCard()
-                .allowsHitTesting(false)
-                .accessibilityElement(children: .combine)
-            }
-            if model.reading > 0 || model.failedIndexingCount > 0 {
-                indexingStatusBar
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
-            }
-            if model.pendingTrash != nil {
-                undoTrashToast
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
-            }
-            if let feedback = model.copyFeedback {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    if feedback.kind == .text {
-                        Text("Copied Text", bundle: .module)
-                    } else if feedback.count == 1 {
-                        Text("Copied", bundle: .module)
-                    } else {
-                        Text("Copied \(feedback.count) Captures", bundle: .module)
+        if hasFloatingBottomBar {
+            VStack(spacing: 8) {
+                if !model.visibleItems.isEmpty && (model.isUpdatingSearch || model.isReloading) {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        if model.isUpdatingSearch { Text("Updating search results…", bundle: .module) }
+                        else { Text("Loading captures…", bundle: .module) }
                     }
+                    .font(.callout)
+                    .padding(10)
+                    .windowNoticeCard()
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .combine)
                 }
-                .font(.callout.weight(.medium))
-                .monospacedDigit()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
-                .overlay(Capsule().strokeBorder(capsuleStrokeColor, lineWidth: capsuleStrokeWidth))
-                .shadow(color: .black.opacity(0.16), radius: 10, y: 3)
-                .allowsHitTesting(false)
-                // VoiceOver already receives an immediate announcement from `HistoryModel.copy`.
-                .accessibilityHidden(true)
-                .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
-            }
-            if selected.count > 1 {
-                selectionBar(for: selected)
+                if model.reading > 0 || model.failedIndexingCount > 0 {
+                    indexingStatusBar
+                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
+                }
+                if !model.pendingTrashes.isEmpty {
+                    undoTrashToast
+                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
+                }
+                if let feedback = model.copyFeedback {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        if feedback.kind == .text {
+                            Text("Copied Text", bundle: .module)
+                        } else if feedback.count == 1 {
+                            Text("Copied", bundle: .module)
+                        } else {
+                            Text("Copied \(feedback.count) Captures", bundle: .module)
+                        }
+                    }
+                    .font(.callout.weight(.medium))
+                    .monospacedDigit()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
+                    .overlay(Capsule().strokeBorder(capsuleStrokeColor, lineWidth: capsuleStrokeWidth))
+                    .shadow(color: .black.opacity(0.16), radius: 10, y: 3)
+                    .allowsHitTesting(false)
+                    // VoiceOver already receives an immediate announcement from `HistoryModel.copy`.
+                    .accessibilityHidden(true)
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
+                }
+                if selected.count > 1 {
+                    selectionBar(for: selected)
+                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .bottom)))
+                }
             }
+            .padding(.top, 4)
+            .padding(.bottom, 16)
+            .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: model.copyFeedback?.id)
+            .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: model.pendingTrash?.id)
+            .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: model.reading > 0 || model.failedIndexingCount > 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: selected.count > 1)
         }
-        .padding(.bottom, 16)
-        .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: model.copyFeedback?.id)
-        .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: model.pendingTrash?.id)
-        .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: model.reading > 0 || model.failedIndexingCount > 0)
-        .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade), value: selected.count > 1)
     }
 
     private var indexingStatusBar: some View {
@@ -521,12 +544,19 @@ struct HistoryView: View {
     }
 
     private var undoTrashToast: some View {
-        HStack(spacing: 10) {
+        let count = model.pendingTrashes.count
+        return HStack(spacing: 10) {
             Image(systemName: "trash")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("Moved to Trash", bundle: .module)
-                .font(.callout.weight(.medium))
+            if count > 1 {
+                Text("Moved \(count) Captures to Trash", bundle: .module)
+                    .font(.callout.weight(.medium))
+                    .monospacedDigit()
+            } else {
+                Text("Moved to Trash", bundle: .module)
+                    .font(.callout.weight(.medium))
+            }
             Button {
                 model.undoPendingTrash()
             } label: {
@@ -542,6 +572,7 @@ struct HistoryView: View {
         .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
         .overlay(Capsule().strokeBorder(capsuleStrokeColor, lineWidth: capsuleStrokeWidth))
         .shadow(color: .black.opacity(0.16), radius: 10, y: 3)
+        .onHover { model.setPendingTrashHovered($0) }
         .accessibilityElement(children: .contain)
     }
 

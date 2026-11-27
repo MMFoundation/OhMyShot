@@ -7,7 +7,7 @@ final class PinTextScrollView: NSScrollView {
 
     var canScrollVertically: Bool {
         guard let documentView else { return false }
-        return documentView.frame.height > contentView.bounds.height + 0.5
+        return documentView.frame.height > contentView.bounds.height + 1.0
     }
 
     override init(frame frameRect: NSRect) {

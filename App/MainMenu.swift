@@ -11,7 +11,8 @@ enum MainMenu {
         let menu = NSMenu()
 
         let app = submenu(appName, in: menu)
-        app.addItem(withTitle: String(localized: "About \(appName)"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let about = app.addItem(withTitle: String(localized: "About \(appName)"), action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+        about.target = settingsTarget
         app.addItem(.separator())
         let settings = app.addItem(withTitle: String(localized: "Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         settings.target = settingsTarget
@@ -45,7 +46,7 @@ enum MainMenu {
         file.addItem(withTitle: String(localized: "Combine into Collage…"), action: Selector(("combineIntoCollage:")), keyEquivalent: "")
         file.addItem(withTitle: String(localized: "Export as PDF…"), action: Selector(("exportPDF:")), keyEquivalent: "")
         file.addItem(.separator())
-        let trash = file.addItem(withTitle: String(localized: "Move to Trash"), action: #selector(NSText.delete(_:)), keyEquivalent: "\u{8}")
+        let trash = file.addItem(withTitle: String(localized: "Move to Trash"), action: Selector(("moveToTrash:")), keyEquivalent: "\u{8}")
         trash.keyEquivalentModifierMask = .command
 
         let edit = submenu(String(localized: "Edit"), in: menu)
@@ -55,6 +56,8 @@ enum MainMenu {
         edit.addItem(.separator())
         edit.addItem(withTitle: String(localized: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: String(localized: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        let copyMarks = edit.addItem(withTitle: String(localized: "Copy Marks"), action: Selector(("copyAnnotations:")), keyEquivalent: "c")
+        copyMarks.keyEquivalentModifierMask = [.command, .option]
         edit.addItem(withTitle: String(localized: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: String(localized: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(.separator())

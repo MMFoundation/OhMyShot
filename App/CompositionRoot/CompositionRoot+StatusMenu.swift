@@ -19,6 +19,7 @@ extension CompositionRoot {
         let togglePins = StatusItemController.Entry(
             title: String(localized: "Hide Pins"),
             systemImage: "pin.slash",
+            currentSystemImage: { [weak self] in self?.pins.areHidden == true ? "pin" : "pin.slash" },
             shortcut: .togglePins,
             isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) },
             currentTitle: { [weak self] in self?.pins.areHidden == true ? String(localized: "Show Pins") : String(localized: "Hide Pins") }
@@ -36,7 +37,7 @@ extension CompositionRoot {
                     .init(
                         title: String(localized: "Capture Previous Area"),
                         shortcut: .capturePreviousArea,
-                        isEnabled: { [weak self] in self?.captures.previousArea != nil }
+                        isEnabled: { [weak self] in self?.captures.lastRecalledArea != nil }
                     ) { [weak self] in
                         self?.handle(.capturePreviousArea, from: .menu)
                     },
@@ -67,7 +68,8 @@ extension CompositionRoot {
                 title: String(localized: "Scrolling Capture"),
                 systemImage: "scroll",
                 shortcut: .scrollingCapture,
-                currentTitle: { [weak self] in self?.scrolling.menuTitle ?? String(localized: "Scrolling Capture") }
+                currentTitle: { [weak self] in self?.scrolling.menuTitle ?? String(localized: "Scrolling Capture") },
+                isActiveStatus: { [weak self] in self?.scrolling.isCapturing == true }
             ) { [weak self] in
                 self?.handle(.scrollingCapture, from: .menu)
             },
@@ -87,6 +89,9 @@ extension CompositionRoot {
                     if recordings.isRecording { return String(localized: "Stop Recording") }
                     if recordings.isCountingDown { return String(localized: "Cancel Recording") }
                     return String(localized: "Record Screen")
+                },
+                isActiveStatus: { [weak self] in
+                    self?.recordings.isRecording == true || self?.recordings.isCountingDown == true
                 }
             ) { [weak self] in
                 self?.handle(.recordScreen, from: .menu)
@@ -126,6 +131,7 @@ extension CompositionRoot {
             .init(
                 title: String(localized: "Hide Desktop Icons"),
                 systemImage: "eye.slash",
+                currentSystemImage: { [weak self] in self?.settings.hidesDesktopIcons == true ? "eye" : "eye.slash" },
                 shortcut: .toggleDesktopIcons,
                 currentTitle: { [weak self] in
                     self?.settings.hidesDesktopIcons == true ? String(localized: "Show Desktop Icons") : String(localized: "Hide Desktop Icons")
@@ -216,7 +222,12 @@ extension CompositionRoot {
             imageEntries: imageEntries,
             pinEntries: pinEntries,
             historyEntries: [
-                .init(title: String(localized: "Annotate Latest Capture"), systemImage: "pencil.tip.crop.circle", shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture, from: .menu) },
+                .init(
+                    title: String(localized: "Annotate Latest Capture"),
+                    systemImage: "pencil.tip.crop.circle",
+                    shortcut: .annotateLatestCapture,
+                    isEnabled: { [weak self] in self?.history.latestScreenshot() != nil }
+                ) { [weak self] in self?.handle(.annotateLatestCapture, from: .menu) },
                 .init(title: String(localized: "Capture History…"), systemImage: "clock.arrow.circlepath", shortcut: .openHistory) { [weak self] in
                     self?.usedFromMenu("openHistory")
                     self?.showHistory()

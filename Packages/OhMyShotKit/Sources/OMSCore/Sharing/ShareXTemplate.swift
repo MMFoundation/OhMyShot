@@ -119,6 +119,10 @@ public struct ShareXTemplate: Equatable, Sendable {
             if name == "regex", let pattern = literalText(parameters.count > 2 ? parameters[1] : parameters[0]) {
                 guard (try? NSRegularExpression(pattern: pattern)) != nil else { throw ShareXTemplateError.invalidRegex(pattern) }
             }
+            if name == "regex", let groupParam = parameters.count > 2 ? parameters[2] : (parameters.count > 1 ? parameters[1] : nil),
+               let group = literalText(groupParam), let index = Int(group), index < 0 {
+                throw ShareXTemplateError.invalidRegex(group)
+            }
         }
     }
 
@@ -203,7 +207,7 @@ public struct ShareXTemplate: Equatable, Sendable {
     }
 
     private static func xmlValue(_ input: String, _ path: String) throws -> String? {
-        guard let document = try? XMLDocument(xmlString: input, options: []) else { throw ShareXTemplateError.responseNotXML }
+        guard let document = try? XMLDocument(xmlString: input, options: [.nodeLoadExternalEntitiesNever]) else { throw ShareXTemplateError.responseNotXML }
         guard let nodes = try? document.nodes(forXPath: path) else { throw ShareXTemplateError.invalidXPath(path) }
         return nodes.first?.stringValue
     }
@@ -221,7 +225,7 @@ public struct ShareXTemplate: Equatable, Sendable {
         guard let match = expression.firstMatch(in: input, range: whole) else { return nil }
         var range = match.range
         if !group.isEmpty {
-            range = Int(group).map { $0 < match.numberOfRanges ? match.range(at: $0) : NSRange(location: NSNotFound, length: 0) }
+            range = Int(group).map { (0..<match.numberOfRanges).contains($0) ? match.range(at: $0) : NSRange(location: NSNotFound, length: 0) }
                 ?? (pattern.contains("(?<\(group)>") ? match.range(withName: group) : NSRange(location: NSNotFound, length: 0))
         }
         guard range.location != NSNotFound, let swiftRange = Range(range, in: input) else { return nil }

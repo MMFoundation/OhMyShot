@@ -67,10 +67,12 @@ public enum PictureExport {
     /// One pass: `image` at its new size in sRGB (or the color space it has), with the border over its outer ring.
     private static func draw(_ image: CGImage, width: Int, height: Int, toSRGB: Bool, border: Bool, watermark: Watermark? = nil) -> CGImage? {
         let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        let p3 = CGColorSpace(name: CGColorSpace.displayP3)
         let own = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
         let info = (image.hasAlpha ? CGImageAlphaInfo.premultipliedFirst : .noneSkipFirst).rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        // A color space a bitmap cannot be made in (an extended one) is drawn in sRGB.
-        guard let context = [toSRGB ? srgb : own ?? srgb, srgb].lazy.compactMap({
+        // A wide-gamut or extended space an 8-bit bitmap cannot use falls back to Display P3 before sRGB.
+        let candidates: [CGColorSpace] = toSRGB ? [srgb] : [own, p3, srgb].compactMap { $0 }
+        guard let context = candidates.lazy.compactMap({
             CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: $0, bitmapInfo: info)
         }).first else { return nil }
         context.interpolationQuality = .high
@@ -170,7 +172,7 @@ public enum PictureExport {
     /// that is not there says so, so a failure can say the capture's file is missing.
     public static func encode(fileAt url: URL, pixelsPerPoint: Double?, output: ScreenshotOutput) throws -> Encoded {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+              let image = ImageLoader.orientedImage(from: source)
         else {
             guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path]) }
             throw ImageExporter.ExportError.cannotRead

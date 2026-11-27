@@ -63,6 +63,18 @@ struct ShortcutsSettingsView: View {
                 if index > 0 {
                     SettingsDivider()
                 }
+                if let groupTitle = groups[index].first?.groupTitle {
+                    GridRow {
+                        Text(verbatim: groupTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+                            .gridCellColumns(2)
+                            .gridColumnAlignment(.leading)
+                            .padding(.top, index == 0 ? 0 : 2)
+                            .padding(.bottom, 2)
+                    }
+                }
                 ForEach(groups[index], id: \.self) { shortcut in
                     SettingsRow(shortcut.title) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -204,6 +216,16 @@ extension CaptureShortcut {
             3
         case .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard, .pinFromClipboard, .recognizeClipboard, .restoreRecentlyClosed, .controlQuickAccess:
             4
+        }
+    }
+
+    fileprivate var groupTitle: String {
+        switch group {
+        case 0: String(localized: "Capture", bundle: .module)
+        case 1: String(localized: "Recording", bundle: .module)
+        case 2: String(localized: "Text", bundle: .module)
+        case 3: String(localized: "Tools", bundle: .module)
+        default: String(localized: "History & Clipboard", bundle: .module)
         }
     }
 }

@@ -60,4 +60,12 @@ struct MarkdownTablesTests {
         #expect(MarkdownTables.tables(in: "~~~~md\n| a |\n|---|\n~~~~\n| c |\n|---|\n| 3 |").count == 1)
         #expect(MarkdownTables.tables(in: "if a | b {\n}").isEmpty)
     }
+
+    @Test func tableFormatsStripCarriageReturnsInMarkdownAndHTML() {
+        let table = OCRTable(rows: [["Col\r\n1", "Col\r2"], ["A\r\nB", "C\rD"]])
+        #expect(!table.markdown.contains("\r"))
+        #expect(!table.html.contains("\r"))
+        #expect(table.markdown.contains("Col 1") && table.markdown.contains("A B"))
+        #expect(table.html.contains("Col<br>1") && table.html.contains("C<br>D"))
+    }
 }

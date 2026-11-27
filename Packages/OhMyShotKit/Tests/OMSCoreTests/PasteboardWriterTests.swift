@@ -80,4 +80,18 @@ struct PasteboardWriterTests {
         #expect(pasteboard.types?.contains(.fileURL) == true)
         #expect(pasteboard.types?.contains(.png) != true)
     }
+
+    @Test func lazyTIFFPreservesRetinaDPIMetadata() throws {
+        let pasteboard = makePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let (image, _) = try picture()
+        let retinaPNG = try ImageExporter.encoded(image, as: .png, pixelsPerPoint: 2)
+        PasteboardWriter.write(png: retinaPNG, image: image, to: pasteboard)
+        let tiff = try #require(pasteboard.data(forType: .tiff))
+        let source = try #require(CGImageSourceCreateWithData(tiff as CFData, nil))
+        let props = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let dpiWidth = try #require((props[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue)
+        let dpiHeight = try #require((props[kCGImagePropertyDPIHeight] as? NSNumber)?.doubleValue)
+        #expect(abs(dpiWidth - 144) < 1 && abs(dpiHeight - 144) < 1)
+    }
 }

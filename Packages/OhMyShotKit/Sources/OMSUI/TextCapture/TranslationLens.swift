@@ -20,6 +20,8 @@ public final class TranslationLens {
     public var onPinImage: ((CGImage, CGFloat) -> Void)?
     /// Switches the target language right inside the floating lens without closing it (empty string for Automatic).
     public var onChangeTargetLanguage: ((String) -> Void)?
+    /// Called when the lens closes (not when replaced in-place during a target-language switch).
+    public var onClose: (() -> Void)?
     /// Default directory for "Save Translated Image…".
     public var saveDirectory: URL = .desktopDirectory
 
@@ -46,10 +48,12 @@ public final class TranslationLens {
         shortened: Bool = false, needsDownload: Bool = false,
         targetLanguage: Locale.Language? = nil,
         availableTargetLanguages: [(id: String, name: String)] = [],
+        preservePinned: Bool = false,
         onChangeTargetLanguage: ((String) -> Void)? = nil
     ) {
-        close(animated: false)
-        isPinned = false
+        let wasPinned = preservePinned && isPinned
+        close(animated: false, notify: false)
+        isPinned = wasPinned
         perShowChangeTargetLanguage = onChangeTargetLanguage
         let frame = frame.integral
         let hasLanguageSwitcher = !availableTargetLanguages.isEmpty
@@ -73,7 +77,8 @@ public final class TranslationLens {
             text: spoken, summary: summary, badge: badge, canPinImage: onPinImage != nil,
             targetLanguage: targetLanguage,
             availableTargetLanguages: availableTargetLanguages,
-            languageChipTitle: chipTitle
+            languageChipTitle: chipTitle,
+            initiallyPinned: wasPinned
         )
         view.onCopy = { [weak self] in self?.copy(text) }
         view.onCopyImage = { [weak self] in self?.copyImage(image, scale: scale) }
@@ -165,7 +170,15 @@ public final class TranslationLens {
         return Locale.current.localizedString(forIdentifier: targetLanguage.minimalIdentifier) ?? targetLanguage.minimalIdentifier
     }
 
+    public func setTranslating(_ translating: Bool) {
+        (panel?.contentView as? LensView)?.setTranslating(translating)
+    }
+
     public func close(animated: Bool) {
+        close(animated: animated, notify: true)
+    }
+
+    private func close(animated: Bool, notify: Bool) {
         isPinned = false
         isShowingMenu = false
         perShowChangeTargetLanguage = nil
@@ -173,6 +186,7 @@ public final class TranslationLens {
         self.panel = nil
         onOpenInPanel = nil
         panel.onResignKey = nil
+        let notifyClose = notify ? onClose : nil
         let duration = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.15 : 0
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
@@ -185,6 +199,7 @@ public final class TranslationLens {
             panel.contentView = nil
             if self?.panel == nil { self?.windowLease = nil }
         }
+        notifyClose?()
     }
 
     #if DEBUG
@@ -371,14 +386,20 @@ private final class LensView: NSView {
         text: NSAttributedString, summary: String, badge: String?, canPinImage: Bool,
         targetLanguage: Locale.Language?,
         availableTargetLanguages: [(id: String, name: String)],
-        languageChipTitle: String?
+        languageChipTitle: String?,
+        initiallyPinned: Bool = false
     ) {
         translated = image
         self.original = original
         self.layout = layout
         self.targetLanguage = targetLanguage
         self.availableTargetLanguages = availableTargetLanguages
+        self.isPinned = initiallyPinned
         super.init(frame: CGRect(origin: .zero, size: layout.window.size))
+        if initiallyPinned {
+            pinButton.symbolName = "pin.fill"
+            pinButton.title = String(localized: "Unpin", bundle: .module)
+        }
         wantsLayer = true
         imageLayer.frame = layout.lens
         imageLayer.contents = image
@@ -565,6 +586,10 @@ private final class LensView: NSView {
         }
     }
 
+    func setTranslating(_ translating: Bool) {
+        languageButton?.isLoading = translating
+    }
+
     func showCopied() {
         copyButton.symbolName = "checkmark"
         copiedReset?.cancel()
@@ -586,7 +611,7 @@ private final class LensView: NSView {
 
     /// Option held shows the original under the translation.
     override func flagsChanged(with event: NSEvent) {
-        showsOriginal = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .option
+        showsOriginal = event.modifierFlags.intersection([.command, .shift, .option, .control]) == .option
         super.flagsChanged(with: event)
     }
 
@@ -607,8 +632,8 @@ private final class LensView: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if modifiers == .command, event.charactersIgnoringModifiers == "c" {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "c" {
             onCopy?()
             return true
         }
@@ -707,6 +732,13 @@ private final class LensLanguageButton: NSControl {
     private static let font = Theme.Typeface.label(size: 11, weight: .medium)
 
     private var titleText: String
+    var isLoading = false {
+        didSet {
+            guard isLoading != oldValue else { return }
+            isEnabled = !isLoading
+            needsDisplay = true
+        }
+    }
     private var pressed = false { didSet { needsDisplay = true } }
     private var hovering = false { didSet { needsDisplay = true } }
     private var tracking: NSTrackingArea?
@@ -759,12 +791,14 @@ private final class LensLanguageButton: NSControl {
     override func mouseExited(with event: NSEvent) { hovering = false }
 
     override func mouseDown(with event: NSEvent) {
+        guard !isLoading else { return }
         pressed = true
         defer { pressed = false }
         sendAction(action, to: target)
     }
 
     override func keyDown(with event: NSEvent) {
+        guard !isLoading else { return }
         switch event.keyCode {
         case 49, 36, 76: sendAction(action, to: target)
         default: super.keyDown(with: event)
@@ -774,7 +808,7 @@ private final class LensLanguageButton: NSControl {
     override func draw(_ dirtyRect: NSRect) {
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         let radius = bounds.height / 2
-        NSColor(white: 0, alpha: pressed ? 0.72 : hovering ? 0.62 : 0.5).setFill()
+        NSColor(white: 0, alpha: isLoading ? 0.38 : pressed ? 0.72 : hovering ? 0.62 : 0.5).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         if increaseContrast {
             NSColor(white: 1, alpha: 0.7).setStroke()
@@ -783,11 +817,12 @@ private final class LensLanguageButton: NSControl {
             outline.stroke()
         }
 
+        let fgAlpha: CGFloat = isLoading ? 0.65 : 1
         let symbolConfig = NSImage.SymbolConfiguration(pointSize: 10.5, weight: .medium)
-            .applying(.init(paletteColors: [.white]))
+            .applying(.init(paletteColors: [NSColor.white.withAlphaComponent(fgAlpha)]))
         let chevronConfig = NSImage.SymbolConfiguration(pointSize: 8.5, weight: .semibold)
-            .applying(.init(paletteColors: [NSColor.white.withAlphaComponent(0.85)]))
-        let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+            .applying(.init(paletteColors: [NSColor.white.withAlphaComponent(0.85 * fgAlpha)]))
+        let globe = NSImage(systemSymbolName: isLoading ? "ellipsis" : "globe", accessibilityDescription: nil)?
             .withSymbolConfiguration(symbolConfig)
         let chevron = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(chevronConfig)

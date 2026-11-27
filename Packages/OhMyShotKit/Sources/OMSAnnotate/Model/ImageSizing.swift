@@ -27,19 +27,19 @@ nonisolated public struct ImageSizing: Equatable, Sendable {
 
     public mutating func setWidth(_ value: Int) {
         width = Self.clamped(value)
-        if keepsProportions { height = Self.clamped(Int((Double(width) * Double(current.height) / Double(current.width)).rounded())) }
+        if keepsProportions { height = Self.clamped(Double(width) * Double(current.height) / Double(current.width)) }
     }
 
     public mutating func setHeight(_ value: Int) {
         height = Self.clamped(value)
-        if keepsProportions { width = Self.clamped(Int((Double(height) * Double(current.width) / Double(current.height)).rounded())) }
+        if keepsProportions { width = Self.clamped(Double(height) * Double(current.width) / Double(current.height)) }
     }
 
     /// Both sides at `value` percent of the current size, whatever the proportions setting.
     public mutating func setPercent(_ value: Double) {
-        let factor = max(value, 0) / 100
-        width = Self.clamped(Int((Double(current.width) * factor).rounded()))
-        height = Self.clamped(Int((Double(current.height) * factor).rounded()))
+        let factor = value.isFinite ? max(value, 0) / 100 : (value > 0 ? Double.infinity : 0)
+        width = Self.clamped(Double(current.width) * factor)
+        height = Self.clamped(Double(current.height) * factor)
     }
 
     /// Quick scale presets offered in the Image Size sheet.
@@ -59,6 +59,14 @@ nonisolated public struct ImageSizing: Equatable, Sendable {
 
     private static func clamped(_ value: Int) -> Int {
         min(max(value, 1), AnnotationDocument.maxPictureSide)
+    }
+
+    private static func clamped(_ value: Double) -> Int {
+        guard value.isFinite else { return value > 0 ? AnnotationDocument.maxPictureSide : 1 }
+        let rounded = value.rounded()
+        if rounded <= 1 { return 1 }
+        if rounded >= Double(AnnotationDocument.maxPictureSide) { return AnnotationDocument.maxPictureSide }
+        return Int(rounded)
     }
 }
 

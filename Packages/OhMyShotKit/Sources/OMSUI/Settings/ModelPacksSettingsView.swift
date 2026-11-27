@@ -335,6 +335,21 @@ struct ModelPackMirrorRow: View {
             if Preset.matching(settings.modelPackMirrorURL) == .custom {
                 customMode = true
                 customText = settings.modelPackMirrorURL
+            } else {
+                customMode = false
+                customText = ""
+            }
+        }
+        .onChange(of: settings.modelPackMirrorURL) { _, newValue in
+            let trimmed = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if newValue.isEmpty, !trimmed.isEmpty, ModelPack.normalizedMirrorOrigin(trimmed) != nil {
+                customMode = false
+                customText = ""
+            } else if Preset.matching(newValue) == .custom {
+                customMode = true
+                if ModelPack.normalizedMirrorOrigin(trimmed)?.absoluteString != newValue {
+                    customText = newValue
+                }
             }
         }
     }
@@ -356,7 +371,12 @@ struct ModelPackMirrorRow: View {
     }
 
     private func commitCustom() {
-        settings.modelPackMirrorURL = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            settings.modelPackMirrorURL = ""
+        } else if let normalized = ModelPack.normalizedMirrorOrigin(trimmed) {
+            settings.modelPackMirrorURL = normalized.absoluteString
+        }
     }
 }
 
@@ -490,6 +510,13 @@ private struct ModelPackLicense: View {
                 Button(action: done) { Text("Done", bundle: .module) }
                     .keyboardShortcut(.defaultAction)
             }
+        }
+        .background {
+            Button(action: done) { EmptyView() }
+                .keyboardShortcut(.cancelAction)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
         }
         .padding(20)
         .frame(width: 440)

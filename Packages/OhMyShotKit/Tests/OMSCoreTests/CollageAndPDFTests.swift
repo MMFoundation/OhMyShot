@@ -171,6 +171,21 @@ struct CollageLayoutTests {
         #expect(abs(Int(data[offset + 1]) - 204) <= 2)
         #expect(abs(Int(data[offset + 2]) - 102) <= 2)
     }
+
+    @Test func extremeSpacingAndMarginsNeverOverflowCanvasBounds() {
+        let sizes = Array(repeating: CGSize(width: 200, height: 100), count: 5)
+        for arrangement in [CollageLayout.Arrangement.row, .grid, .featured] {
+            let layout = CollageLayout.layout(
+                sizes,
+                options: .init(arrangement: arrangement, width: 120, spacing: 80, margin: 40)
+            )
+            for cell in layout.cells {
+                #expect(cell.minX >= 0 && cell.minY >= 0)
+                #expect(cell.maxX <= layout.size.width + 0.5)
+                #expect(cell.maxY <= layout.size.height + 0.5)
+            }
+        }
+    }
 }
 
 struct PDFExportTests {

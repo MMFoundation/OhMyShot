@@ -353,6 +353,7 @@ extension View {
 
 private struct SettingsWell: ViewModifier {
     let clipped: Bool
+    @Environment(\.colorSchemeContrast) private var contrast
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -364,6 +365,11 @@ private struct SettingsWell: ViewModifier {
                 filled
             }
         }
-        .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
+        .overlay(
+            shape.strokeBorder(
+                contrast == .increased ? Color.primary.opacity(0.35) : Color(nsColor: .separatorColor),
+                lineWidth: contrast == .increased ? 1 : 0.5
+            )
+        )
     }
 }

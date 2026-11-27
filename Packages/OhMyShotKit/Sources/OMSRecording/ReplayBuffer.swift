@@ -66,6 +66,8 @@ public final class ReplayBuffer {
 
     public let request: Request
     public private(set) var isRunning = false
+    private var isStarting = false
+    private var stopRequestedWhileStarting = false
     /// The buffer stopped on its own, and why: the stream ended (the display went away, Screen Recording was
     /// turned off) or the buffer failed. Either way it is gone.
     public var onStopped: ((Ending) -> Void)?
@@ -121,7 +123,9 @@ public final class ReplayBuffer {
 
     /// Starts buffering. Throws when the stream cannot start; nothing is left running then.
     public func start() async throws {
-        guard !isRunning else { return }
+        guard !isRunning, !isStarting else { return }
+        isStarting = true
+        stopRequestedWhileStarting = false
         let stream = SCStream(filter: request.filter, configuration: Self.configuration(for: request), delegate: output)
         output.onStop = { [weak self] error in
             Task { @MainActor in await self?.stopped(.streamStopped, error) }
@@ -129,16 +133,28 @@ public final class ReplayBuffer {
         output.onFail = { [weak self] error in
             Task { @MainActor in await self?.stopped(.bufferFailed, error) }
         }
+        let buffering: SCClipBufferingOutput
         do {
             try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
-            let buffering = SCClipBufferingOutput(delegate: output)
-            try stream.addClipBufferingOutput(buffering)
-            self.buffering = buffering
+            let clipOutput = SCClipBufferingOutput(delegate: output)
+            try stream.addClipBufferingOutput(clipOutput)
+            buffering = clipOutput
         } catch {
+            isStarting = false
+            stopRequestedWhileStarting = false
             try? await stream.stopCapture()
             throw error
         }
+        isStarting = false
+        if stopRequestedWhileStarting {
+            stopRequestedWhileStarting = false
+            try? stream.removeClipBufferingOutput(buffering)
+            try? await stream.stopCapture()
+            Log.recording.notice("Replay cancelled during startup")
+            return
+        }
+        self.buffering = buffering
         self.stream = stream
         isRunning = true
         leases = [ActiveResources.shared.acquire(.captureStream)]
@@ -161,6 +177,10 @@ public final class ReplayBuffer {
 
     /// Stops buffering and lets the buffer go.
     public func stop() async {
+        if isStarting {
+            stopRequestedWhileStarting = true
+            return
+        }
         guard isRunning else { return }
         isRunning = false
         if let buffering, let stream { try? stream.removeClipBufferingOutput(buffering) }

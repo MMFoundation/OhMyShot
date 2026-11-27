@@ -560,6 +560,12 @@ final class RecordingBar: NSView {
             item.state = button.state
             menu.addItem(item)
         }
+        if let cameraButton = toggles[.camera], cameraButton.isEnabled {
+            let item = NSMenuItem(title: cameraButton.accessibilityLabel() ?? String(localized: "Camera", bundle: .module), action: nil, keyEquivalent: "")
+            item.state = cameraButton.state
+            item.submenu = makeCameraMenu()
+            menu.addItem(item)
+        }
         menu.popUp(under: sender)
     }
 
@@ -691,6 +697,10 @@ final class RecordingBar: NSView {
     /// No camera, or one of the Mac's, then the bubble's shape, size, where it is while it shows, and whether it is
     /// mirrored.
     private func showCameraMenu(from button: NSButton) {
+        makeCameraMenu().popUp(under: button)
+    }
+
+    private func makeCameraMenu() -> NSMenu {
         let menu = NSMenu()
         let showing = states[.camera] == true
         let none = NSMenuItem(title: String(localized: "No Camera", bundle: .module), action: #selector(cameraChosen(_:)), keyEquivalent: "")
@@ -760,7 +770,7 @@ final class RecordingBar: NSView {
         mirror.target = self
         mirror.state = cameraStyle.mirrored ? .on : .off
         menu.addItem(mirror)
-        menu.popUp(under: button)
+        return menu
     }
 
     @objc private func cameraChosen(_ sender: NSMenuItem) {

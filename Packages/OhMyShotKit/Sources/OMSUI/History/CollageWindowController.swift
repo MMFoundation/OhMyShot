@@ -126,6 +126,9 @@ public final class CollageWindowController: NSWindowController, NSWindowDelegate
     }
 
     public func windowWillClose(_ notification: Notification) {
+        window?.animationBehavior = .none
+        model.release()
+        window?.contentViewController = nil
         windowLease?.end()
         windowLease = nil
         onClose?()
@@ -374,8 +377,18 @@ final class CollageModel {
         orderRevision &+= 1
     }
 
+    /// Releases decoded full-resolution images and preview once the window closes.
+    func release() {
+        entries = []
+        preview = nil
+    }
+
     /// The preview again, about 900 pixels wide, from the small pictures.
     func updatePreview() {
+        guard !entries.isEmpty else {
+            preview = nil
+            return
+        }
         let layout = layout
         let previewScale = min(900 / max(layout.size.width, 1), 2)
         preview = CollageRenderer.render(
@@ -456,6 +469,15 @@ struct CollageView: View {
             footer
         }
         .task(id: PreviewKey(model)) { model.updatePreview() }
+        .onDrop(of: [.plainText], isTargeted: nil) { _ in
+            draggingEntryID = nil
+            return false
+        }
+        .onContinuousHover { _ in
+            if draggingEntryID != nil, NSEvent.pressedMouseButtons == 0 {
+                draggingEntryID = nil
+            }
+        }
         .onAppear {
             if selectedEntryID == nil { selectedEntryID = model.entries.first?.id }
         }
@@ -797,7 +819,8 @@ private struct ThumbnailReorderDrop: DropDelegate {
     let move: (UUID, UUID) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
-        draggingID != nil && info.hasItemsConforming(to: [.plainText])
+        guard draggingID != nil, NSApp.isActive else { return false }
+        return info.hasItemsConforming(to: [.plainText])
     }
 
     func dropEntered(info: DropInfo) {

@@ -143,9 +143,10 @@ public final class Uploader: Sendable {
 
     /// `host` or `host:port`, as the Host header and a signature carry it.
     static func hostWithPort(of url: URL) -> String {
-        let host = url.host(percentEncoded: false) ?? ""
+        let host = (url.host(percentEncoded: false) ?? "").lowercased()
+        let scheme = url.scheme?.lowercased()
         let shown = host.contains(":") ? "[\(host)]" : host
-        if let port = url.port, !(port == 80 && url.scheme == "http") && !(port == 443 && url.scheme == "https") {
+        if let port = url.port, !(port == 80 && scheme == "http") && !(port == 443 && scheme == "https") {
             return "\(shown):\(port)"
         }
         return shown

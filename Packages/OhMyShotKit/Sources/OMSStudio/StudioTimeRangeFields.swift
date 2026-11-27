@@ -54,6 +54,7 @@ struct StudioTimeRangeFields: View {
     }
 
     private func refresh() {
+        invalid = false
         startText = StudioTimeInput.format(start)
         endText = StudioTimeInput.format(end)
     }

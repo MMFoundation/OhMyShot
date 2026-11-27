@@ -74,6 +74,7 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
     case noUploadDestination
     case unreadableImage
     case needsFormulaPack
+    case unsupportedMacOS
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -81,6 +82,7 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
         case .noUploadDestination: "No upload destination is set up. Add one in OhMyShot’s Settings › Sharing."
         case .unreadableImage: "The image couldn’t be read."
         case .needsFormulaPack: "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Text › Model packs."
+        case .unsupportedMacOS: "Replay requires macOS 27 or later."
         }
     }
 }
@@ -378,6 +380,9 @@ struct SaveReplayIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard #available(macOS 27, *) else {
+            throw ShortcutFailure.unsupportedMacOS
+        }
         try await run(.saveReplay)
         return .result()
     }

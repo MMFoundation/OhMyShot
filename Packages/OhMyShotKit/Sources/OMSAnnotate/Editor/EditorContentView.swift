@@ -18,6 +18,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     /// The background's adjustments, while their popover is open.
     private var adjustments: BackdropAdjustments?
     private weak var adjustPopover: NSPopover?
+    /// Tracks a locked tool unlocked by the first click of a double-click so click 2 does not re-lock it.
+    private var unlockedOnFirstClick: (tool: AnnotationTool, at: ContinuousClock.Instant)?
 
     private static let railInset: CGFloat = 12
     /// The band along the bottom where the capsule rests when nothing is selected.
@@ -75,7 +77,9 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     private func choose(_ tool: AnnotationTool) {
         if session.tool == tool, session.isToolLocked {
             session.isToolLocked = false
+            unlockedOnFirstClick = (tool, .now)
         } else {
+            unlockedOnFirstClick = nil
             session.tool = tool
         }
         window?.makeFirstResponder(canvas)
@@ -83,6 +87,14 @@ final class EditorContentView: NSView, NSPopoverDelegate {
 
     private func lock(_ tool: AnnotationTool) {
         guard tool.isPutDownAfterMark else { return }
+        if let recent = unlockedOnFirstClick, recent.tool == tool,
+           recent.at.duration(to: .now) <= .seconds(NSEvent.doubleClickInterval) {
+            unlockedOnFirstClick = nil
+            VoiceOver.announce(String(localized: "\(tool.name) unlocked", bundle: .module), from: rail)
+            window?.makeFirstResponder(canvas)
+            return
+        }
+        unlockedOnFirstClick = nil
         if session.tool == tool, session.isToolLocked {
             session.isToolLocked = false
             VoiceOver.announce(String(localized: "\(tool.name) unlocked", bundle: .module), from: rail)

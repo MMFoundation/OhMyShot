@@ -46,7 +46,7 @@ public final class RecordingClipboardHold {
     private let changeCount: () -> Int
     private let released: (UUID) -> Void
     private let notificationCenter: NotificationCenter
-    private var recording: (id: UUID, changeCount: Int)?
+    private var recordings: (ids: Set<UUID>, changeCount: Int)?
     private(set) var watch: Watch?
 
     public init(
@@ -63,29 +63,39 @@ public final class RecordingClipboardHold {
         stopWatching()
     }
 
+    public var heldIDs: Set<UUID> {
+        guard let recordings, recordings.changeCount == changeCount() else { return [] }
+        return recordings.ids
+    }
+
     public var heldID: UUID? {
-        guard let recording, recording.changeCount == changeCount() else { return nil }
-        return recording.id
+        heldIDs.first
     }
 
     public func copied(_ id: UUID, retention: HistoryRetention) {
-        let former = recording?.id
-        recording = (id, changeCount())
+        copied([id], retention: retention)
+    }
+
+    public func copied(_ ids: Set<UUID>, retention: HistoryRetention) {
+        let former = recordings?.ids ?? []
+        recordings = ids.isEmpty ? nil : (ids, changeCount())
         updatePolling(for: retention)
-        if let former, former != id { released(former) }
+        for id in former where !ids.contains(id) {
+            released(id)
+        }
     }
 
     /// Starts or stops event-driven clipboard observation for `retention`, and opportunistically releases any
     /// tracked recording that has already left the clipboard under `.never`.
     public func updatePolling(for retention: HistoryRetention) {
-        guard retention == .never, let recording else {
+        guard retention == .never, let recordings else {
             stopWatching()
             return
         }
-        if heldID == nil {
-            self.recording = nil
+        if heldIDs.isEmpty {
+            self.recordings = nil
             stopWatching()
-            released(recording.id)
+            for id in recordings.ids { released(id) }
             return
         }
         guard watch == nil else { return }
@@ -97,17 +107,17 @@ public final class RecordingClipboardHold {
     /// Opportunistically checks whether the tracked recording has left the clipboard (e.g. from
     /// `releaseIfUnheld` or `removeExpired`), stopping observation and notifying `released` if so.
     public func check() {
-        guard let recording, heldID == nil else { return }
-        self.recording = nil
+        guard let recordings, heldIDs.isEmpty else { return }
+        self.recordings = nil
         stopWatching()
-        released(recording.id)
+        for id in recordings.ids { released(id) }
     }
 
     func poll() {
-        guard watch != nil, let recording, heldID == nil else { return }
-        self.recording = nil
+        guard watch != nil, let recordings, heldIDs.isEmpty else { return }
+        self.recordings = nil
         stopWatching()
-        released(recording.id)
+        for id in recordings.ids { released(id) }
     }
 
     private func stopWatching() {

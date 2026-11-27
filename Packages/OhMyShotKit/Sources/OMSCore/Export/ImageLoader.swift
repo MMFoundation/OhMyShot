@@ -77,4 +77,44 @@ public enum ImageLoader {
     public static func pixelsPerPoint(of source: CGImageSource) -> Double? {
         (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]).flatMap(pixelsPerPoint(in:))
     }
+
+    /// Decodes the first image in `source` upright, applying EXIF orientation only when metadata specifies
+    /// a transform other than `.up` (1), so normal screenshots incur no extra transform overhead.
+    public static func orientedImage(from source: CGImageSource) -> CGImage? {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let rawOrientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.uint32Value
+            ?? ((properties?[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFOrientation] as? NSNumber)?.uint32Value
+            ?? CGImagePropertyOrientation.up.rawValue
+        if rawOrientation == CGImagePropertyOrientation.up.rawValue {
+            return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+        }
+        guard let width = properties?[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties?[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0
+        else {
+            return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+    }
+
+    /// Upright pixel dimensions from image properties, swapping width and height for 90°/270° EXIF orientations (5–8).
+    public static func orientedPixelSize(in properties: [CFString: Any]) -> (width: Int, height: Int)? {
+        guard let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        let rawOrientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.uint32Value
+            ?? ((properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFOrientation] as? NSNumber)?.uint32Value
+            ?? CGImagePropertyOrientation.up.rawValue
+        if rawOrientation >= 5, rawOrientation <= 8 {
+            return (width: height, height: width)
+        }
+        return (width: width, height: height)
+    }
 }

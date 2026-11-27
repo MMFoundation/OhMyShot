@@ -127,9 +127,17 @@ final class TextRecognitionModel {
     private(set) var text = ""
     /// Bumped whenever the model, not the person, replaces the text; the editor applies it undoably.
     private(set) var revision = 0
+    /// Set to `revision` when a background refinement (L2 / elements) replaces unedited text so the editor keeps scroll and selection.
+    private(set) var preserveViewStateRevision = 0
     /// Where each line is in `text`, until the person edits it.
     private(set) var lineRanges: [NSRange] = []
     private(set) var edited = false
+    /// Whether any table cell has been edited by the user since loading or reverting.
+    private(set) var tableEdited = false
+    /// Which reading source's text is currently placed in `text` (prevents stale cloud text on retry/cancel/failure).
+    @ObservationIgnored private var displayedSource: TextSource = .device
+    /// Flushes any active inline cell edit in `TablePreview` before copying, exporting, or switching context.
+    @ObservationIgnored var commitPendingTableEdit: (() -> Void)?
     private(set) var items: [DetectedItem] = []
     /// Bumped when a line is picked on the image: the editor takes focus, so the selection is live and
     /// ⌘C copies it.
@@ -186,6 +194,10 @@ final class TextRecognitionModel {
     @ObservationIgnored var onOpenImage: ((CGImage, CGFloat, String) -> Void)?
     /// Optional hook wired by the app to create a fresh analyzer (without cached lines or screen place) after rotating or cropping.
     @ObservationIgnored var freshAnalyzer: (() -> (@Sendable (CGImage) async throws -> TextAnalysis))?
+    /// Optional hook wired by the app to create a fresh L2 refiner (without stale screen coordinates) after rotating or cropping.
+    @ObservationIgnored var freshSecondReadingRefiner: (() -> (@Sendable (CGImage, [OCRLine]) async -> [OCRLine])?)?
+    /// Per-load L2 refiner retained for `retry()`.
+    @ObservationIgnored private var activeSecondReadingRefiner: (@Sendable (CGImage, [OCRLine]) async -> [OCRLine])?
     /// Prompts before replacing edited text when a new image is loaded into this singleton window.
     @ObservationIgnored var confirmDiscardEdits: @MainActor () -> Bool = { TextRecognitionModel.defaultConfirmDiscardEdits() }
 
@@ -216,24 +228,34 @@ final class TextRecognitionModel {
         formulaDelimiter = { settings.formulaDelimiter }
     }
 
+    @discardableResult
     func load(
         image: CGImage, scale: CGFloat, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis,
-        elements: TextRecognitionWindowController.Elements? = nil
-    ) {
-        loadInternal(image: image, scale: scale, analyze: analyze, elements: elements, preservesFullImage: false)
+        elements: TextRecognitionWindowController.Elements? = nil,
+        secondReadingRefiner: (@Sendable (CGImage, [OCRLine]) async -> [OCRLine])? = nil
+    ) -> Bool {
+        loadInternal(
+            image: image, scale: scale, analyze: analyze, elements: elements,
+            secondReadingRefiner: secondReadingRefiner, preservesFullImage: false
+        )
     }
 
+    @discardableResult
     private func loadInternal(
         image: CGImage, scale: CGFloat, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis,
-        elements: TextRecognitionWindowController.Elements?, preservesFullImage: Bool
-    ) {
-        let seededCloud = preservesFullImage ? nil : TextRecognitionWindowController.consumePendingCloudReading()
-        if self.image != nil, edited, !confirmDiscardEdits() {
-            return
+        elements: TextRecognitionWindowController.Elements?,
+        secondReadingRefiner loadRefiner: (@Sendable (CGImage, [OCRLine]) async -> [OCRLine])?,
+        preservesFullImage: Bool
+    ) -> Bool {
+        commitPendingTableEdit?()
+        if self.image != nil, edited || tableEdited, !confirmDiscardEdits() {
+            return false
         }
+        let seededCloud = preservesFullImage ? nil : TextRecognitionWindowController.consumePendingCloudReading()
         analysis?.cancel()
         self.analyze = analyze
         self.elements = elements
+        self.activeSecondReadingRefiner = loadRefiner
         if preservesFullImage {
             fullImage = fullImage ?? self.image
             isCropped = true
@@ -268,13 +290,13 @@ final class TextRecognitionModel {
             }
         }
         elementReading = reading
-        let refiner = secondReadingRefiner ?? TextRecognitionWindowController.secondReadingRefiner
+        let refiner = loadRefiner ?? secondReadingRefiner ?? TextRecognitionWindowController.secondReadingRefiner
         analysis = Task { [weak self] in
             let probe = LatencyProbe("ocr.analyze")
             do {
                 let result = try await analyze(image)
                 probe.end()
-                guard !Task.isCancelled, let self else { return }
+                guard !Task.isCancelled, let self, self.generation == generation else { return }
                 deviceFailure = nil
                 lines = result.result.lines
                 translationLines = result.result.lines
@@ -292,9 +314,9 @@ final class TextRecognitionModel {
                 if let refiner, !result.result.lines.isEmpty {
                     startSecondReading(refiner: refiner, image: image, initialLines: result.result.lines, generation: generation)
                 }
-                if let reading, let elements { putElementsIn(reading, with: elements, image: image) }
+                if let reading, let elements { putElementsIn(reading, with: elements, image: image, generation: generation) }
             } catch {
-                guard !Task.isCancelled, let self else { return }
+                guard !Task.isCancelled, let self, self.generation == generation else { return }
                 reading?.cancel()
                 beingRead = nil
                 // The details go to the log; the panel says what they mean.
@@ -312,6 +334,7 @@ final class TextRecognitionModel {
                 }
             }
         }
+        return true
     }
 
     private func startSecondReading(
@@ -327,8 +350,11 @@ final class TextRecognitionModel {
             guard refined != initialLines else { return }
             self.lines = refined
             self.translationLines = refined
+            if !self.tableEdited, !self.visionTables.isEmpty {
+                self.visionTables = self.visionTables.map { $0.filled(from: refined) }
+            }
             if !self.edited, self.source == .device {
-                self.regenerate()
+                self.regenerate(preservingViewState: true)
                 if self.translates, self.phase == .ready { self.translate() }
             }
             if self.phase == .empty, !refined.isEmpty {
@@ -355,13 +381,17 @@ final class TextRecognitionModel {
     /// Reads the same image again.
     func retry() {
         guard let image, let analyze else { return }
-        loadInternal(image: image, scale: scale, analyze: analyze, elements: elements, preservesFullImage: isCropped)
+        loadInternal(
+            image: image, scale: scale, analyze: analyze, elements: elements,
+            secondReadingRefiner: activeSecondReadingRefiner, preservesFullImage: isCropped
+        )
     }
 
     func fail(_ failure: TextRecognitionWindowController.OpenFailure) {
         analysis?.cancel()
         analyze = nil
         elements = nil
+        activeSecondReadingRefiner = nil
         image = nil
         fullImage = nil
         isCropped = false
@@ -386,6 +416,7 @@ final class TextRecognitionModel {
         analysis?.cancel()
         analyze = nil
         elements = nil
+        activeSecondReadingRefiner = nil
         image = nil
         fullImage = nil
         isCropped = false
@@ -400,7 +431,11 @@ final class TextRecognitionModel {
         let change: PictureChange = clockwise ? .rotateRight : .rotateLeft
         guard let rotated = change.apply(to: current) else { return }
         let nextAnalyze = freshAnalyzer?() ?? analyze ?? makeFreshAnalyzer()
-        loadInternal(image: rotated, scale: scale, analyze: nextAnalyze, elements: elements, preservesFullImage: false)
+        let nextRefiner = freshSecondReadingRefiner?()
+        guard loadInternal(
+            image: rotated, scale: scale, analyze: nextAnalyze, elements: elements,
+            secondReadingRefiner: nextRefiner, preservesFullImage: false
+        ) else { return }
         announce(clockwise
             ? String(localized: "Rotated image right", bundle: .module)
             : String(localized: "Rotated image left", bundle: .module))
@@ -414,7 +449,11 @@ final class TextRecognitionModel {
         guard !clamped.isNull, clamped.width >= 8, clamped.height >= 8,
               let cropped = current.cropping(to: clamped) else { return }
         let nextAnalyze = freshAnalyzer?() ?? analyze ?? makeFreshAnalyzer()
-        loadInternal(image: cropped, scale: scale, analyze: nextAnalyze, elements: elements, preservesFullImage: true)
+        let nextRefiner = freshSecondReadingRefiner?()
+        guard loadInternal(
+            image: cropped, scale: scale, analyze: nextAnalyze, elements: elements,
+            secondReadingRefiner: nextRefiner, preservesFullImage: true
+        ) else { return }
         announce(String(localized: "Recognizing selected area", bundle: .module))
     }
 
@@ -422,7 +461,11 @@ final class TextRecognitionModel {
     func restoreFullImage() {
         guard isCropped, let full = fullImage else { return }
         let nextAnalyze = freshAnalyzer?() ?? analyze ?? makeFreshAnalyzer()
-        loadInternal(image: full, scale: scale, analyze: nextAnalyze, elements: elements, preservesFullImage: false)
+        let nextRefiner = freshSecondReadingRefiner?()
+        guard loadInternal(
+            image: full, scale: scale, analyze: nextAnalyze, elements: elements,
+            secondReadingRefiner: nextRefiner, preservesFullImage: false
+        ) else { return }
         announce(String(localized: "Restored full image", bundle: .module))
     }
 
@@ -527,16 +570,27 @@ final class TextRecognitionModel {
         cloudTask = nil
         cloud = .idle
         cloudOn = false
+        tableEdited = false
+        displayedSource = .device
         replaceText(with: TextAssembler.Assembly())
+    }
+
+    /// Line count appropriate for VoiceOver on the image pane: cloud readings have no Vision line boxes.
+    var displayedLineCount: Int {
+        if source == .cloud {
+            return text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        }
+        return lines.count
     }
 
     /// The text again from what was read, in the current line-break style; the cloud model's text as it gave it while
     /// that is shown. Undoable in the editor.
-    func regenerate() {
+    func regenerate(preservingViewState: Bool = false) {
+        displayedSource = source
         if source == .cloud, case .read(let result) = cloud {
-            replaceText(with: TextAssembler.Assembly(text: result.reading.text))
+            replaceText(with: TextAssembler.Assembly(text: result.reading.text), preservingViewState: preservingViewState)
         } else {
-            replaceText(with: TextAssembler.assembly(lines, options: .init(joinsWrappedLines: joinLines)))
+            replaceText(with: TextAssembler.assembly(lines, options: .init(joinsWrappedLines: joinLines)), preservingViewState: preservingViewState)
         }
     }
 
@@ -545,14 +599,23 @@ final class TextRecognitionModel {
         regenerate()
     }
 
-    private func replaceText(with assembly: TextAssembler.Assembly) {
+    private func replaceText(with assembly: TextAssembler.Assembly, preservingViewState: Bool = false) {
         text = assembly.text
         lineRanges = assembly.lineRanges
         isCode = assembly.isCode
         edited = false
-        selection = NSRange(location: 0, length: 0)
+        if preservingViewState {
+            let length = (assembly.text as NSString).length
+            let location = min(selection.location, length)
+            selection = NSRange(location: location, length: min(selection.length, length - location))
+        } else {
+            selection = NSRange(location: 0, length: 0)
+        }
         items = TextDetector.items(in: text)
         revision += 1
+        if preservingViewState {
+            preserveViewStateRevision = revision
+        }
     }
 
     /// The person typed: the text no longer lines up with the image, so lines stop selecting text.
@@ -586,25 +649,50 @@ final class TextRecognitionModel {
 
     /// Updates a single cell in the currently displayed table (device or cloud reading).
     func updateTableCell(row: Int, column: Int, value: String) {
+        updateTableCell(source: source, tableIndex: nil, row: row, column: column, value: value, undoManager: nil)
+    }
+
+    /// Updates a single cell in a specific reading source and table index, optionally registering Undo.
+    func updateTableCell(
+        source targetSource: TextSource,
+        tableIndex targetIndex: Int?,
+        row: Int,
+        column: Int,
+        value: String,
+        undoManager: UndoManager? = nil
+    ) {
         guard row >= 0, column >= 0 else { return }
-        let activeIndex = tables.indices.contains(tableIndex) ? tableIndex : 0
-        if source == .cloud, case .read(var result) = cloud, result.tables.indices.contains(activeIndex),
-           result.tables[activeIndex].rows.indices.contains(row) {
+        if targetSource == .cloud {
+            guard case .read(var result) = cloud else { return }
+            let activeIndex = targetIndex ?? (result.tables.indices.contains(tableIndex) ? tableIndex : 0)
+            guard result.tables.indices.contains(activeIndex),
+                  result.tables[activeIndex].rows.indices.contains(row) else { return }
+            let oldValue = column < result.tables[activeIndex].rows[row].count ? result.tables[activeIndex].rows[row][column] : ""
+            guard oldValue != value else { return }
             if result.tables[activeIndex].rows[row].count <= column {
                 result.tables[activeIndex].rows[row].append(contentsOf: Array(repeating: "", count: column - result.tables[activeIndex].rows[row].count + 1))
             }
-            guard result.tables[activeIndex].rows[row][column] != value else { return }
             result.tables[activeIndex].rows[row][column] = value
             cloud = .read(result)
+            tableEdited = true
+            undoManager?.registerUndo(withTarget: self) { target in
+                target.updateTableCell(source: targetSource, tableIndex: activeIndex, row: row, column: column, value: oldValue, undoManager: undoManager)
+            }
             return
         }
+        let activeIndex = targetIndex ?? (visionTables.indices.contains(tableIndex) ? tableIndex : 0)
         guard visionTables.indices.contains(activeIndex),
               visionTables[activeIndex].rows.indices.contains(row) else { return }
+        let oldValue = column < visionTables[activeIndex].rows[row].count ? visionTables[activeIndex].rows[row][column] : ""
+        guard oldValue != value else { return }
         if visionTables[activeIndex].rows[row].count <= column {
             visionTables[activeIndex].rows[row].append(contentsOf: Array(repeating: "", count: column - visionTables[activeIndex].rows[row].count + 1))
         }
-        guard visionTables[activeIndex].rows[row][column] != value else { return }
         visionTables[activeIndex].rows[row][column] = value
+        tableEdited = true
+        undoManager?.registerUndo(withTarget: self) { target in
+            target.updateTableCell(source: targetSource, tableIndex: activeIndex, row: row, column: column, value: oldValue, undoManager: undoManager)
+        }
     }
 
     /// The panes the toolbar offers; none when there is only one.
@@ -626,28 +714,36 @@ final class TextRecognitionModel {
     /// where they bear themselves out (`TableMerge`). Text the person edited meanwhile stays as it is; Revert brings the
     /// text with them.
     private func putElementsIn(
-        _ reading: Task<TextRecognitionWindowController.Elements.Found, Never>, with elements: TextRecognitionWindowController.Elements, image: CGImage
+        _ reading: Task<TextRecognitionWindowController.Elements.Found, Never>, with elements: TextRecognitionWindowController.Elements, image: CGImage,
+        generation: Int
     ) {
         elementMerge = Task { [weak self] in
             let probe = LatencyProbe("ocr.panel-formulas")
             let started = ContinuousClock.now
             let found = await reading.value
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, self.generation == generation else { return }
             guard !found.formulas.isEmpty || !found.tables.isEmpty else {
                 elementReading = nil
                 beingRead = nil
                 return
             }
-            let withFormulas = found.formulas.isEmpty ? lines : await elements.merge(lines, found.formulas, image)
+            // Stop any still-running L2 refinement before merging elements so it cannot race with `elements.merge`.
+            secondReadingTask?.cancel()
+            secondReadingTask = nil
+            elementsMerged = true
+            let baseLines = lines
+            let withFormulas = found.formulas.isEmpty ? baseLines : await elements.merge(baseLines, found.formulas, image)
             probe.end()
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self.generation == generation else { return }
             translationLines = withFormulas
             var merged = withFormulas
             var taken = 0
             if !found.tables.isEmpty {
                 let tables = TableMerge.merged(merged, with: found.tables, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
                 merged = tables.lines
-                visionTables = TableMerge.tables(visionTables, after: tables)
+                if !tableEdited {
+                    visionTables = TableMerge.tables(visionTables, after: tables)
+                }
                 taken = tables.taken.count
                 if tables.cutRows > 0 {
                     Log.capture.notice("OCR panel left \(tables.cutRows, privacy: .public) table rows the picture's edge cut as Vision read them")
@@ -658,11 +754,10 @@ final class TextRecognitionModel {
             }
             elementReading = nil
             beingRead = nil
-            elementsMerged = true
             formulas = found.formulas
             Log.capture.notice("OCR panel put \(found.formulas.count, privacy: .public) formulas and \(taken, privacy: .public) of \(found.tables.count, privacy: .public) tables into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
             lines = merged
-            if !edited, source == .device { regenerate() }
+            if !edited, source == .device { regenerate(preservingViewState: true) }
             if !lines.isEmpty || !visionTables.isEmpty { reportReading() }
             let wasEmpty = phase == .empty
             if wasEmpty, !lines.isEmpty { phase = .ready }
@@ -701,7 +796,8 @@ final class TextRecognitionModel {
     private func setReadsInCloud(_ on: Bool) {
         guard on != cloudOn else { return }
         guard !on || cloudModel != nil else { return }
-        let before = source
+        commitPendingTableEdit?()
+        let beforeDisplayed = displayedSource
         cloudOn = on
         if on {
             switch cloud {
@@ -723,7 +819,7 @@ final class TextRecognitionModel {
                 phase = failure
             }
         }
-        if source != before {
+        if source != beforeDisplayed {
             sourceChanged()
             if source == .device {
                 if let failure = deviceFailure {
@@ -761,10 +857,17 @@ final class TextRecognitionModel {
                 guard !Task.isCancelled, let self, generation == self.generation else { return }
                 cloudTask = nil
                 cloud = .failed(message: error.localizedDescription, canRetry: (error as? CloudReadingError)?.isWorthRetrying ?? true)
-                if let failure = deviceFailure, phase == .loading {
+                if displayedSource != source {
+                    sourceChanged()
+                    if source == .device, let failure = deviceFailure {
+                        phase = failure
+                    } else if source == .device, lines.isEmpty, codes.isEmpty, visionTables.isEmpty, phase == .ready {
+                        phase = .empty
+                    }
+                } else if let failure = deviceFailure, phase == .loading {
                     phase = failure
                 }
-                announce(String(localized: "Couldn’t read with \(model.name)", bundle: .module))
+                announce(String(localized: "Couldn’t read with \(model.displayName)", bundle: .module))
             }
         }
     }
@@ -776,14 +879,20 @@ final class TextRecognitionModel {
 
     private func cloudDone(_ reading: CloudReading, with model: CloudModel) {
         cloudTask = nil
-        let before = source
         cloud = .read(CloudResult(reading: reading, tables: MarkdownTables.tables(in: reading.text)))
         Log.capture.notice("OCR panel read with a cloud model: \(reading.text.count, privacy: .public) characters, \(self.tables.count, privacy: .public) tables, complete \(reading.isComplete, privacy: .public)")
         guard source == .cloud else {
-            if let failure = deviceFailure, phase == .loading {
+            if displayedSource != source {
+                sourceChanged()
+                if let failure = deviceFailure {
+                    phase = failure
+                } else if lines.isEmpty, codes.isEmpty, visionTables.isEmpty, phase == .ready {
+                    phase = .empty
+                }
+            } else if let failure = deviceFailure, phase == .loading {
                 phase = failure
             }
-            announce(String(localized: "\(model.name) found no text", bundle: .module))
+            announce(String(localized: "\(model.displayName) found no text", bundle: .module))
             return
         }
         reportReading()
@@ -792,9 +901,10 @@ final class TextRecognitionModel {
         case .empty, .failed, .loading: phase = .ready
         case .ready: break
         }
-        if source != before { sourceChanged() }
+        // Always refresh the displayed text/tables on a completed cloud reading (including Re-read retries).
+        sourceChanged()
         if translates, phase == .ready { translate() }
-        announce(String(localized: "Read by \(model.name)", bundle: .module))
+        announce(String(localized: "Read by \(model.displayName)", bundle: .module))
     }
 
     /// Device, cloud, and model-pack results for one image are one recognition.
@@ -829,6 +939,7 @@ final class TextRecognitionModel {
     var translationLanguage: Locale.Language? { settings.translationLanguage }
 
     private func translatesChanged() {
+        commitPendingTableEdit?()
         if translates {
             if targets.isEmpty {
                 Task { [weak self] in
@@ -1069,13 +1180,20 @@ final class TextRecognitionModel {
 
     /// Returns `text` formatted for clipboard copy, applying `formulaDelimiter` consistently to recognized math lines.
     func formattedTextForCopy() -> String {
-        Self.formatFormulas(in: text, lines: lines, edited: edited || source == .cloud, delimiter: formulaDelimiter())
+        Self.formatFormulas(
+            in: text, lines: lines, edited: edited || source == .cloud,
+            delimiter: formulaDelimiter(), lineRanges: lineRanges
+        )
     }
 
-    static func formatFormulas(in text: String, lines: [OCRLine], edited: Bool, delimiter: FormulaDelimiter) -> String {
+    static func formatFormulas(
+        in text: String, lines: [OCRLine], edited: Bool, delimiter: FormulaDelimiter,
+        lineRanges: [NSRange]? = nil
+    ) -> String {
         guard !edited, lines.contains(where: { $0.math != nil }) else { return text }
         let nonEmpty = text.split(separator: "\n", omittingEmptySubsequences: true)
-        let pureFormulaLines = !nonEmpty.isEmpty && nonEmpty.allSatisfy { Self.unwrappedMath(String($0)) != nil }
+        let pureFormulaLines = !nonEmpty.isEmpty && lines.allSatisfy { $0.math != nil }
+            && nonEmpty.allSatisfy { Self.unwrappedMath(String($0)) != nil }
         if pureFormulaLines {
             return text
                 .split(separator: "\n", omittingEmptySubsequences: false)
@@ -1090,11 +1208,40 @@ final class TextRecognitionModel {
         guard delimiter != .raw else { return text }
         guard let regex = try? NSRegularExpression(pattern: #"\$\$(.+?)\$\$|\$([^$\n]+?)\$"#) else { return text }
         let ns = text as NSString
+        // Only rewrite math delimiters inside recognized math lines, never prose currency like "$5 to $10".
+        let mathRanges: [NSRange]? = {
+            if let lineRanges, lineRanges.count == lines.count {
+                return zip(lines, lineRanges).compactMap { $0.math != nil ? $1 : nil }
+            }
+            let segments = text.split(separator: "\n", omittingEmptySubsequences: false)
+            if segments.count == lines.count {
+                var ranges: [NSRange] = []
+                var offset = 0
+                for (index, segment) in segments.enumerated() {
+                    let length = (String(segment) as NSString).length
+                    if lines[index].math != nil {
+                        ranges.append(NSRange(location: offset, length: length))
+                    }
+                    offset += length + 1
+                }
+                return ranges
+            }
+            return nil
+        }()
+        let mathLineTexts = lines.filter { $0.math != nil }.map(\.text)
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return text }
         var result = ""
         var cursor = 0
         for match in matches {
+            let fullText = ns.substring(with: match.range)
+            let isRecognizedMath: Bool
+            if let mathRanges {
+                isRecognizedMath = mathRanges.contains { NSIntersectionRange($0, match.range).length == match.range.length }
+            } else {
+                isRecognizedMath = mathLineTexts.contains { $0.contains(fullText) }
+            }
+            guard isRecognizedMath else { continue }
             if match.range.location > cursor {
                 result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
             }
@@ -1150,6 +1297,7 @@ final class TextRecognitionModel {
     }
 
     func copyShown() {
+        commitPendingTableEdit?()
         if translates {
             copyTranslation()
         } else if pane == .table {
@@ -1161,6 +1309,7 @@ final class TextRecognitionModel {
 
     /// The table as spreadsheets paste it (tab-separated and HTML), with Markdown as its plain text.
     func copyTable() {
+        commitPendingTableEdit?()
         guard let table = currentTable else { return }
         write { item in
             item.setString(table.tsv, forType: NSPasteboard.PasteboardType("public.utf8-tab-separated-values-text"))
@@ -1171,6 +1320,7 @@ final class TextRecognitionModel {
     }
 
     func copyTable(as format: TableFormat) {
+        commitPendingTableEdit?()
         guard let table = currentTable else { return }
         let output: String = switch format {
         case .markdown: table.markdown
@@ -1188,6 +1338,7 @@ final class TextRecognitionModel {
 
     /// Exports the current table as an RFC-4180 CSV file via `NSSavePanel`.
     func exportTableCSV() {
+        commitPendingTableEdit?()
         guard let table = currentTable else { return }
         let csv = table.csv
         let directory = settings.exportDirectory

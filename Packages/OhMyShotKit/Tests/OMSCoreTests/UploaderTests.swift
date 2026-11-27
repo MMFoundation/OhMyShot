@@ -230,6 +230,7 @@ struct UploaderTests {
         let rig = try rig()
         let host = "dav-b.test"
         let target = destination(.webDAV(WebDAVSettings(baseURL: URL(string: "http://\(host):8080/dav/")!, username: "u")))
+        try rig.secrets.setSecret("pw", field: SecretField.webDAVPassword, of: target.id)
         StubURLProtocol.install(host: host) { _ in (204, [:], "") }
         let result = try await rig.uploader.upload(fileAt: rig.file, to: target, originalName: "p.png")
         #expect(result.link.absoluteString == "http://\(host):8080/dav/p.png")
@@ -355,5 +356,30 @@ struct UploaderTests {
         let error = UploadError.secretMissing(field: "header:Authorization")
         #expect(!(error.errorDescription ?? "").contains("Bearer"))
         #expect(UploadError.fileTooLarge(limit: 5_000_000).errorDescription?.contains("MB") == true)
+    }
+
+    @Test func webDAVRequiresPasswordCustomHTTPToleratesBrokenOptionalTemplatesAndHostWithPortNormalizesCase() async throws {
+        let rig = try rig()
+        // Missing WebDAV password must fail explicitly rather than sending "user:".
+        let davHost = "dav-missing-pw.test"
+        let davTarget = destination(.webDAV(WebDAVSettings(baseURL: URL(string: "https://\(davHost)/dav/")!, username: "u")))
+        await #expect(throws: UploadError.secretMissing(field: SecretField.webDAVPassword)) {
+            try await rig.uploader.upload(fileAt: rig.file, to: davTarget)
+        }
+
+        // Broken optional DeletionURL / ThumbnailURL must not fail an upload whose main URL succeeded.
+        let httpHost = "http-optional-broken.test"
+        let json = #"{"Version":"16.1.0","RequestURL":"https://http-optional-broken.test/up","Body":"MultipartFormData","FileFormName":"f","URL":"{json:url}","DeletionURL":"{xml:/bad}","ThumbnailURL":"{xml:/bad}"}"#
+        let imported = try ShareXImporter.importUploader(from: Data(json.utf8))
+        StubURLProtocol.install(host: httpHost) { _ in (200, [:], #"{"url":"https://cdn.example.com/ok.png"}"#) }
+        let result = try await rig.uploader.upload(fileAt: rig.file, to: imported.destination)
+        #expect(result.link.absoluteString == "https://cdn.example.com/ok.png")
+        #expect(result.deletionURL == nil)
+        #expect(result.thumbnailURL == nil)
+
+        // Uppercase scheme/host normalizes to lowercase and omits default port :443.
+        let normalized = Uploader.hostWithPort(of: URL(string: "HTTPS://S3.EXAMPLE.COM:443/bucket")!)
+        #expect(normalized == "s3.example.com")
+        #expect(Uploader.hostWithPort(of: URL(string: "HTTP://LOCAL.TEST:8080/a")!) == "local.test:8080")
     }
 }

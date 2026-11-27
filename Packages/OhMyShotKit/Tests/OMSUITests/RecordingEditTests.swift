@@ -76,7 +76,7 @@ struct RecordingEditTests {
         #expect(tooLow.scale == 0.25)
 
         let tooHigh = GIFExportOptions(framesPerSecond: 120, scale: 2.5)
-        #expect(tooHigh.framesPerSecond == 60)
+        #expect(tooHigh.framesPerSecond == 50)
         #expect(tooHigh.scale == 1.0)
     }
 

@@ -91,16 +91,19 @@ public struct VisionPipeline: OCREngine {
     }
 
     /// Builds a `TextAnalysis` reusing already-recognized `lines` (skipping redundant Vision text OCR),
-    /// while still detecting QR codes and barcodes in `image` for the Recognized Text panel.
+    /// while still detecting document tables and all QR/barcode symbologies in `image` for the Recognized Text panel.
     @concurrent
     public func analysis(reusing lines: [OCRLine], in image: CGImage) async throws -> TextAnalysis {
+        let deadline = ContinuousClock.now + options.overallTimeout
         try Task.checkCancellation()
         let ordered = ReadingOrder.sorted(lines)
         let text = TextAssembler.assemble(ordered, options: options.assembly)
         let result = OCRResult(lines: ordered, text: text, duration: .zero)
-        let codes = (try? await Self.selectionCodes(in: image, timeout: options.timeout)) ?? []
-        try Task.checkCancellation()
-        return TextAnalysis(result: result, tables: [], codes: codes)
+        return try await Self.analyze(
+            result, until: deadline,
+            tables: { try await documentTables(in: image) },
+            codes: { try await detectCodes(in: image) }
+        )
     }
 
     private func recognizeFile(at url: URL) async throws -> OCRResult {

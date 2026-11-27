@@ -37,6 +37,13 @@ struct AcknowledgmentsSheet: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
+        .background {
+            Button(action: done) { EmptyView() }
+                .keyboardShortcut(.cancelAction)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
         .padding(20)
         .frame(width: 620)
         .task {

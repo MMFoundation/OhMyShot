@@ -348,7 +348,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     public func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard closing == nil else { return false }
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         guard session.hasUnkeptChanges else { return true }
         _ = startClosing()
         return false
@@ -364,7 +364,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         let task = Task { () -> Bool in
             defer { closing = nil }
             guard let window, window.attachedSheet == nil else { return false }
-            self.content.canvas.endEditing()
+            self.content.canvas.commitPendingEdits()
             if !self.session.hasUnkeptChanges {
                 window.close()
                 return true
@@ -382,9 +382,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 }
             }
             let mayClose = await EditorCloseRecovery.mayClose {
-                self.content.canvas.endEditing()
+                self.content.canvas.commitPendingEdits()
                 guard await self.exportAndKeep() != nil else { return .failed }
-                self.content.canvas.endEditing()
+                self.content.canvas.commitPendingEdits()
                 return self.session.hasUnkeptChanges ? .changedWhileKeeping : .kept
             } choose: {
                 guard window.attachedSheet == nil else { return .keepEditing }
@@ -462,7 +462,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     /// Keeps the edits at once, on this thread, before handing out a drag.
     public func keepNow() {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         let document = session.document
         guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = try? ImageExporter.encoded(image, as: .png, pixelsPerPoint: Double(document.scale)),
               let url = actions.keep(document, png, image) else { return }
@@ -477,7 +477,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Command-C keeps the window open. A picture that couldn't be copied leaves the window open and says so.
     @discardableResult
     func copy(thenClose: Bool = false) -> Task<Void, Never> {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         return Task {
             guard let rendered = await render() else {
                 NSSound.beep()
@@ -506,9 +506,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     }
 
     func save() {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         Task {
-            guard let file = await exportAndKeep() else {
+            guard let file = await prepareFileForHandOver(applyFormat: false) else {
                 NSSound.beep()
                 return
             }
@@ -528,7 +528,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Pins the picture as it looks now, its edits kept in the capture first, as Copy keeps them. The window stays open.
     @discardableResult
     func pin() -> Task<Void, Never> {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         return Task {
             guard let pin = actions.pin else { return }
             guard let rendered = await render() else { return NSSound.beep() }
@@ -541,7 +541,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Upload does. Edits that can't be kept upload nothing, since the file would not show them.
     @discardableResult
     func upload(to destination: UUID? = nil) -> Task<Void, Never> {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         return Task {
             guard let upload = actions.upload else { return }
             guard !actions.isUploading(), let file = await prepareFileForHandOver(applyFormat: false) else { return NSSound.beep() }
@@ -552,7 +552,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Opens the OCR panel on the rendered capture.
     @discardableResult
     func recognizeText() -> Task<Void, Never> {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         return Task {
             guard let recognizeAction = actions.recognizeText else { return }
             guard let image = await session.render() else {
@@ -584,7 +584,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// The file to share, with the edits kept in it first (or rendered to the preview file for external projects);
     /// nil when they could not be kept or rendered.
     func fileForSharing() async -> URL? {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         return await prepareFileForHandOver(applyFormat: true)
     }
 
@@ -592,9 +592,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// marks are kept first, as Save keeps them.
     func saveAs() {
         guard let saveAs = actions.saveAs else { return }
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         Task {
-            guard let file = await exportAndKeep() else {
+            guard let file = await prepareFileForHandOver(applyFormat: false) else {
                 NSSound.beep()
                 return
             }
@@ -611,7 +611,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     private func saveProjectCopy() async -> AnnotationDocument? {
         guard let window, window.attachedSheet == nil else { return nil }
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [AnnotationProject.contentType]
         panel.nameFieldStringValue = (window.title as NSString).appendingPathExtension(AnnotationProject.fileExtension) ?? window.title
@@ -632,7 +632,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Prints the capture as it looks now, the print panel coming down from the window. The edits stay unkept,
     /// as they would were the window left open.
     func printCapture() {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         Task {
             guard let image = await session.render() else { return NSSound.beep() }
             let title = window?.title ?? ""
@@ -691,13 +691,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     /// The file to drag out, with the edits kept in it first (or rendered to the preview file for external projects).
     func fileForDragging() -> URL? {
-        content.canvas.endEditing()
+        content.canvas.commitPendingEdits()
         if confirmsSaveOnClose {
             guard let fileURL else { return nil }
             if session.hasUnkeptChanges {
                 let document = session.document
                 guard let image = AnnotationRenderer.flatten(document, base: session.base),
-                      let png = try? ImageExporter.encoded(image, as: .png) else { return nil }
+                      let png = try? ImageExporter.encoded(image, as: .png, pixelsPerPoint: Double(document.scale)) else { return nil }
                 do {
                     try png.write(to: fileURL, options: .atomic)
                     model.thumbnail = Self.scaledThumbnail(from: image)
@@ -805,7 +805,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     private func render() async -> RenderedCapture? {
         let document = session.document
         guard let image = await AnnotationRenderer.render(document, base: session.base),
-              let png = try? await ImageExporter.encode(image, as: .png) else { return nil }
+              let png = try? await ImageExporter.encode(image, as: .png, pixelsPerPoint: Double(document.scale)) else { return nil }
         return RenderedCapture(document: document, image: image, png: png)
     }
 
@@ -841,6 +841,15 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     @objc public func shareCapture(_ sender: Any?) {
         share()
+    }
+
+    /// Forward menu actions to the canvas even when focus sits on the window or a toolbar/capsule button,
+    /// while leaving inline text editors free to handle their own standard Edit commands.
+    public override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        if !(window?.firstResponder is NSText), content.canvas.responds(to: action) {
+            return content.canvas
+        }
+        return super.supplementalTarget(forAction: action, sender: sender)
     }
 }
 
@@ -1040,7 +1049,7 @@ struct EditorView: View {
                     Button {
                         model.controller?.pin()
                     } label: {
-                        Text("Pin to Screen", bundle: .module)
+                        Text("Pin to Screen (⇧⌘P)", bundle: .module)
                     }
                 }
                 if model.controller?.offersRecognizeText == true {
@@ -1063,13 +1072,13 @@ struct EditorView: View {
                     Button {
                         model.controller?.upload()
                     } label: {
-                        Text("Upload", bundle: .module)
+                        Text("Upload (⇧⌘U)", bundle: .module)
                     }
                 case .uploadWithChoice(let targets):
                     Button {
                         model.controller?.upload()
                     } label: {
-                        Text("Upload to \(model.uploadMenu.defaultTarget?.name ?? "")", bundle: .module)
+                        Text("Upload to \(model.uploadMenu.defaultTarget?.name ?? "") (⇧⌘U)", bundle: .module)
                     }
                     Menu {
                         ForEach(targets) { target in
@@ -1089,13 +1098,13 @@ struct EditorView: View {
                 }
             } label: {
                 Label {
-                    Text("Save Options", bundle: .module)
+                    Text("More Actions", bundle: .module)
                 } icon: {
                     Image(systemName: "chevron.down")
                 }
             }
             .menuIndicator(.hidden)
-            .help(Text("Save Options", bundle: .module))
+            .help(Text("More Actions", bundle: .module))
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {

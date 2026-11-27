@@ -813,7 +813,7 @@ public final class SettingsStore {
     /// last took goes with remembering it, which a new install has off. Shortcuts, destinations, the cloud model, and the
     /// language are kept elsewhere and stay too.
     public func resetToDefaults() {
-        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers, .sendsUsageData]
+        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers, .sendsUsageData, .historyRetention]
         for key in Key.allCases where !kept.contains(key) {
             defaults.removeObject(forKey: key)
         }

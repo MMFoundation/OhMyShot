@@ -125,6 +125,10 @@ final class PinWindow: NSPanel, NSWindowDelegate {
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .keyDown where [53, 123, 124, 125, 126].contains(event.keyCode) && firstResponder !== pinView:
+            // Let PinTextView handle Shift+Arrow to extend text selection, while keeping plain arrows and Escape on the pin.
+            if firstResponder === pinView.textView, event.keyCode != 53, event.modifierFlags.contains(.shift) {
+                break
+            }
             // Escape and the arrows stay the pin's even while Live Text holds the keyboard.
             pinView.keyDown(with: event)
             return
@@ -211,7 +215,7 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         }
         isTransformed = true
         // Transformed pixels diverge from any history capture file, so handovers use this pin's own pixels.
-        updateImage(transformed, scale: scale, pinnedAt: .distantPast, clearBackground: true)
+        updateImage(transformed, scale: scale, pinnedAt: .distantPast, clearBackground: true, resetTransform: false)
     }
 
     /// Captures all state needed to restore this pin if closed accidentally.
@@ -278,7 +282,7 @@ final class PinWindow: NSPanel, NSWindowDelegate {
 
     /// Returns a file URL suitable for dragging this picture pin into another app, or nil when nothing is to go.
     func fileForDrag() -> URL? {
-        if !isTransformed, let provider = actions.fileForDrag {
+        if let provider = actions.fileForDrag {
             return provider(pin)
         }
         guard case .image(let image, let scale) = pin.content else { return nil }
@@ -289,7 +293,8 @@ final class PinWindow: NSPanel, NSWindowDelegate {
             return existing
         }
         let directory = ExportedFiles.standardFolder.appending(path: "Pins", directoryHint: .isDirectory)
-        let tempURL = directory.appending(path: "OhMyShot Pin \(pin.id.uuidString).png")
+        let suffix = pin.imageRevision > 0 ? "-\(pin.imageRevision)" : ""
+        let tempURL = directory.appending(path: "OhMyShot Pin \(pin.id.uuidString)\(suffix).png")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try ImageExporter.write(ImageExporter.encoded(image, as: .png, pixelsPerPoint: Double(scale)), to: tempURL)
@@ -308,13 +313,20 @@ final class PinWindow: NSPanel, NSWindowDelegate {
     }
 
     /// Refreshes a picture pin in place with an updated image and scale.
-    func updateImage(_ image: CGImage, scale: CGFloat, pinnedAt: Date = .now, clearBackground: Bool = true) {
+    func updateImage(_ image: CGImage, scale: CGFloat, pinnedAt: Date = .now, clearBackground: Bool = true, resetTransform: Bool = true) {
         guard case .image = pin.content else { return }
+        if resetTransform {
+            rotationSteps = 0
+            flippedHorizontal = false
+            flippedVertical = false
+            isTransformed = false
+        }
         let updatedContent = PinController.Content.image(image, scale: scale)
         pin = PinController.Pin(
             id: pin.id, content: updatedContent, origin: pin.origin, pinnedAt: pinnedAt,
             onBackground: clearBackground ? nil : pin.onBackground,
-            requiresBackground: clearBackground ? false : pin.requiresBackground
+            requiresBackground: clearBackground ? false : pin.requiresBackground,
+            imageRevision: pin.imageRevision &+ 1
         )
         baseSize = Self.baseSize(of: updatedContent)
         let center = CGPoint(x: frame.midX, y: frame.midY)

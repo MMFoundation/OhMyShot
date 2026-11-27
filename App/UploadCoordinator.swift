@@ -117,7 +117,9 @@ final class UploadCoordinator {
         }
         if !center.retry(captureID: captureID) {
             Log.upload.notice("Retry not possible: the destination is gone")
-            VoiceOver.announce(String(localized: "That destination was removed. Choose Upload again to pick another."))
+            let notice = String(localized: "That destination was removed. Choose Upload again to pick another.")
+            copied.show(notice, near: NSEvent.mouseLocation)
+            VoiceOver.announce(notice)
             center.forget(captureID: captureID)
             quickAccess.setUpload(nil, for: captureID)
             ended?(captureID, .failed)
@@ -493,9 +495,15 @@ private final class UploadFailureHUD {
         let maxX = max(minX, visible.maxX - edgePad - cardSize.width)
         let x = min(max(rawX, minX), maxX)
 
-        var rawY = visible.minY + cornerInset
-        if let cardsFrame, visible.intersects(cardsFrame), cardsFrame.maxY + 12 + cardSize.height <= visible.maxY - edgePad {
-            rawY = max(rawY, cardsFrame.maxY + 12)
+        var rawY = corner.isTop ? visible.maxY - cornerInset - cardSize.height : visible.minY + cornerInset
+        if let cardsFrame, visible.intersects(cardsFrame) {
+            if corner.isTop {
+                if cardsFrame.minY - 12 - cardSize.height >= visible.minY + edgePad {
+                    rawY = min(rawY, cardsFrame.minY - 12 - cardSize.height)
+                }
+            } else if cardsFrame.maxY + 12 + cardSize.height <= visible.maxY - edgePad {
+                rawY = max(rawY, cardsFrame.maxY + 12)
+            }
         }
         let minY = visible.minY + edgePad
         let maxY = max(minY, visible.maxY - edgePad - cardSize.height)
@@ -528,6 +536,12 @@ private final class UploadFailureHUD {
         if inside {
             dismissal?.cancel()
             dismissal = nil
+            if let panel {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    panel.animator().alphaValue = 1
+                }
+            }
         } else {
             scheduleDismissal()
         }
@@ -608,6 +622,7 @@ private struct UploadFailureCard: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(4)
+                    .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 if let retryTitle, let onRetry {
                     Button(action: onRetry) {

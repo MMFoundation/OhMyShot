@@ -93,12 +93,14 @@ public enum ShareXImporter {
         }
 
         if version.isEmpty || compare(version, "12.3.1") <= 0 {
-            if method.uppercased() == "POST" {
-                bodyName = "MultipartFormData"
-            } else {
-                bodyName = "None"
-                for (name, value) in arguments where parameters[name] == nil { parameters[name] = value }
-                arguments = [:]
+            if bodyName.isEmpty {
+                if method.uppercased() == "POST" {
+                    bodyName = "MultipartFormData"
+                } else {
+                    bodyName = "None"
+                    for (name, value) in arguments where parameters[name] == nil { parameters[name] = value }
+                    arguments = [:]
+                }
             }
             switch string("ResponseType") {
             case "RedirectionURL":
@@ -179,10 +181,14 @@ public enum ShareXImporter {
                 throw ShareXImportError.template(field: field, error: e)
             }
         }
-        try request("RequestURL", requestURL)
+        var normalizedURL = requestURL.trimmingCharacters(in: .whitespaces)
+        if !normalizedURL.contains("://") { normalizedURL = "https://" + normalizedURL }
+        try request("RequestURL", normalizedURL)
         for (key, value) in parameters { try request("Parameters.\(key)", value) }
         for (key, value) in headers { try request("Headers.\(key)", value) }
-        for (key, value) in arguments { try request("Arguments.\(key)", value) }
+        if bodyType == .multipartFormData {
+            for (key, value) in arguments { try request("Arguments.\(key)", value) }
+        }
         try response("URL", url)
         try response("ThumbnailURL", thumbnail)
         try response("DeletionURL", deletion)
@@ -190,7 +196,7 @@ public enum ShareXImporter {
 
         let settings = CustomHTTPSettings(
             method: httpMethod,
-            requestURL: requestURL.trimmingCharacters(in: .whitespaces),
+            requestURL: normalizedURL,
             parameterNames: parameters.keys.sorted(),
             headerNames: headers.keys.sorted(),
             bodyType: bodyType,
@@ -210,7 +216,7 @@ public enum ShareXImporter {
 
         var displayName = name
         if displayName.isEmpty {
-            displayName = URL(string: requestURL.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: ""))?.host ?? String(localized: "Custom uploader", bundle: .module)
+            displayName = URL(string: normalizedURL.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: ""))?.host ?? String(localized: "Custom uploader", bundle: .module)
         }
         let destination = UploadDestination(name: displayName, configuration: .customHTTP(settings))
         return ImportedUploader(destination: destination, secrets: secrets, notes: notes)
@@ -236,7 +242,7 @@ public enum ShareXImporter {
                 out.append(opening ? "{" : "}")
                 opening.toggle()
             } else {
-                if character == "{" || character == "}" { out.append("\\") }
+                if character == "{" || character == "}" || (opening && character == "|") { out.append("\\") }
                 out.append(character)
             }
         }

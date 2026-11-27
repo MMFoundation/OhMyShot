@@ -42,7 +42,7 @@ nonisolated public struct AnnotationCaptureSource: Sendable {
 
     @concurrent public func itemForEditing(_ item: HistoryItem, in history: HistoryStore) async throws -> HistoryItem {
         guard requiresFlattenedCopy else { return item }
-        let png = try await ImageExporter.encode(image, as: .png)
+        let png = try await ImageExporter.encode(image, as: .png, pixelsPerPoint: item.pixelsPerPoint)
         return try history.add(
             data: png, name: (item.fileName as NSString).deletingPathExtension, fileExtension: "png", kind: .screenshot,
             pixelWidth: image.width, pixelHeight: image.height, appName: item.appName, pixelsPerPoint: item.pixelsPerPoint,

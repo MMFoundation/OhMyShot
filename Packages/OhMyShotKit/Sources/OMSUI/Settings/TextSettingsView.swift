@@ -239,10 +239,32 @@ private struct OCRLanguagesSetting: View {
             }
         }
         .onAppear {
-            if Preset.matching(settings.ocrLanguages) == .custom {
+            syncFromSettings()
+        }
+        .onChange(of: settings.ocrLanguages) { _, newValue in
+            let parsed = customText
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if Preset.matching(newValue) == .custom {
                 customMode = true
-                customText = settings.ocrLanguages.joined(separator: ", ")
+                if parsed != newValue {
+                    customText = newValue.joined(separator: ", ")
+                }
+            } else if parsed != newValue {
+                customMode = false
+                customText = ""
             }
+        }
+    }
+
+    private func syncFromSettings() {
+        if Preset.matching(settings.ocrLanguages) == .custom {
+            customMode = true
+            customText = settings.ocrLanguages.joined(separator: ", ")
+        } else {
+            customMode = false
+            customText = ""
         }
     }
 
@@ -271,6 +293,7 @@ private struct OCRLanguagesSetting: View {
 private struct AppTextSetting: View {
     @Bindable var settings: SettingsStore
     let permissions: PermissionCenter?
+    @State private var askRevision = 0
 
     /// Its part of its group's help, which the Image line breaks row holds.
     static var help: HelpTopic {
@@ -278,6 +301,7 @@ private struct AppTextSetting: View {
     }
 
     var body: some View {
+        let _ = askRevision
         VStack(alignment: .leading, spacing: 6) {
             Toggle(isOn: Binding(get: { settings.readsAppText }, set: { on in
                 settings.readsAppText = on
@@ -309,7 +333,10 @@ private struct AppTextSetting: View {
         if permissions.hasAsked(.accessibility) {
             permissions.openSystemSettings(for: .accessibility)
         } else {
-            Task { await permissions.request(.accessibility) }
+            Task {
+                await permissions.request(.accessibility)
+                askRevision += 1
+            }
         }
     }
 }

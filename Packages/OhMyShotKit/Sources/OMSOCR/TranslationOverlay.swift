@@ -414,9 +414,11 @@ public enum TranslationOverlay {
         _ text: String, box: CGRect, room: CGFloat, members: [OCRLine], size: CGFloat, bold: Bool = false,
         language: Locale.Language, color: CGColor, minimumScale: CGFloat = Self.minimumScale, widens: Bool = false, below: CGFloat = 0
     ) -> Layout {
-        let pitch = members.count > 1
+        let rawPitch = members.count > 1
             ? (members[members.count - 1].box.midY - members[0].box.midY) / CGFloat(members.count - 1)
             : box.height
+        let fallbackPitch = max(members.map(\.box.height).max() ?? box.height, size, 1)
+        let pitch = (rawPitch.isFinite && rawPitch >= fallbackPitch * 0.5) ? rawPitch : fallbackPitch
         // The height the original lines took, line to line, with a little to spare.
         let capacity = (CGFloat(members.count) + 0.1) * pitch
         let width = members.count > 1 && !widens ? box.width : max(room, box.width)

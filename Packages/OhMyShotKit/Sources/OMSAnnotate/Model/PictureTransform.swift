@@ -298,10 +298,10 @@ nonisolated extension Annotation {
             image.orientation = orientation.isIdentity ? nil : orientation
             copy.shape = .image(image)
         case .magnifier(var magnifier):
-            // A circle still, over the same part of the picture.
+            // A circle still, over the same part of the picture, never smaller than the smallest usable lens.
             magnifier.source = mapping.point(magnifier.source)
             magnifier.center = mapping.point(magnifier.center)
-            magnifier.radius *= mapping.lengthFactor
+            magnifier.radius = max(magnifier.radius * mapping.lengthFactor, Magnifier.smallestRadius * scale)
             copy.shape = .magnifier(magnifier)
         }
         return copy

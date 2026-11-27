@@ -65,11 +65,14 @@ public enum TextReaderTool {
     @concurrent
     public static func text(
         ofPictureAt url: URL, joinsWrappedLines: Bool, pack: URL? = nil, formulas: URL? = nil, vlm: URL? = nil, seconds: Double? = nil,
+        languages: [String]? = nil,
         helper: URL, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared, timeout: Duration = .seconds(120)
     ) async throws -> String {
+        let configuredLanguages = languages?.isEmpty == false ? languages : nil
         let job = Job(
             id: UUID().uuidString, path: url.path(percentEncoded: false), joinsWrappedLines: joinsWrappedLines, pack: pack?.path(percentEncoded: false),
-            formulas: formulas?.path(percentEncoded: false), vlm: vlm?.path(percentEncoded: false), seconds: seconds
+            formulas: formulas?.path(percentEncoded: false), vlm: vlm?.path(percentEncoded: false), seconds: seconds,
+            languages: configuredLanguages
         )
         let answer = try await run(job, helper: helper, priority: priority, resources: resources, timeout: timeout)
         if let text = answer.text { return text }

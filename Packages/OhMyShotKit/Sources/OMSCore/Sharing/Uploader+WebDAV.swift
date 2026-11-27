@@ -11,7 +11,7 @@ extension Uploader {
         guard let scheme = settings.baseURL.scheme?.lowercased(), scheme == "http" || scheme == "https", settings.baseURL.host() != nil else {
             throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address", bundle: .module))
         }
-        let password = (try? secret(SecretField.webDAVPassword, of: destination)) ?? ""
+        let password = try secret(SecretField.webDAVPassword, of: destination)
         let credentials = Data("\(settings.username):\(password)".utf8).base64EncodedString()
 
         let base = settings.baseURL.absoluteString.hasSuffix("/") ? String(settings.baseURL.absoluteString.dropLast()) : settings.baseURL.absoluteString
@@ -66,7 +66,7 @@ extension Uploader {
         guard let scheme = settings.baseURL.scheme?.lowercased(), scheme == "http" || scheme == "https", settings.baseURL.host() != nil else {
             throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address", bundle: .module))
         }
-        let password = (try? secret(SecretField.webDAVPassword, of: destination)) ?? ""
+        let password = try secret(SecretField.webDAVPassword, of: destination)
         let credentials = Data("\(settings.username):\(password)".utf8).base64EncodedString()
         let base = settings.baseURL.absoluteString.hasSuffix("/") ? String(settings.baseURL.absoluteString.dropLast()) : settings.baseURL.absoluteString
         guard let target = URL(string: "\(base)/\(SigV4Signer.encodePath(key))") else {

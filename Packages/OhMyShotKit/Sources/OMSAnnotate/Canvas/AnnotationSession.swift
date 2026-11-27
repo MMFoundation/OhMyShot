@@ -106,7 +106,18 @@ public final class AnnotationSession {
     /// The selected marks, in the order they were selected.
     public private(set) var selection: [Annotation.ID] = []
     /// Whether the document changed since it was last kept, or was never kept: an editor on a picture in no file yet.
-    public internal(set) var hasUnkeptChanges = false
+    public internal(set) var hasUnkeptChanges = false {
+        didSet {
+            guard !isUpdatingUnkept else { return }
+            if hasUnkeptChanges {
+                if keptDocument == document { keptDocument = nil }
+            } else {
+                keptDocument = document
+            }
+        }
+    }
+    @ObservationIgnored private var keptDocument: AnnotationDocument?
+    @ObservationIgnored private var isUpdatingUnkept = false
     /// What the redaction tool suggests covering, once it has been in hand: under way, in, or failed.
     private var redactionReading = ToolReading<[RedactionSuggestion]>()
     /// The lines of text the highlighter snaps to, once it has been in hand, the same way.
@@ -165,8 +176,9 @@ public final class AnnotationSession {
         self.defaults = defaults
         locksCanvas = defaults.bool(forKey: Self.lockCanvasKey)
         let size = CGSize(width: image.width, height: image.height)
+        let initialDocument: AnnotationDocument
         if let document, document.pixelSize == size {
-            self.document = document
+            initialDocument = document
             if let drawn = document.transform?.size, size.width > 0, size.height > 0 {
                 let factor = sqrt((drawn.width / size.width) * (drawn.height / size.height))
                 originalScale = factor > 0 ? document.scale / factor : document.scale
@@ -175,9 +187,11 @@ public final class AnnotationSession {
             }
         } else {
             let safeScale = scale > 0 ? scale : 1
-            self.document = AnnotationDocument(pixelSize: size, scale: safeScale)
+            initialDocument = AnnotationDocument(pixelSize: size, scale: safeScale)
             originalScale = safeScale
         }
+        self.document = initialDocument
+        keptDocument = initialDocument
         remembersTool = startingTool == nil
         let stored = defaults.string(forKey: Self.toolKey).flatMap(AnnotationTool.init(rawValue:))
         tool = startingTool ?? stored.flatMap { $0.isPictureMode ? nil : $0 } ?? .arrow
@@ -680,17 +694,21 @@ public final class AnnotationSession {
     }
 
     /// Forgets what was read of a picture whose combined images have changed since, or that was turned,
-    /// flipped, or resized since (readings are in the picture's pixels), and reads it again for the tool in
-    /// hand.
+    /// flipped, resized, or moved/expanded outside the previously read region, and reads it again for the tool in hand.
     private func forgetReadingsOfChangedImages() {
         let images = self.images
         let turned = document.transform != readingsTransform
-        if let reading, reading.images != images || turned { self.reading = nil }
-        if let read = redactionReading.readOver, read != images || turned {
+        let source = redactionSource ?? (picture, .zero)
+        let shown = document.canvas.standardized.intersection(
+            CGRect(origin: source.origin, size: CGSize(width: source.image.width, height: source.image.height))
+        )
+        let outOfRegion = reading.map { !shown.isNull && !shown.isEmpty && !$0.region.contains(shown) } ?? false
+        if let reading, reading.images != images || turned || outOfRegion { self.reading = nil }
+        if let read = redactionReading.readOver, read != images || turned || outOfRegion {
             redactionReading.forget()
             if tool == .redact { findRedactionsIfNeeded() } else { notify(.suggestions) }
         }
-        if let read = textLineReading.readOver, read != images || turned {
+        if let read = textLineReading.readOver, read != images || turned || outOfRegion {
             textLineReading.forget()
             if tool == .highlighter { findTextLinesIfNeeded() } else { notify(.textLines) }
         }
@@ -855,17 +873,27 @@ public final class AnnotationSession {
         liveChangeStart = nil
         set(start.document, selection: start.selection)
         if !start.hadUnkeptChanges, hasUnkeptChanges {
+            isUpdatingUnkept = true
             hasUnkeptChanges = false
+            isUpdatingUnkept = false
             notify(.history)
         }
+    }
+
+    /// Ends live-change tracking without reverting the document (e.g., when an inline-edited mark was removed externally).
+    public func discardLiveChange() {
+        liveChangeStart = nil
     }
 
     public var isInLiveChange: Bool { liveChangeStart != nil }
 
     /// Marks the current document as kept: the capture file now shows it.
     public func markKept() {
+        keptDocument = document
         guard hasUnkeptChanges else { return }
+        isUpdatingUnkept = true
         hasUnkeptChanges = false
+        isUpdatingUnkept = false
         notify(.history)
     }
 
@@ -875,7 +903,12 @@ public final class AnnotationSession {
         document = newDocument
         selection = newSelection
         if documentChanged {
-            hasUnkeptChanges = true
+            let unkept = keptDocument.map { newDocument != $0 } ?? true
+            if hasUnkeptChanges != unkept {
+                isUpdatingUnkept = true
+                hasUnkeptChanges = unkept
+                isUpdatingUnkept = false
+            }
             notify(.document)
         }
         if selectionChanged { notify(.selection) }
@@ -931,8 +964,17 @@ public final class AnnotationSession {
         _ marks: [Annotation],
         offset: CGSize = CGSize(width: AnnotationPasteboard.pasteOffset, height: AnnotationPasteboard.pasteOffset)
     ) -> [Annotation.ID] {
-        let prepared = AnnotationPasteboard.preparedForPaste(marks, into: document, offset: offset)
+        var prepared = AnnotationPasteboard.preparedForPaste(marks, into: document, offset: offset)
         guard !prepared.isEmpty else { return [] }
+        // Keep spotlight dimming consistent across all spots in the document.
+        if let existingDimming = document.spots.first?.dimming {
+            for index in prepared.indices {
+                if case .spotlight(var spot) = prepared[index].shape {
+                    spot.dimming = existingDimming
+                    prepared[index].shape = .spotlight(spot)
+                }
+            }
+        }
         var updated = document
         updated.items.append(contentsOf: prepared)
         let ids = prepared.map(\.id)

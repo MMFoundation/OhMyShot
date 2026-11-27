@@ -4,15 +4,18 @@ import OSLog
 
 @MainActor
 public enum Relauncher {
-    /// Starts a new copy of the app, then quits this one.
+    /// Set when the app asks to relaunch itself so `AppDelegate.applicationShouldTerminate` spawns the
+    /// replacement only after quit gates (unsaved editors, active recordings) approve termination.
+    public static var isRelaunchRequested = false
+
+    /// Requests quitting this copy and starting a new one once termination is approved.
     ///
     /// Needed after granting Screen Recording, which macOS applies only to new processes. A helper
     /// process cannot do the relaunch: it belongs to this app's launch job and dies with it. The new
     /// copy waits for this one to exit (`afterOtherInstancesExit`) before it takes the shortcuts.
     public static func relaunch() {
-        startNewCopy { started in
-            if started { NSApp.terminate(nil) }
-        }
+        isRelaunchRequested = true
+        NSApp.terminate(nil)
     }
 
     /// Starts a new copy of the app and reports whether it started; quitting this one is up to the caller.

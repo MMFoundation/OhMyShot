@@ -595,6 +595,7 @@ public final class QuickAccessController {
         guard !isTrashing(id), let index = items.firstIndex(where: { $0.id == id }) else { return }
         close(items.remove(at: index))
         refresh()
+        syncPreviewAfterChange()
     }
 
     /// Closes the newest card, the one nearest the corner.
@@ -633,8 +634,13 @@ public final class QuickAccessController {
         schedule.restart(pending.id)
         countdownVisuals[pending.id] = nil
         if failures[pending.id] != nil { hold(.failure, for: pending.id, if: true) }
-        // The Trash let its holds go; a Copy Text still reading holds it again.
+        // The Trash let its holds go; active upload, editor, or Copy Text holds it again.
+        if let restored = item(pending.id) {
+            if let upload = actions.sharing.current(restored) { hold(.upload, for: pending.id, if: upload.holdsCard) }
+            if actions.isBeingEdited(restored) { hold(.editor, for: pending.id, if: true) }
+        }
         if readingText[pending.id] != nil { hold(.reading, for: pending.id, if: true) }
+        if panel?.isKeyWindow == true, selectedID == nil { select(pending.id) }
         updateCountdowns()
         return true
     }
@@ -669,6 +675,7 @@ public final class QuickAccessController {
         schedule.forget(id)
         countdownVisuals[id] = nil
         refresh()
+        syncPreviewAfterChange()
     }
 
     /// Puts the stack back in its corner after a display is attached, removed, or changes mode: on the
@@ -793,12 +800,26 @@ public final class QuickAccessController {
             corner: preferences.corner, visible: visible, panelWidth: CardStackView.width(for: preferences.size),
             panelHeight: CardStackView.height(for: items, size: preferences.size), margin: margin
         )
-        if !panel.isVisible || panel.frame.origin != frame.origin || panel.frame.width != frame.width || frame.height >= panel.frame.height {
+        let oldFrame = panel.frame
+        let sameEdge = abs(oldFrame.minX - frame.minX) < 0.5
+            && abs(oldFrame.width - frame.width) < 0.5
+            && (preferences.corner.isTop
+                ? abs(oldFrame.maxY - frame.maxY) < 0.5
+                : abs(oldFrame.minY - frame.minY) < 0.5)
+        if !panel.isVisible || !sameEdge || frame.height >= oldFrame.height {
+            let deltaY = (panel.isVisible && sameEdge && preferences.corner.isTop)
+                ? oldFrame.origin.y - frame.origin.y
+                : 0
             panel.setFrame(frame, display: true)
+            if deltaY != 0 { stack.shiftCards(byY: deltaY) }
             stack.show(items, entering: entering)
         } else {
-            stack.show(items, entering: entering) { [weak panel] in
-                panel?.setFrame(frame, display: true)
+            let isTop = preferences.corner.isTop
+            stack.show(items, entering: entering) { [weak panel, weak stack] in
+                guard let panel, let stack else { return }
+                let deltaY = isTop ? panel.frame.origin.y - frame.origin.y : 0
+                panel.setFrame(frame, display: true)
+                if deltaY != 0 { stack.shiftCards(byY: deltaY) }
             }
         }
         stack.updatePointerHover()
@@ -941,6 +962,7 @@ public final class QuickAccessController {
         stack?.setTrashing(true, for: item.id)
         updateCountdowns()
         if hadKeyboard, next != nil, panel?.isKeyWindow == true { select(next) }
+        syncPreviewAfterChange()
         if let panel {
             VoiceOver.announce(String(localized: "Moved to Trash", bundle: .module), from: panel)
         }
@@ -1088,10 +1110,23 @@ public final class QuickAccessController {
                 // The card goes once its copy is saved, which never asks for a name: nobody is waiting for it. A copy that
                 // could not be saved leaves the card, which may be the capture's only holder; it is not tried again. A
                 // copy being saved already (by hand) is the one waited for.
-                Task {
+                hold(.action, for: id, if: true)
+                Task { [weak self] in
+                    guard let self else { return }
                     let saved = await save(item, .quiet)
-                    guard self.item(id) != nil else { return }
-                    guard saved.url != nil else { return schedule.keepOpen(id) }
+                    guard self.item(id) != nil, !isTrashing(id) else { return }
+                    hold(.action, for: id, if: false)
+                    guard saved.url != nil else {
+                        schedule.keepOpen(id)
+                        scheduleCloser()
+                        return
+                    }
+                    // If the user hovered, focused, or started interacting while saving, keep the card open.
+                    guard schedule.holds(on: id).isEmpty else {
+                        schedule.restart(id)
+                        updateCountdowns()
+                        return
+                    }
                     dismiss(id)
                 }
                 continue
@@ -1159,8 +1194,21 @@ public final class QuickAccessController {
     }
 
     private func previewClosed() {
-        // The keys come back to the card, which the preview took them from.
-        if let selectedID { focus(on: selectedID) }
+        // The keys come back to the card only when a live card is still selected and the panel wasn't closed programmatically.
+        if let selectedID, liveItems.contains(where: { $0.id == selectedID }) {
+            focus(on: selectedID)
+        }
+    }
+
+    /// Keeps Quick Look synchronized when the previewed card is dismissed, trashed, or removed.
+    private func syncPreviewAfterChange() {
+        guard let stack, stack.quickLook.isShowing else { return }
+        if let selectedID, let current = item(selectedID), !isTrashing(selectedID) {
+            stack.quickLook.replace(with: current.fileURL)
+        } else {
+            select(nil)
+            stack.quickLook.close()
+        }
     }
 
     /// The card beside `id` that is not waiting to go to the Trash: the newer one, else the older.
@@ -1316,6 +1364,7 @@ public final class QuickAccessController {
             dismiss(item.id)
             if keyed { endKeyboard() }
         case .saveAll:
+            if keyed { endKeyboard() }
             saveAll()
         case .closeAll:
             dismissAll()

@@ -20,7 +20,7 @@ struct TextRecognitionView: View {
                     RecognizedImagePane(model: model)
                         .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
                     TextPane(model: model)
-                        .frame(minWidth: 320, idealWidth: 400, maxWidth: 560, maxHeight: .infinity)
+                        .frame(minWidth: 320, idealWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }

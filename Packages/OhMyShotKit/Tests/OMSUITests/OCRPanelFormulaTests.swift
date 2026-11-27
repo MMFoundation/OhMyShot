@@ -375,4 +375,13 @@ struct OCRPanelFormulaTests {
         #expect(model.action(for: OCRCode(payload: "tel:+15550100", kind: .qr, box: .zero))?.symbol == "phone.arrow.up.right")
         #expect(model.action(for: OCRCode(payload: "javascript:alert(1)", kind: .qr, box: .zero)) == nil)
     }
+
+    @Test func formulaDelimiterLeavesPlainCurrencyProseUnchanged() {
+        let prose = "Tickets cost $5 to $10 per person, or $12.50 at the door."
+        let line = OCRLine(text: prose, box: CGRect(x: 10, y: 10, width: 300, height: 20), confidence: 1)
+        for delimiter in FormulaDelimiter.allCases {
+            #expect(TextRecognitionModel.formatFormulas(in: prose, lines: [line], edited: false, delimiter: delimiter) == prose)
+            #expect(TextRecognitionModel.formatFormulas(in: prose, lines: [line], edited: true, delimiter: delimiter) == prose)
+        }
+    }
 }

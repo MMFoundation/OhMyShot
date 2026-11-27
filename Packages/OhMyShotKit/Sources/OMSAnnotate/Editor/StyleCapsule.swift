@@ -314,7 +314,10 @@ final class StyleCapsule: NSView {
             let current = session.nextCounterValue(for: numbering)
             session.setNextCounterValue(max(1, current + delta), for: numbering)
         }
-        onDelete = { [weak session] in session?.deleteSelection() }
+        onDelete = { [weak session, weak canvas] in
+            canvas?.endEditing()
+            session?.deleteSelection()
+        }
         onRedactAll = { [weak session] in session?.acceptAllRedactionSuggestions() }
         onRetry = { [weak session] in session?.retryReadingForTool() }
         onPickCanvasColor = { [weak canvas] in canvas?.toggleColorPicker() }

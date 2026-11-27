@@ -177,7 +177,7 @@ struct CaptureLauncherView: View {
     typealias Entry = StatusItemController.Entry
     typealias Cell = CaptureLauncherModel.Cell
     /// The launcher's coordinate space, origin at its top left: where a row's menu is placed from.
-    static let space = "CaptureLauncher"
+    nonisolated static let space = "CaptureLauncher"
 
     let model: CaptureLauncherModel
     var highlight = LauncherHighlight()
@@ -206,7 +206,7 @@ struct CaptureLauncherView: View {
                             row(entry, at: Cell(row: index, column: 0), emphasized: true)
                         }
                     }
-                    .padding(.bottom, 8)
+                    Divider().padding(.horizontal, 8).padding(.vertical, 8)
                 }
                 tiles(capture, firstRow: active.count)
                 if !tools.isEmpty {
@@ -338,7 +338,7 @@ private struct LauncherTile: View {
         ZStack(alignment: .bottom) {
             Button { perform(entry) } label: {
                 VStack(spacing: 4) {
-                    Image(systemName: entry.systemImage ?? "viewfinder").font(.system(size: 18))
+                    Image(systemName: entry.currentSystemImage?() ?? entry.systemImage ?? "viewfinder").font(.system(size: 18))
                         .frame(height: 24)
                     // A long name in another language is drawn a little smaller before it is cut short.
                     Text(verbatim: title).font(.system(size: 11, weight: .medium))
@@ -470,7 +470,7 @@ private struct LauncherRow: View {
         let isEnabled = entry.isEnabled?() != false
         Button(action: press) {
             HStack(spacing: 7) {
-                if let symbol = entry.systemImage {
+                if let symbol = entry.currentSystemImage?() ?? entry.systemImage {
                     Image(systemName: symbol).font(.system(size: 13))
                         .foregroundStyle(emphasized ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                         .frame(width: 18)

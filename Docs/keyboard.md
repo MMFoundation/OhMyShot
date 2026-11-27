@@ -182,6 +182,7 @@ A right-click on the tool rail lists every tool with its key.
 | --- | --- |
 | Return, Enter | Copies the picture and closes, when nothing else takes Return: it opens a selected text mark, applies a crop, and leaves Background. |
 | Command-C | Copies the picture and keeps the window open. |
+| Option-Command-C | Copies the selected marks to paste into another editor. |
 | Command-S | Saves a copy to the export folder. |
 | Shift-Command-S | Saves a copy as a project, with its marks still editable. |
 | Option-Shift-Command-S | Saves a copy where you choose. |

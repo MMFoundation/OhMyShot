@@ -25,9 +25,12 @@ public final class PinController {
         public let onBackground: Data?
         /// Whether handing the capture over requires its background, even when the saved background is missing.
         public let requiresBackground: Bool
+        /// Incremented whenever the pin's own pixels are replaced in place (edited or transformed).
+        public let imageRevision: UInt64
 
         init(
-            id: UUID, content: Content, origin: Origin, pinnedAt: Date = .now, onBackground: Data? = nil, requiresBackground: Bool? = nil
+            id: UUID, content: Content, origin: Origin, pinnedAt: Date = .now, onBackground: Data? = nil, requiresBackground: Bool? = nil,
+            imageRevision: UInt64 = 0
         ) {
             self.id = id
             self.content = content
@@ -35,6 +38,7 @@ public final class PinController {
             self.pinnedAt = pinnedAt
             self.onBackground = onBackground
             self.requiresBackground = requiresBackground ?? (onBackground != nil)
+            self.imageRevision = imageRevision
         }
 
         /// Whether a capture's file last written at `date` still holds the pin's picture: it was not written since.
@@ -59,10 +63,11 @@ public final class PinController {
         /// PNG of it in the temporary folder. Nil for a text or color pin, or when the PNG cannot be written.
         public func ownFile() -> URL? {
             guard case .image(let image, let scale) = content else { return nil }
-            if case .file(let url) = origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+            if pinnedAt != .distantPast, case .file(let url) = origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
                 return url
             }
-            let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(id.uuidString).png")
+            let suffix = imageRevision > 0 ? "-\(imageRevision)" : ""
+            let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(id.uuidString)\(suffix).png")
             if FileManager.default.fileExists(atPath: tempURL.path(percentEncoded: false)) {
                 return tempURL
             }

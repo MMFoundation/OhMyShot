@@ -75,4 +75,14 @@ struct ImageLoaderTests {
         #expect(ImageLoader.pixelsPerPoint(in: [kCGImagePropertyDPIWidth: 72]) == nil)
         #expect(ImageLoader.pixelsPerPoint(in: [:]) == nil)
     }
+
+    @Test func orientedImageAndOrientedPixelSizeRespectEXIFOrientation() throws {
+        let data = try encoded(width: 400, height: 240, type: .jpeg, properties: [kCGImagePropertyOrientation: 6])
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        let props = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let size = try #require(ImageLoader.orientedPixelSize(in: props))
+        #expect(size.width == 240 && size.height == 400)
+        let upright = try #require(ImageLoader.orientedImage(from: source))
+        #expect(upright.width == 240 && upright.height == 400)
+    }
 }

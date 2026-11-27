@@ -75,6 +75,19 @@ struct ShareXTemplateTests {
         let html = UploadResponse(status: 200, text: "<html>")
         #expect(throws: ShareXTemplateError.responseNotJSON) { try evaluate("{json:a}", response: html) }
     }
+
+    @Test func xmlRejectsExternalEntitiesAndNegativeRegexGroupIndexIsRefused() throws {
+        let xxe = UploadResponse(
+            status: 200,
+            text: #"<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><r>&xxe;</r>"#
+        )
+        let rendered = (try? evaluate("{xml:/r}", response: xxe)) ?? ""
+        #expect(!rendered.contains("localhost"))
+        let page = UploadResponse(status: 200, text: "abc")
+        #expect(throws: ShareXTemplateError.self) {
+            _ = try evaluate("{regex:(a)|-1}", response: page)
+        }
+    }
 }
 
 struct ShareXImporterTests {
@@ -204,5 +217,17 @@ struct ShareXImporterTests {
         #expect(attempt("{\(base),\"Body\":\"MultipartFormData\",\"URL\":\"{json:a[?(@.x)]}\"}") != nil)
         #expect(attempt("{\(base),\"Body\":\"MultipartFormData\",\"Headers\":{\"X\":\"{json:a}\"}}") == .template(field: "Headers.X", error: .unavailableHere(function: "json")))
         #expect(attempt(#"{"RequestType":"POST","RequestURL":"https://h/up","FileFormName":"f","ResponseType":"Headers"}"#) == .deprecatedResponseType)
+    }
+
+    @Test func legacyBinarySchemelessURLAndLiteralPipesAreHandledSafely() throws {
+        // Explicit Body: "Binary" on a versionless file is preserved and skips Arguments validation.
+        let legacyBinary = #"{"RequestMethod":"PUT","RequestURL":"up.example.com/files/$filename$","Body":"Binary","Arguments":{"ignored":"{input}"},"URL":"https://cdn.example.com/$filename$"}"#
+        let imported = try ShareXImporter.importUploader(from: Data(legacyBinary.utf8))
+        guard case .customHTTP(let settings) = imported.destination.configuration else { Issue.record("not custom HTTP"); return }
+        #expect(settings.bodyType == .binary)
+        #expect(settings.requestURL == "https://up.example.com/files/{filename}")
+        #expect(settings.argumentNames.isEmpty)
+        // Literal pipes outside $...$ are escaped so ShareXTemplate never rejects them as stray separators.
+        #expect(ShareXImporter.migrateOldSyntax("a|b $random:x|y$") == #"a\|b {random:x|y}"#)
     }
 }

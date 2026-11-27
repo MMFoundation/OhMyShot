@@ -678,4 +678,35 @@ struct PictureExportTests {
         #expect(FileManager.default.fileExists(atPath: upload.path(percentEncoded: false)))
         #expect(try decode(Data(contentsOf: copies.last!)).image.width == 20)
     }
+
+    @Test func wideGamutExtendedSpaceFallsBackToDisplayP3AndPinCacheSeparatesRevisions() throws {
+        // Extended-range RGB falls back to Display P3 (not sRGB) when convertsToSRGB is false.
+        let extended = try #require(CGColorSpace(name: CGColorSpace.extendedSRGB))
+        let f16Info = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.floatComponents.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
+        let ctx = try #require(CGContext(
+            data: nil, width: 16, height: 16, bitsPerComponent: 16, bytesPerRow: 0, space: extended, bitmapInfo: f16Info
+        ))
+        ctx.setFillColor(CGColor(colorSpace: extended, components: [1, 0, 0, 1])!)
+        ctx.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+        let hdr = try #require(ctx.makeImage())
+        let prepared = PictureExport.prepare(hdr, pixelsPerPoint: 2, output: ScreenshotOutput(retinaAtOneX: true, convertsToSRGB: false))
+        #expect(prepared.isComplete)
+        #expect(prepared.image.colorSpace?.name == CGColorSpace.displayP3)
+
+        // Pin cache keys isolate distinct revisions so rotated/edited pins never serve stale drag files.
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let pin = UUID()
+        let output = ScreenshotOutput(format: .jpeg)
+        let rev0 = try ExportedFiles.file(forPin: pin, revision: 0, named: "Pin", pixelsPerPoint: 1, output: output, in: cache) {
+            try self.picture(40, 20)
+        }
+        let rev1 = try ExportedFiles.file(forPin: pin, revision: 1, named: "Pin", pixelsPerPoint: 1, output: output, in: cache) {
+            try self.picture(20, 40)
+        }
+        #expect(rev0 != rev1)
+        #expect(try decode(Data(contentsOf: rev0)).image.width == 40)
+        #expect(try decode(Data(contentsOf: rev1)).image.width == 20)
+    }
 }

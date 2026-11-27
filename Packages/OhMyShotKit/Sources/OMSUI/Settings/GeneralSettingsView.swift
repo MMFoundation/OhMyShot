@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OMSCore
 import OSLog
@@ -60,6 +61,10 @@ struct GeneralSettingsView: View {
                     .task {
                         guard !loadedLaunchAtLogin else { return }
                         loadedLaunchAtLogin = true
+                        launchAtLogin = LoginItem.isEnabled
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                        guard loadedLaunchAtLogin else { return }
                         launchAtLogin = LoginItem.isEnabled
                     }
                     .onChange(of: launchAtLogin) { _, enabled in

@@ -567,6 +567,7 @@ struct StudioTimeline: View {
             ForEach(document.project.cuts.filter { viewport.contains($0.lowerBound, $0.upperBound) }, id: \.lowerBound) { cut in
                 let chosen = document.selectedCut == cut.lowerBound
                 let cutLeft = x(cut.lowerBound, width: width), cutRight = x(cut.upperBound, width: width)
+                let showCutHandles = cutRight - cutLeft >= Self.handleReach * 3
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color(nsColor: .windowBackgroundColor).opacity(0.85))
                     .overlay(
@@ -586,8 +587,8 @@ struct StudioTimeline: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth)
                     )
-                    .overlay(alignment: .leading) { grip(chosen: chosen, leading: true) }
-                    .overlay(alignment: .trailing) { grip(chosen: chosen, leading: false) }
+                    .overlay(alignment: .leading) { if showCutHandles { grip(chosen: chosen, leading: true) } }
+                    .overlay(alignment: .trailing) { if showCutHandles { grip(chosen: chosen, leading: false) } }
                     .frame(width: max(cutRight - cutLeft, 6), height: Self.clipHeight)
                     .pointerStyle(.link)
                     .contextMenu {
@@ -811,13 +812,13 @@ struct StudioTimeline: View {
         func x(_ t: Double) -> CGFloat { Self.inset + viewport.position(of: t, width: width - Self.inset * 2) }
         if point.y < Self.rulerHeight { return .ruler }
         if point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight,
-           let zoom = zooms.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
+           let zoom = zooms.last(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
             if abs(point.x - x(zoom.start)) <= Self.handleReach { return .zoomResize(zoom.id, start: true) }
             if abs(point.x - x(zoom.end)) <= Self.handleReach { return .zoomResize(zoom.id, start: false) }
             return .zoomMove(zoom.id)
         }
         if point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight,
-           let seg = cameraSegments.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
+           let seg = cameraSegments.last(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
             if abs(point.x - x(seg.start)) <= Self.handleReach { return .layoutResize(seg.id, start: true) }
             if abs(point.x - x(seg.end)) <= Self.handleReach { return .layoutResize(seg.id, start: false) }
             return .layoutMove(seg.id)
@@ -1089,9 +1090,14 @@ struct StudioTimeline: View {
         lastScrubTime = nil
         dragStartPlayhead = nil
         if !moved {
-            // A click: choose what is under it, and move the playhead there.
+            // A click: choose what is under it, and move the playhead there (snapping to nearby edit boundaries unless ⌘ is held).
             let point = value.startLocation
-            let at = time(point.x, width: width)
+            let rawAt = time(point.x, width: width)
+            let snapEnabled = !NSEvent.modifierFlags.contains(.command)
+            let at = Self.snappedTime(
+                rawAt, candidates: snapCandidates(includePlayhead: false),
+                duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
+            ).time
             let nowUptime = ProcessInfo.processInfo.systemUptime
             let isDoubleClick: Bool = if let prev = lastClick,
                                         nowUptime - prev.uptime <= NSEvent.doubleClickInterval,

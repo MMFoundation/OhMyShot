@@ -544,8 +544,22 @@ final class TextResultCard: NSView {
         }
         if !detail.isHidden { height += 4 + 16 }
         if !note.isHidden { height += 4 + noteHeight(width: inner) }
-        if !joinButton.isHidden || !openInPanelButton.isHidden { height += 10 + 26 }
+        if !joinButton.isHidden || !openInPanelButton.isHidden {
+            height += 10 + chipRowsHeight(width: inner)
+        }
         return ceil(height)
+    }
+
+    private func chipRowsHeight(width: CGFloat) -> CGFloat {
+        let joinVisible = !joinButton.isHidden
+        let panelVisible = !openInPanelButton.isHidden
+        guard joinVisible || panelVisible else { return 0 }
+        let joinSize = joinVisible ? joinButton.intrinsicContentSize : .zero
+        let panelSize = panelVisible ? openInPanelButton.intrinsicContentSize : .zero
+        if joinVisible && panelVisible && joinSize.width + 8 + panelSize.width > width {
+            return joinSize.height + 6 + panelSize.height
+        }
+        return max(joinSize.height, panelSize.height, 26)
     }
 
     override func layout() {
@@ -587,15 +601,24 @@ final class TextResultCard: NSView {
         }
         if !joinButton.isHidden || !openInPanelButton.isHidden {
             y += 10
+            let inner = max(0, right - column)
             var x = column
+            var rowHeight: CGFloat = 0
             if !joinButton.isHidden {
                 let size = joinButton.intrinsicContentSize
-                joinButton.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+                let width = min(size.width, inner)
+                joinButton.frame = CGRect(x: x, y: y, width: width, height: size.height)
                 x = joinButton.frame.maxX + 8
+                rowHeight = size.height
             }
             if !openInPanelButton.isHidden {
                 let size = openInPanelButton.intrinsicContentSize
-                openInPanelButton.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+                let width = min(size.width, inner)
+                if !joinButton.isHidden && x + width > right {
+                    y += rowHeight + 6
+                    x = column
+                }
+                openInPanelButton.frame = CGRect(x: x, y: y, width: width, height: size.height)
             }
         }
     }

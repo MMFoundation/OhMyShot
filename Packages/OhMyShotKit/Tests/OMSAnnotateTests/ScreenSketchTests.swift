@@ -218,6 +218,6 @@ struct ScreenSketchTests {
 
         controller.setClicksThrough(true)
         bar.refresh()
-        #expect(bar.debugClickThroughTooltip == String(localized: "Click here or press T to resume drawing", bundle: .module))
+        #expect(bar.debugClickThroughTooltip == String(localized: "Click here to resume drawing", bundle: .module))
     }
 }

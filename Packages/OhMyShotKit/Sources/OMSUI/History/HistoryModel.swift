@@ -75,9 +75,15 @@ final class HistoryModel {
     private(set) var isIndexing = false
     private(set) var searchResultRevision: UInt64 = 0
     var thumbnails: [UUID: CGImage] = [:]
-    var filter: Filter = .all
-    var appFilter: String?
-    var dateFilter: DateFilter = .any
+    var filter: Filter = .all {
+        didSet { if filter != oldValue { reconcileSelectionToVisible() } }
+    }
+    var appFilter: String? {
+        didSet { if appFilter != oldValue { reconcileSelectionToVisible() } }
+    }
+    var dateFilter: DateFilter = .any {
+        didSet { if dateFilter != oldValue { reconcileSelectionToVisible() } }
+    }
     /// The captures selected, as in Finder: a click selects one, ⌘-click adds one or takes it away, ⇧-click selects
     /// the run from the capture clicked last, and ⌘A every capture shown.
     var selection: Set<UUID> = []
@@ -88,9 +94,12 @@ final class HistoryModel {
     /// Brief copy confirmation toast and card indicator, cleared automatically after a moment.
     private(set) var copyFeedback: CopyFeedback?
     @ObservationIgnored private var copyFeedbackReset: Task<Void, Never>?
-    /// Single capture hidden immediately and waiting to move to Trash unless Undo is clicked.
-    private(set) var pendingTrash: PendingTrash?
-    @ObservationIgnored private var pendingTrashTask: Task<Void, Never>?
+    /// LIFO stack of single captures hidden immediately and waiting to move to Trash unless Undo is clicked.
+    private(set) var pendingTrashes: [PendingTrash] = []
+    /// Most recently staged capture waiting to move to Trash.
+    var pendingTrash: PendingTrash? { pendingTrashes.last }
+    @ObservationIgnored private var pendingTrashTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var isPendingTrashHovered = false
     @ObservationIgnored private let trashDelay: Duration
     /// Captures waiting for the user to confirm they go to the Trash.
     var trashRequest: TrashRequest?
@@ -174,10 +183,11 @@ final class HistoryModel {
         onTranslate ?? actions.translate
     }
 
-    /// Loaded captures excluding any single capture currently staged in the 5-second Undo Trash toast.
+    /// Loaded captures excluding any captures currently staged in the Undo Trash stack.
     var activeItems: [HistoryItem] {
-        guard let stagedID = pendingTrash?.item.id else { return items }
-        return items.filter { $0.id != stagedID }
+        guard !pendingTrashes.isEmpty else { return items }
+        let stagedIDs = Set(pendingTrashes.map(\.item.id))
+        return items.filter { !stagedIDs.contains($0.id) }
     }
 
     /// Compact disk usage footer summary (e.g., `"42 captures · 184 MB"`).
@@ -340,9 +350,16 @@ final class HistoryModel {
     /// Captures the search found that the active filters leave out.
     var foundElsewhere: Int {
         guard let matches, hasActiveFilters else { return 0 }
-        let stagedID = pendingTrash?.item.id
-        let activeMatches = stagedID.map { id in matches.keys.filter { $0 != id }.count } ?? matches.count
+        let stagedIDs = Set(pendingTrashes.map(\.item.id))
+        let activeMatches = stagedIDs.isEmpty ? matches.count : matches.keys.filter { !stagedIDs.contains($0) }.count
         return max(0, activeMatches - visibleItems.count)
+    }
+
+    private func reconcileSelectionToVisible() {
+        let visible = Set(visibleItems.map(\.id))
+        selection.formIntersection(visible)
+        if let focus, !visible.contains(focus) { self.focus = nil }
+        if let selectionAnchor, !visible.contains(selectionAnchor) { self.selectionAnchor = nil }
     }
 
     /// The selected captures shown, in the grid's order.
@@ -489,10 +506,14 @@ final class HistoryModel {
         if let focus, !ids.contains(focus) { self.focus = nil }
         if let selectionAnchor, !ids.contains(selectionAnchor) { self.selectionAnchor = nil }
         if let appFilter, !items.contains(where: { $0.appName == appFilter }) { self.appFilter = nil }
-        if let pending = pendingTrash, !ids.contains(pending.item.id) {
-            pendingTrashTask?.cancel()
-            pendingTrashTask = nil
-            pendingTrash = nil
+        if !pendingTrashes.isEmpty {
+            let stale = pendingTrashes.filter { !ids.contains($0.item.id) }
+            for entry in stale {
+                pendingTrashTasks.removeValue(forKey: entry.id)?.cancel()
+            }
+            if !stale.isEmpty {
+                pendingTrashes.removeAll { !ids.contains($0.item.id) }
+            }
         }
         if !removed.isEmpty { forgetText(of: removed) }
         invalidateThumbnails(removed.union(changed))
@@ -590,9 +611,8 @@ final class HistoryModel {
         var entries: [UUID: HistorySearch.Entry] = [:]
         for item in items {
             guard !Task.isCancelled else { break }
-            // Recordings have no text, but are found by their app, window title, and file name.
-            let text = item.kind == .screenshot ? store.text(of: item) : ""
-            guard let text else { continue }
+            // Screenshots without OCR text yet (or with History off) are still indexed by app, window title, and file name.
+            let text = item.kind == .screenshot ? (store.text(of: item) ?? "") : ""
             entries[item.id] = HistorySearch.Entry(
                 text: text, appName: item.appName, windowTitle: item.windowTitle, fileName: item.fileName, folding: &folding
             )
@@ -649,6 +669,7 @@ final class HistoryModel {
                 isSearchPending = false
                 searchResultRevision &+= 1
                 searchTask = nil
+                reconcileSelectionToVisible()
             } catch {
                 guard let self, !isReleased, mine == searchRevision else { return }
                 isSearchPending = false
@@ -787,14 +808,11 @@ final class HistoryModel {
     /// capture after them, as in Finder.
     func moveToTrash(_ gone: [HistoryItem]) {
         let requestedIDs = Set(gone.map(\.id))
-        if let pending = pendingTrash {
-            if requestedIDs.contains(pending.item.id) {
-                pendingTrashTask?.cancel()
-                pendingTrashTask = nil
-                pendingTrash = nil
-            } else {
-                commitPendingTrash()
+        if !pendingTrashes.isEmpty {
+            for pending in pendingTrashes where requestedIDs.contains(pending.item.id) {
+                pendingTrashTasks.removeValue(forKey: pending.id)?.cancel()
             }
+            pendingTrashes.removeAll { requestedIDs.contains($0.item.id) }
         }
         var ids: Set<UUID> = []
         for item in gone {
@@ -814,54 +832,115 @@ final class HistoryModel {
         reload()
     }
 
-    /// Hides a single capture immediately and defers moving it to Trash for `trashDelay` (5 s) with an Undo toast.
+    /// Hides a single capture immediately and defers moving it to Trash for `trashDelay` (5 s) on a LIFO Undo stack.
     func stageTrash(_ item: HistoryItem) {
         guard !actions.isBeingEdited(item) else {
             trashFailure = String(localized: "Close the capture’s editor first.", bundle: .module)
             return
         }
-        if pendingTrash != nil {
-            commitPendingTrash()
-        }
+        guard !pendingTrashes.contains(where: { $0.item.id == item.id }) else { return }
         advanceSelection(removing: [item.id])
         if previewURL == store.fileURL(for: item) {
             previewURL = nil
         }
         let pending = PendingTrash(item: item)
-        pendingTrash = pending
+        pendingTrashes.append(pending)
         recomputeDiskUsage()
         VoiceOver.announce(String(localized: "Moved to Trash", bundle: .module), from: window)
-        let delay = trashDelay
-        pendingTrashTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self, self.pendingTrash?.id == pending.id else { return }
-            self.commitPendingTrash()
+        if !isPendingTrashHovered {
+            schedulePendingTrashCommit(for: pending)
         }
     }
 
-    /// Cancels a pending single-item trash and restores the capture immediately into the visible grid.
+    private func schedulePendingTrashCommit(for pending: PendingTrash) {
+        pendingTrashTasks[pending.id]?.cancel()
+        let delay = trashDelay
+        pendingTrashTasks[pending.id] = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.pendingTrashes.contains(where: { $0.id == pending.id }) else { return }
+            self.commitPendingTrash(id: pending.id)
+        }
+    }
+
+    /// Freezes all staged Trash countdowns while the pointer hovers the Undo toast, and resumes on exit.
+    func setPendingTrashHovered(_ hovered: Bool) {
+        guard hovered != isPendingTrashHovered else { return }
+        isPendingTrashHovered = hovered
+        if hovered {
+            for task in pendingTrashTasks.values { task.cancel() }
+            pendingTrashTasks.removeAll()
+        } else {
+            for pending in pendingTrashes {
+                schedulePendingTrashCommit(for: pending)
+            }
+        }
+    }
+
+    /// Cancels the most recently staged single-item trash and restores the capture immediately into the visible grid.
     @discardableResult
     func undoPendingTrash() -> Bool {
-        pendingTrashTask?.cancel()
-        pendingTrashTask = nil
-        guard let pending = pendingTrash else { return false }
-        pendingTrash = nil
-        if items.contains(where: { $0.id == pending.item.id }) {
-            selection = [pending.item.id]
-            focus = pending.item.id
-            selectionAnchor = pending.item.id
+        while let pending = pendingTrashes.popLast() {
+            pendingTrashTasks.removeValue(forKey: pending.id)?.cancel()
+            if pendingTrashes.isEmpty { isPendingTrashHovered = false }
+            let fileURL = store.fileURL(for: pending.item)
+            guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else {
+                items.removeAll { $0.id == pending.item.id }
+                continue
+            }
+            if items.contains(where: { $0.id == pending.item.id }) {
+                selection = [pending.item.id]
+                focus = pending.item.id
+                selectionAnchor = pending.item.id
+            }
+            recomputeDiskUsage()
+            VoiceOver.announce(String(localized: "Restored", bundle: .module), from: window)
+            return true
         }
-        recomputeDiskUsage()
-        VoiceOver.announce(String(localized: "Restored", bundle: .module), from: window)
-        return true
+        return false
     }
 
-    /// Commits any pending single-item trash immediately (timer elapsed, next delete, window close, or app quit).
+    /// Commits every staged single-item trash immediately (window close or app quit).
     func commitPendingTrash() {
-        pendingTrashTask?.cancel()
-        pendingTrashTask = nil
-        guard let pending = pendingTrash else { return }
-        pendingTrash = nil
+        let staged = pendingTrashes
+        guard !staged.isEmpty else { return }
+        for task in pendingTrashTasks.values { task.cancel() }
+        pendingTrashTasks.removeAll()
+        pendingTrashes.removeAll()
+        isPendingTrashHovered = false
+        var removedIDs: Set<UUID> = []
+        var failureMessage: String?
+        for pending in staged {
+            if actions.isBeingEdited(pending.item) {
+                failureMessage = String(localized: "Close the capture’s editor first.", bundle: .module)
+                restoreFailedPendingTrash(pending.item)
+                continue
+            }
+            do {
+                try actions.moveToTrash(pending.item)
+                removedIDs.insert(pending.item.id)
+            } catch {
+                failureMessage = error.localizedDescription
+                restoreFailedPendingTrash(pending.item)
+            }
+        }
+        if let failureMessage {
+            if isReleased {
+                copiedReading.show(failureMessage, near: NSEvent.mouseLocation)
+            } else {
+                trashFailure = failureMessage
+            }
+        }
+        if !isReleased, !removedIDs.isEmpty {
+            items.removeAll { removedIDs.contains($0.id) }
+            reload()
+        }
+    }
+
+    private func commitPendingTrash(id: UUID) {
+        pendingTrashTasks.removeValue(forKey: id)?.cancel()
+        guard let index = pendingTrashes.firstIndex(where: { $0.id == id }) else { return }
+        let pending = pendingTrashes.remove(at: index)
+        if pendingTrashes.isEmpty { isPendingTrashHovered = false }
         if actions.isBeingEdited(pending.item) {
             trashFailure = String(localized: "Close the capture’s editor first.", bundle: .module)
             restoreFailedPendingTrash(pending.item)
@@ -930,8 +1009,26 @@ final class HistoryModel {
     /// Copies one capture as Copy always has; several as their files, as Finder's Copy does.
     func copy(_ items: [HistoryItem]) {
         guard !items.isEmpty else { return }
-        if items.count == 1 { actions.copy(items[0]) } else { actions.copyFiles(items) }
-        showCopyFeedback(for: items, kind: .capture)
+        if items.count == 1 {
+            if let copyAsync = actions.copyAsync {
+                let target = items[0]
+                Task { [weak self] in
+                    guard await copyAsync(target), let self, !self.isReleased else { return }
+                    self.showCopyFeedback(for: items, kind: .capture)
+                }
+            } else {
+                actions.copy(items[0])
+                showCopyFeedback(for: items, kind: .capture)
+            }
+        } else if let copyFilesAsync = actions.copyFilesAsync {
+            Task { [weak self] in
+                guard await copyFilesAsync(items), let self, !self.isReleased else { return }
+                self.showCopyFeedback(for: items, kind: .capture)
+            }
+        } else {
+            actions.copyFiles(items)
+            showCopyFeedback(for: items, kind: .capture)
+        }
     }
 
     private func showCopyFeedback(for items: [HistoryItem], kind: CopyFeedback.Kind) {

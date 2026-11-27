@@ -181,7 +181,7 @@ final class MeasureOverlay {
         pointer = point
         if point != nil {
             buildGrid()
-        } else if !(gridBuild != nil && (originalBox != nil || boxStart != nil)) {
+        } else if originalBox == nil, boxStart == nil {
             gridBuild?.cancel()
             gridBuild = nil
             grid = nil

@@ -65,8 +65,18 @@ private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.tiff.identifier as CFString, 1, nil) else { return }
-        let compressed = [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: Self.lzw]] as CFDictionary
-        CGImageDestinationAddImage(destination, image, compressed)
+        var properties: [CFString: Any] = [
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: Self.lzw],
+        ]
+        if let sourceProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+            if let dpiWidth = sourceProperties[kCGImagePropertyDPIWidth] {
+                properties[kCGImagePropertyDPIWidth] = dpiWidth
+            }
+            if let dpiHeight = sourceProperties[kCGImagePropertyDPIHeight] {
+                properties[kCGImagePropertyDPIHeight] = dpiHeight
+            }
+        }
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return }
         item.setData(data as Data, forType: .tiff)
     }

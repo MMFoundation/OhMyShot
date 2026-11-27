@@ -200,16 +200,29 @@ final class ScreenshotFiles {
             name = typed
         }
         didName(name, offered: offered)
-        return Self.logged(await SaveOutcome.saving(into: directory) {
+        let encodedData: Data?
+        if copied == nil {
+            do {
+                encodedData = try await Self.encoded(source, scale: scale, output: output).data
+            } catch {
+                gaveUp(offered)
+                return Self.logged(.failed(.converting(error)), "Saving")
+            }
+        } else {
+            encodedData = nil
+        }
+        let outcome = await SaveOutcome.saving(into: directory) {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: fileExtension)
             if let copied {
                 try FileManager.default.copyItem(at: copied, to: destination)
-            } else {
-                try ImageExporter.write(try await Self.encoded(source, scale: scale, output: output).data, to: destination)
+            } else if let encodedData {
+                try ImageExporter.write(encodedData, to: destination)
             }
             return destination
-        }, "Saving")
+        }
+        if outcome.url == nil { gaveUp(offered) }
+        return Self.logged(outcome, "Saving")
     }
 
     private static func encoded(_ source: Source, scale: Double?, output: ScreenshotOutput) async throws -> PictureExport.Encoded {
@@ -298,10 +311,10 @@ final class ScreenshotFiles {
     /// since it was pinned): `picture`, the pin's own as it leaves the app, written as Settings say and named from the
     /// file name pattern. The pin's copy for the way Settings write it is kept, so a second drag is quick, and `picture`
     /// is drawn only when there is none; why it could not be made, and then nothing goes.
-    func fileToHandOver(pin id: UUID, scale: Double, picture: () throws -> CGImage) -> Result<URL, ExportFailure> {
+    func fileToHandOver(pin id: UUID, revision: UInt64 = 0, scale: Double, picture: () throws -> CGImage) -> Result<URL, ExportFailure> {
         defer { sweepConvertedCopies() }
         let name = settings.nextFileName(date: .now, appName: nil, windowTitle: nil)
-        let result = Result { try ExportedFiles.file(forPin: id, named: name, pixelsPerPoint: scale, output: output, picture: picture) }
+        let result = Result { try ExportedFiles.file(forPin: id, revision: revision, named: name, pixelsPerPoint: scale, output: output, picture: picture) }
         return Self.logged(result.mapError { .converting($0) }, "Converting", name)
     }
 
@@ -355,8 +368,10 @@ final class ScreenshotFiles {
             if let entry = history.item(forFileAt: url) { recordingCopied?(entry.id) }
             return true
         }
-        // As it has always been: the capture's PNG, as it is.
-        if !output.changesPicture, settings.clipboardFormat == .pictureOnly {
+        // As it has always been: the capture's PNG, as it is. Non-PNG history files (JPEG/HEIC) fall through
+        // to async PNG re-encoding so raw JPEG/HEIC bytes are never tagged as `public.png`.
+        let isPNG = url.pathExtension.lowercased() == "png"
+        if isPNG, !output.changesPicture, settings.clipboardFormat == .pictureOnly {
             guard
                 let data = try? Data(contentsOf: url),
                 let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -377,7 +392,8 @@ final class ScreenshotFiles {
             Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to copy it")
             return false
         }
-        return await copy(Picture(loaded.image), png: loaded.data, name: url.deletingPathExtension().lastPathComponent, scale: history.item(forFileAt: url)?.pixelsPerPoint, historyFile: url)
+        let png = url.pathExtension.lowercased() == "png" ? loaded.data : nil
+        return await copy(Picture(loaded.image), png: png, name: url.deletingPathExtension().lastPathComponent, scale: history.item(forFileAt: url)?.pixelsPerPoint, historyFile: url)
     }
 
     /// Puts a picture on the clipboard: its PNG, scaled, converted, and given a border as Settings say, and with
@@ -421,7 +437,7 @@ final class ScreenshotFiles {
         guard
             let data = try? Data(contentsOf: url),
             let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            let image = ImageLoader.orientedImage(from: source)
         else { return nil }
         return (image, data)
     }

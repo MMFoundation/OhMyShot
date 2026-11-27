@@ -87,12 +87,18 @@ extension TextReaderTool.FoundTable.Kind {
     }
 }
 
-let pipeline: VisionPipeline = {
-    var options = VisionPipeline.Options.preferred()
+var pipelines: [[String]: VisionPipeline] = [:]
+
+func pipeline(for languages: [String]?) -> VisionPipeline {
+    let key = languages ?? []
+    if let existing = pipelines[key] { return existing }
+    var options = key.isEmpty ? VisionPipeline.Options.preferred() : VisionPipeline.Options.configured(key)
     // A model's first use on this Mac can take seconds; nothing waits on this process.
     options.timeout = .seconds(60)
-    return VisionPipeline(options: options)
-}()
+    let created = VisionPipeline(options: options)
+    pipelines[key] = created
+    return created
+}
 
 /// The packs' readers, loaded the first time a job names them.
 var packReaders: [String: PPOCRReader] = [:]
@@ -190,14 +196,20 @@ func elements(
     }
     var tables: [TableMerge.Table] = []
     if let vlmPack, !tableRegions.isEmpty {
-        let reader = try vlmReader(for: vlmPack)
         let deadline = seconds.map { started + .milliseconds(Int($0 * 1000)) }
-        for region in tableRegions {
-            if let deadline, ContinuousClock.now >= deadline { break }
-            let chart = region.kind == .chart
-            guard let reading = try reader.read(image, region: region.box, task: chart ? .chart : .table, deadline: deadline) else { continue }
-            let rows = chart ? TableText.rows(chart: reading.text) : TableText.rows(otsl: reading.text)
-            tables.append(TableMerge.Table(kind: chart ? .chart : .table, box: region.box, rows: rows, isWhole: reading.ending == .end))
+        if deadline.map({ ContinuousClock.now < $0 }) ?? true {
+            let reader = try vlmReader(for: vlmPack)
+            for region in tableRegions {
+                if let deadline, ContinuousClock.now >= deadline { break }
+                let chart = region.kind == .chart
+                do {
+                    guard let reading = try reader.read(image, region: region.box, task: chart ? .chart : .table, deadline: deadline) else { continue }
+                    let rows = chart ? TableText.rows(chart: reading.text) : TableText.rows(otsl: reading.text)
+                    tables.append(TableMerge.Table(kind: chart ? .chart : .table, box: region.box, rows: rows, isWhole: reading.ending == .end))
+                } catch {
+                    FileHandle.standardError.write(Data("The VLM skipped a \(chart ? "chart" : "table") region: \(error)\n".utf8))
+                }
+            }
         }
     }
     return (image, formulas, tables, left)
@@ -215,13 +227,14 @@ func picture(of job: Job) throws -> URL {
 }
 
 /// L1, with the pack beside it when it loads.
-func reading(with pack: String?) async -> any OCREngine {
-    guard let pack else { return pipeline }
+func reading(with pack: String?, languages: [String]?) async -> any OCREngine {
+    let vision = pipeline(for: languages)
+    guard let pack else { return vision }
     do {
-        return PairedReading(first: pipeline, second: try await reader(for: pack))
+        return PairedReading(first: vision, second: try await reader(for: pack))
     } catch {
         FileHandle.standardError.write(Data("The pack at \(pack) didn't load: \(error)\n".utf8))
-        return pipeline
+        return vision
     }
 }
 
@@ -292,13 +305,14 @@ for try await line in FileHandle.standardInput.bytes.lines {
             ))
         case .text:
             let file = try picture(of: job)
-            var result = try await reading(with: job.pack).recognize(fileAt: file)
+            let vision = pipeline(for: job.languages)
+            var result = try await reading(with: job.pack, languages: job.languages).recognize(fileAt: file)
             // Formulas and tables only add to the text: when finding them fails, the text goes as Vision read it.
             if job.formulas != nil || job.vlm != nil,
                let found = try? await elements(
                    inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job), found: { _, _ in }
                ) {
-                if !found.formulas.isEmpty { result.lines = await pipeline.lines(result.lines, with: found.formulas, in: found.image) }
+                if !found.formulas.isEmpty { result.lines = await vision.lines(result.lines, with: found.formulas, in: found.image) }
                 if !found.tables.isEmpty {
                     let picture = CGRect(x: 0, y: 0, width: found.image.width, height: found.image.height)
                     result.lines = TableMerge.merged(result.lines, with: found.tables, in: picture).lines

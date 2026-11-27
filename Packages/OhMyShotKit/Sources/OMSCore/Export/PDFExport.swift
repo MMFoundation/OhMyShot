@@ -100,7 +100,7 @@ public enum PDFExport {
         var pages: [Page] = []
         for file in files {
             guard let source = CGImageSourceCreateWithURL(file.url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+                  let image = ImageLoader.orientedImage(from: source)
             else { throw ExportError.cannotRead(file.url) }
             let prepared = PictureExport.prepare(image, pixelsPerPoint: file.pixelsPerPoint ?? ImageLoader.pixelsPerPoint(of: source), output: output)
             guard prepared.isComplete else { throw ExportError.cannotWrite }

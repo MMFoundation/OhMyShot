@@ -118,6 +118,8 @@ public final class ScrollingPanel {
         self.area = area
         self.displayFrame = displayFrame
         userTopLeft = nil
+        axis = nil
+        bar.lockedAxis = nil
         bar.setDoneKeys(doneKeys)
         window.orderFrontRegardless()
         layout()
@@ -131,7 +133,10 @@ public final class ScrollingPanel {
     /// Shows how the capture is going.
     public func update(_ progress: ScrollingCapture.Progress) {
         if let image = progress.preview { preview = image }
-        if progress.axis != nil { axis = progress.axis }
+        if progress.axis != nil {
+            axis = progress.axis
+            bar.lockedAxis = progress.axis
+        }
         size = (progress.pictureWidth, progress.pictureHeight)
         isFull = progress.isFull
         lostInARow = progress.lostInARow
@@ -228,6 +233,8 @@ public final class ScrollingPanel {
         bar.setCancelAsked(false)
         tookOverShown?.cancel()
         userTopLeft = nil
+        axis = nil
+        bar.lockedAxis = nil
         window.orderOut(nil)
         preview = nil
         card.picture = nil
@@ -781,15 +788,21 @@ private final class ScrollingControls: CapsuleBar, NSMenuDelegate {
         onAutoScroll?(!isAutoScrolling)
     }
 
+    var lockedAxis: ScrollStitcher.Axis?
+
     @objc private func directionClicked(_ sender: NSButton) {
         let menu = NSMenu()
         menu.delegate = self
+        menu.autoenablesItems = false
         menu.addItem(.sectionHeader(title: String(localized: "Auto-scroll Direction", bundle: .module)))
         for (index, option) in Self.allDirections.enumerated() {
             let item = NSMenuItem(title: Self.directionName(for: option), action: #selector(directionChosen(_:)), keyEquivalent: "")
             item.target = self
             item.tag = index
             item.state = option == direction ? .on : .off
+            if let lockedAxis {
+                item.isEnabled = option.isVertical == (lockedAxis == .vertical)
+            }
             item.image = NSImage(systemSymbolName: Self.directionArrowSymbol(for: option), accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
             menu.addItem(item)

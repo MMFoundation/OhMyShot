@@ -16,7 +16,8 @@ extension CompositionRoot {
         Task { [weak self] in
             guard let pictures = await Self.collagePictures(files) else {
                 Log.capture.error("Combine into Collage: a screenshot could not be read")
-                return NSSound.beep()
+                self?.showSaveFailure(.converting(ImageExporter.ExportError.cannotRead), onCardOf: nil)
+                return
             }
             guard let self else { return }
             // As sharp as the sharpest picture in it.
@@ -72,7 +73,7 @@ extension CompositionRoot {
             return copied
         } catch {
             Log.capture.error("Copying collage failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
-            NSSound.beep()
+            showSaveFailure(.converting(error), onCardOf: nil)
             return false
         }
     }
@@ -84,7 +85,7 @@ extension CompositionRoot {
         var pictures: [CollageRenderer.Picture] = []
         for file in files {
             guard let source = CGImageSourceCreateWithURL(file.url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+                  let image = ImageLoader.orientedImage(from: source)
             else { return nil }
             let scale = max(file.pixelsPerPoint ?? ImageLoader.pixelsPerPoint(of: source) ?? 1, 0.01)
             pictures.append(CollageRenderer.Picture(image: image, size: CGSize(width: Double(image.width) / scale, height: Double(image.height) / scale)))
@@ -104,14 +105,21 @@ extension CompositionRoot {
         Task {
             guard let (url, pageSize) = await SavePanel.askForPDF(name: name, pageSize: remembered, directory: settings.exportDirectory) else { return }
             UserDefaults.standard.set(pageSize.rawValue, forKey: Self.pdfPageSizeKey)
+            let data: Data
             do {
-                let data = try await PDFExport.data(ofFiles: files, output: output, pageSize: pageSize, title: name)
+                data = try await PDFExport.data(ofFiles: files, output: output, pageSize: pageSize, title: name)
+            } catch {
+                Log.capture.error("Export as PDF failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+                showSaveFailure(.converting(error), onCardOf: nil)
+                return
+            }
+            do {
                 try ImageExporter.write(data, to: url)
                 Log.capture.notice("Exported \(files.count, privacy: .public) screenshot(s) as \(url.lastPathComponent, privacy: .private)")
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } catch {
                 Log.capture.error("Export as PDF failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
-                NSSound.beep()
+                showSaveFailure(.saving(error, into: url.deletingLastPathComponent()), onCardOf: nil)
             }
         }
     }

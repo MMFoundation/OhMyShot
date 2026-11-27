@@ -245,7 +245,20 @@ struct TransportBar: View {
                     .background(Color.primary.opacity(0.08), in: Capsule())
                     .accessibilityLabel(Text("Playback speed \(speed)", bundle: .module))
             }
-            Spacer()
+            Spacer(minLength: 8)
+            ViewThatFits(in: .horizontal) {
+                transportActions(compact: false)
+                transportActions(compact: true)
+            }
+        }
+        .controlSize(.regular)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func transportActions(compact: Bool) -> some View {
+        HStack(spacing: compact ? 6 : 12) {
             Button {
                 document.addZoom()
             } label: {
@@ -291,7 +304,7 @@ struct TransportBar: View {
                         Label { Text("Keep Only", bundle: .module) } icon: { Image(systemName: "timeline.selection") }
                     }
                     .help(Text("Trim the movie to only the chosen range", bundle: .module))
-                } else {
+                } else if !compact {
                     // Nothing chosen yet: how to choose it, while the row has room to say so.
                     ViewThatFits(in: .horizontal) {
                         Text("Drag along the clip to choose what to cut", bundle: .module)
@@ -318,9 +331,19 @@ struct TransportBar: View {
             .disabled(!document.canSetSpeed)
             .help(Text("Play the stretch chosen on the clip faster or slower", bundle: .module))
         }
-        .controlSize(.regular)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .labelStyle(AdaptiveLabelStyle(compact: compact))
+    }
+
+    private struct AdaptiveLabelStyle: LabelStyle {
+        let compact: Bool
+
+        func makeBody(configuration: Configuration) -> some View {
+            if compact {
+                Label(configuration).labelStyle(.iconOnly)
+            } else {
+                Label(configuration).labelStyle(.titleAndIcon)
+            }
+        }
     }
 
     /// How long the movie is, cuts left out.
@@ -446,7 +469,7 @@ struct StudioInspector: View {
                     StudioTimeRangeFields(start: cut.lowerBound, end: cut.upperBound) { value, start in
                         document.setCutEdge(at: cut.lowerBound, start: start, to: value) ?? cut
                     }
-                    .id(cutIndex)
+                    .id("cut-\(cutIndex)")
                     Button(role: .destructive) {
                         document.restoreCut(at: cut.lowerBound)
                     } label: {
@@ -466,7 +489,7 @@ struct StudioInspector: View {
                         StudioTimeRangeFields(start: speed.start, end: speed.end) { value, isStart in
                             document.setSpeedEdge(at: speed.start, start: isStart, to: value) ?? speed.start...speed.end
                         }
-                        .id(speedIndex)
+                        .id("speed-\(speedIndex)")
                     }
                     Picker(selection: Binding(get: { rate }, set: { document.setSpeed($0) })) {
                         Text("As recorded", bundle: .module).tag(1.0)
@@ -627,10 +650,10 @@ struct StudioInspector: View {
                     Text("Preset", bundle: .module)
                 }
                 .accessibilityLabel(Text("Crop preset", bundle: .module))
-                LabeledSlider(title: Text("Left", bundle: .module), value: cropLeftBinding, range: 0...0.9, reading: Self.percent, document: document)
-                LabeledSlider(title: Text("Right", bundle: .module), value: cropRightBinding, range: 0...0.9, reading: Self.percent, document: document)
-                LabeledSlider(title: Text("Top", bundle: .module), value: cropTopBinding, range: 0...0.9, reading: Self.percent, document: document)
-                LabeledSlider(title: Text("Bottom", bundle: .module), value: cropBottomBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Left", bundle: .module), accessibilityTitle: Text("Crop Left", bundle: .module), value: cropLeftBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Right", bundle: .module), accessibilityTitle: Text("Crop Right", bundle: .module), value: cropRightBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Top", bundle: .module), accessibilityTitle: Text("Crop Top", bundle: .module), value: cropTopBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Bottom", bundle: .module), accessibilityTitle: Text("Crop Bottom", bundle: .module), value: cropBottomBinding, range: 0...0.9, reading: Self.percent, document: document)
                 if document.project.crop != nil {
                     Button {
                         document.resetCrop()
@@ -1272,6 +1295,7 @@ struct ClickColorSwatch: View {
 /// taken back by Undo as one change.
 struct LabeledSlider: View {
     let title: Text
+    var accessibilityTitle: Text?
     @Binding var value: Double
     let range: ClosedRange<Double>
     let reading: (Double) -> String
@@ -1284,15 +1308,17 @@ struct LabeledSlider: View {
                     if editing { document.beginContinuousChange() } else { document.endContinuousChange() }
                 }
                 .labelsHidden()
+                .accessibilityLabel(accessibilityTitle ?? title)
+                .accessibilityValue(Text(verbatim: reading(value)))
                 Text(verbatim: reading(value))
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .trailing)
+                    .accessibilityHidden(true)
             }
         } label: {
             title
         }
-        .accessibilityValue(Text(verbatim: reading(value)))
     }
 }
 

@@ -100,8 +100,8 @@ extension Uploader {
         guard let link = Self.webURL(linkText) else { throw UploadError.linkMissing }
         return UploadResult(
             link: link,
-            deletionURL: Self.webURL(try evaluated(settings.deletionURLTemplate)),
-            thumbnailURL: Self.webURL(try evaluated(settings.thumbnailURLTemplate)),
+            deletionURL: Self.webURL((try? evaluated(settings.deletionURLTemplate)) ?? ""),
+            thumbnailURL: Self.webURL((try? evaluated(settings.thumbnailURLTemplate)) ?? ""),
             fileName: name
         )
     }

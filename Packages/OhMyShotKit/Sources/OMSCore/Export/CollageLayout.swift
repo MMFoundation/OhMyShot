@@ -105,10 +105,11 @@ public struct CollageLayout: Sendable, Equatable {
         switch count == 1 ? .column : options.arrangement {
         case .row:
             // One height for all: the widths at that height and the gaps fill the inner width exactly.
-            let height = max(inner - spacing * CGFloat(count - 1), 1) / aspects.reduce(0, +)
+            let effectiveSpacing = count > 1 ? min(spacing, max(inner - CGFloat(count), 0) / CGFloat(count - 1)) : 0
+            let height = max(inner - effectiveSpacing * CGFloat(count - 1), 1) / aspects.reduce(0, +)
             var x = margin
             let cells = aspects.map { aspect -> CGRect in
-                defer { x += aspect * height + spacing }
+                defer { x += aspect * height + effectiveSpacing }
                 return CGRect(x: x, y: margin, width: aspect * height, height: height)
             }
             return CollageLayout(size: CGSize(width: width, height: (height + margin * 2).rounded(.up)), cells: cells)
@@ -122,7 +123,8 @@ public struct CollageLayout: Sendable, Equatable {
         case .grid:
             let columns = options.columns.map { min(max($0, 1), count) } ?? columns(for: sizes)
             let rows = (count + columns - 1) / columns
-            let cellWidth = max(inner - spacing * CGFloat(columns - 1), 1) / CGFloat(columns)
+            let effectiveSpacingX = columns > 1 ? min(spacing, max(inner - CGFloat(columns), 0) / CGFloat(columns - 1)) : 0
+            let cellWidth = max(inner - effectiveSpacingX * CGFloat(columns - 1), 1) / CGFloat(columns)
             // Cells of the pictures' usual shape, so fitting leaves little room and filling cuts little.
             let cellHeight = cellWidth / median(aspects)
             var cells: [CGRect] = []
@@ -130,8 +132,8 @@ public struct CollageLayout: Sendable, Equatable {
                 let row = index / columns, column = index % columns
                 // A last row that is short is centered.
                 let inRow = row == rows - 1 ? count - row * columns : columns
-                let rowWidth = cellWidth * CGFloat(inRow) + spacing * CGFloat(inRow - 1)
-                let x = margin + (inner - rowWidth) / 2 + CGFloat(column) * (cellWidth + spacing)
+                let rowWidth = cellWidth * CGFloat(inRow) + effectiveSpacingX * CGFloat(inRow - 1)
+                let x = margin + (inner - rowWidth) / 2 + CGFloat(column) * (cellWidth + effectiveSpacingX)
                 cells.append(CGRect(x: x, y: margin + CGFloat(row) * (cellHeight + spacing), width: cellWidth, height: cellHeight))
             }
             let height = CGFloat(rows) * cellHeight + spacing * CGFloat(rows - 1) + margin * 2
@@ -142,16 +144,20 @@ public struct CollageLayout: Sendable, Equatable {
             let others = count - 1
             let first = aspects[0], rest = median(Array(aspects.dropFirst()))
             let gaps = spacing * CGFloat(others - 1)
-            let usable = max(inner - spacing, 1)
-            let leftWidth = (usable + rest * gaps / CGFloat(others)) / (1 + rest / (first * CGFloat(others)))
+            let columnGap = min(spacing, max(inner - 2, 0))
+            let usable = max(inner - columnGap, 2)
+            let solvedLeftWidth = (usable + rest * gaps / CGFloat(others)) / (1 + rest / (first * CGFloat(others)))
+            let leftWidth = min(max(solvedLeftWidth, 1), max(usable - 1, 1))
             let rightWidth = max(usable - leftWidth, 1)
-            let height = leftWidth / first
-            let cellHeight = max(height - gaps, 1) / CGFloat(others)
-            var cells = [CGRect(x: margin, y: margin, width: leftWidth, height: height)]
+            let leftHeight = leftWidth / first
+            let cellHeight = max(leftHeight - gaps, 1) / CGFloat(others)
+            let rightHeight = CGFloat(others) * cellHeight + gaps
+            let totalHeight = max(leftHeight, rightHeight)
+            var cells = [CGRect(x: margin, y: margin, width: leftWidth, height: leftHeight)]
             for index in 0..<others {
-                cells.append(CGRect(x: margin + leftWidth + spacing, y: margin + CGFloat(index) * (cellHeight + spacing), width: rightWidth, height: cellHeight))
+                cells.append(CGRect(x: margin + leftWidth + columnGap, y: margin + CGFloat(index) * (cellHeight + spacing), width: rightWidth, height: cellHeight))
             }
-            return CollageLayout(size: CGSize(width: width, height: (height + margin * 2).rounded(.up)), cells: cells)
+            return CollageLayout(size: CGSize(width: width, height: (totalHeight + margin * 2).rounded(.up)), cells: cells)
         }
     }
 

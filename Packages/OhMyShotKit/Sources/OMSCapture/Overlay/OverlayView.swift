@@ -28,6 +28,8 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags)
     /// Multi-window selection changed on one display; the controller mirrors it across all displays.
     func overlayView(_ view: OverlayView, didChangeSelectedWindows targets: [WindowTarget])
+    /// Keyboard cycling changed the hovered window; the controller mirrors it across all displays and moves focus.
+    func overlayView(_ view: OverlayView, didCycleWindow target: WindowTarget?)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
     func overlayViewDidRequestWindowPicker(_ view: OverlayView)
     func overlayViewDidCancel(_ view: OverlayView)
@@ -76,6 +78,7 @@ extension OverlayViewDelegate {
         }
     }
     func overlayView(_ view: OverlayView, didChangeSelectedWindows targets: [WindowTarget]) {}
+    func overlayView(_ view: OverlayView, didCycleWindow target: WindowTarget?) {}
     func overlayView(_ view: OverlayView, didChangeColorFormat format: ColorFormat) {}
     func overlayViewDidRequestWindowPicker(_ view: OverlayView) {}
     func overlayViewDidRequestLastArea(_ view: OverlayView) {}
@@ -447,8 +450,11 @@ final class OverlayView: NSView {
     func clear() {
         clearTransientContent()
         capturedFrame = nil
+        windows = []
+        hoveredWindow = nil
         selectedWindows = []
         highlightedWindow = nil
+        leaveElements()
         measure?.clear()
         isAnnotating = false
         isDraggingMeasureBox = false
@@ -583,16 +589,16 @@ final class OverlayView: NSView {
     }
     #endif
 
-    func setMeasureUnit(_ unit: MeasureUnit) {
+    func setMeasureUnit(_ unit: MeasureUnit, announce: Bool = true) {
         measure?.unit = unit
         setAccessibilityValue(measure?.accessibilityValue)
-        if measure?.accessibilityValue != nil { announceValue() }
+        if announce, measure?.accessibilityValue != nil { announceValue() }
     }
 
-    func setMeasureTolerance(_ tolerance: MeasureTolerance) {
+    func setMeasureTolerance(_ tolerance: MeasureTolerance, announce: Bool = true) {
         measure?.tolerance = tolerance
         setAccessibilityValue(measure?.accessibilityValue)
-        if measure?.accessibilityValue != nil { announceValue() }
+        if announce, measure?.accessibilityValue != nil { announceValue() }
     }
 
     /// Hands the display to in-place annotation: the frozen screen stays; the selection, readings,
@@ -954,6 +960,13 @@ final class OverlayView: NSView {
         )
         withoutAnimation { updateSelectionLayers() }
         announceValue()
+        delegate?.overlayView(self, didCycleWindow: hoveredWindow)
+    }
+
+    func setHoveredWindow(_ target: WindowTarget?) {
+        guard mode == .window, hoveredWindow != target else { return }
+        hoveredWindow = target
+        withoutAnimation { updateSelectionLayers() }
     }
 
     private func toggleSelectedWindow(_ window: WindowTarget) {
@@ -1904,16 +1917,18 @@ final class OverlayView: NSView {
         }
         loupePill.layer.isHidden = false
         let pillSize = loupePill.layer.bounds.size
-        loupePill.layer.frame.origin = loupe.isHidden
+        var pillOrigin = loupe.isHidden
             ? CGPoint(x: point.x + offset, y: point.y - offset - pillSize.height)
             : CGPoint(x: center.x - pillSize.width / 2, y: center.y - diameter / 2 - pillSize.height - 8)
-        if usesCenteredPicker {
-            var origin = loupePill.layer.frame.origin
-            if origin.y < bounds.minY + 6 { origin.y = center.y + diameter / 2 + 8 }
-            origin.x = min(max(origin.x, bounds.minX + 6), max(bounds.minX + 6, bounds.maxX - pillSize.width - 6))
-            origin.y = min(max(origin.y, bounds.minY + 6), max(bounds.minY + 6, bounds.maxY - pillSize.height - 6))
-            loupePill.layer.frame.origin = origin
+        if !loupe.isHidden {
+            let flippedAbove = !usesCenteredPicker && center.y > point.y
+            if flippedAbove || pillOrigin.y < bounds.minY + 6 {
+                pillOrigin.y = center.y + diameter / 2 + 8
+            }
         }
+        pillOrigin.x = min(max(pillOrigin.x, bounds.minX + 6), max(bounds.minX + 6, bounds.maxX - pillSize.width - 6))
+        pillOrigin.y = min(max(pillOrigin.y, bounds.minY + 6), max(bounds.minY + 6, bounds.maxY - pillSize.height - 6))
+        loupePill.layer.frame.origin = pillOrigin
     }
 
     private func layoutToolbar() {
